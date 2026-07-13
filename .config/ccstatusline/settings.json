@@ -1,0 +1,107 @@
+{
+  "version": 3,
+  "lines": [
+    [
+      {
+        "id": "1",
+        "type": "model",
+        "color": "cyan"
+      },
+      {
+        "id": "2",
+        "type": "separator"
+      },
+      {
+        "id": "3",
+        "type": "context-length",
+        "color": "brightBlack"
+      },
+      {
+        "id": "4",
+        "type": "separator"
+      },
+      {
+        "id": "5",
+        "type": "git-branch",
+        "color": "magenta"
+      },
+      {
+        "id": "6",
+        "type": "separator"
+      },
+      {
+        "id": "7",
+        "type": "git-changes",
+        "color": "yellow"
+      }
+    ],
+    [
+      {
+        "id": "0880e90f-889b-4b74-9ef3-b960fdac92b2",
+        "type": "context-percentage"
+      },
+      {
+        "id": "85ce1d76-c42e-4e57-9902-c64d53ff9985",
+        "type": "separator"
+      },
+      {
+        "id": "988b18b3-b80e-4ff6-9698-bb9a51194e4b",
+        "type": "context-bar"
+      }
+    ],
+    [
+      {
+        "id": "4496103b-ed7e-4a2c-b45c-9a897d1c5d70",
+        "type": "session-cost"
+      },
+      {
+        "id": "8ec65938-7528-47f2-8b80-686b40358281",
+        "type": "separator"
+      },
+      {
+        "id": "751b084e-bd53-44e0-90d0-f306a01fad39",
+        "type": "skills"
+      },
+      {
+        "id": "9659c96f-50d5-4fbf-acff-b8f5dda773cc",
+        "type": "separator"
+      },
+      {
+        "id": "e098ad5e-7372-4914-90ab-50565ba69747",
+        "type": "reset-timer"
+      },
+      {
+        "id": "d2e4923a-2296-439c-9c64-716a84dc2679",
+        "type": "separator"
+      },
+      {
+        "id": "25c6893e-b785-418d-b264-17d2eef5e89f",
+        "type": "block-timer"
+      }
+    ]
+  ],
+  "flexMode": "full-minus-40",
+  "compactThreshold": 60,
+  "colorLevel": 1,
+  "inheritSeparatorColors": false,
+  "globalBold": false,
+  "gitCacheTtlSeconds": 5,
+  "minimalistMode": false,
+  "powerline": {
+    "enabled": false,
+    "separators": [
+      ""
+    ],
+    "separatorInvertBackground": [
+      false
+    ],
+    "startCaps": [],
+    "endCaps": [],
+    "autoAlign": false,
+    "continueThemeAcrossLines": false
+  },
+  "installation": {
+    "method": "auto-update",
+    "packageManager": "npm"
+  }
+}
