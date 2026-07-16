@@ -158,7 +158,7 @@
 
 ### 度数＋変位（SolfaDegree）
 
-**定義**: 階名の内部表現。現在の「do」を1とするダイアトニック度数（1〜7）と、半音変位（-1/0/+1）の組
+**定義**: 階名の内部表現。現在の「do」を1とするダイアトニック度数（1〜7）と、半音変位（通常 -1/0/+1、重変化で ±2）の組
 
 **説明**: 音節体系×短調基準の2軸を直交させるための表現。文字列化は表示時に syllableTables で行う
 
@@ -350,7 +350,9 @@ stateDiagram-v2
 ```
 do の位置 = 主音（major または do基準） / 平行長調の主音（minor × la基準）
 degree     = ((stepIndex(note) - stepIndex(do) + 7) % 7) + 1
-alteration = note.alter - (do長音階における degree の期待変位)
+alteration = note.alter - expectedAlterInDoMajor(do, degree)
+             ※ 期待変位は「doの半音位置＋長音階オフセット」と当該幹音の半音位置の差。
+               導出手順は機能設計書「階名計算」ステップ3を参照
 ```
 
 **実装箇所**: `src/domain/solfa/SolfaEngine.ts`
@@ -358,7 +360,7 @@ alteration = note.alter - (do長音階における degree の期待変位)
 **例**:
 ```
 入力: do=G、音=F♮
-出力: { degree: 7, alteration: -1 } → コダーイ式 "ta"
+出力: { degree: 7, alteration: -1 } → コダーイ式 "te"（Tonic sol-fa略記では "ta"）
 ```
 
 ### 小節照合

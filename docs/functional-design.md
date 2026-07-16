@@ -13,6 +13,7 @@ graph TB
     User[ユーザー]
     UI[UIレイヤー<br>取込/確認/修正/出力画面]
     OmrRunner[OmrRunner<br>Audiveris ヘッドレス実行]
+    BookResolver[BookStructureResolver<br>譜表構造の検出・復元]
     ScoreBuilder[ScoreModelBuilder<br>MusicXML×.omr 照合]
     SolfaEngine[SolfaEngine<br>調文脈・階名計算]
     AnnotMgr[AnnotationManager<br>注釈レイヤー管理]
@@ -27,7 +28,8 @@ graph TB
     UI --> AnnotMgr
     UI --> Renderer
     OmrRunner --> Audiveris
-    OmrRunner --> ScoreBuilder
+    OmrRunner --> BookResolver
+    BookResolver --> ScoreBuilder
     ScoreBuilder --> SolfaEngine
     SolfaEngine --> AnnotMgr
     AnnotMgr --> Store
@@ -125,7 +127,7 @@ interface PageAnchor {
 /** 階名の内部表現（表示文字列はSolfaEngineが導出） */
 interface SolfaDegree {
   degree: 1|2|3|4|5|6|7;         // 現在の「do」を1とするダイアトニック度数
-  alteration: -1|0|1;            // ダイアトニック音からの半音変位
+  alteration: number;            // ダイアトニック音からの半音変位。通常 -1/0/+1、重変化で ±2（±2は文字列化時にフォールバック表示）
 }
 
 /** 調文脈。転調点で区切られた区間ごとに1つ */
@@ -225,23 +227,39 @@ class OmrRunner {
 
 **依存関係**: Audiveris（子プロセス）
 
+### BookStructureResolver
+
+**責務**:
+- book.xml の movement 分割情報と sheet XML から、インチピット等による譜表構造の誤分割を検出する（プロトタイプで実際に発生した系統的エラー。機械的に復元できることを検証済み）
+- 復元候補（システムの統合・譜表→パート割当）を生成し、StructureConfirm 画面の表示材料を提供する
+- ユーザーの承認・修正結果を適用した確定構造（`ResolvedStructure`）を出力する
+
+**インターフェース**:
+```typescript
+class BookStructureResolver {
+  detect(artifacts: OmrArtifacts): StructureIssue[];   // 誤分割の検出と復元候補の生成
+  resolve(artifacts: OmrArtifacts, decisions: StructureDecision[]): ResolvedStructure;
+}
+```
+
+**依存関係**: OmrRunner の成果物（book.xml・sheet XML）
+
 ### ScoreModelBuilder
 
 **責務**:
-- MusicXML（論理）と .omr（座標）の照合による `ScoreModel` 構築
-- インチピット等による譜表構造の誤分割の検出・復元（book.xml の movement 分割情報を利用）
+- MusicXML（論理）と .omr（座標）の照合による `ScoreModel` 構築。譜表構造は BookStructureResolver の確定結果（`ResolvedStructure`）を前提とする
 - 小節単位の音符数突き合わせ。不一致小節は `skipped` として隔離し、他小節へ波及させない（プロトタイプで実証済みの方式）
 - 音高のクロスチェック: .omr の譜表位置＋音部記号から逆算した音名と MusicXML の音名を照合し、不一致を確認画面の材料にする
 
 **インターフェース**:
 ```typescript
 class ScoreModelBuilder {
-  build(artifacts: OmrArtifacts, confirmation: ConfirmationState): BuildResult;
+  build(artifacts: OmrArtifacts, structure: ResolvedStructure, confirmation: ConfirmationState): BuildResult;
   // BuildResult = { score: ScoreModel; issues: BuildIssue[] }
 }
 ```
 
-**依存関係**: OmrRunner の成果物
+**依存関係**: OmrRunner の成果物、BookStructureResolver の確定構造
 
 ### SolfaEngine
 
@@ -326,22 +344,39 @@ class ProjectStore {
 #### ステップ3: 変位の決定
 
 - do を主音とする長音階における当該度数の期待変位（調号由来）と、実音の変位との差を取る
-- 計算式: `alteration = note.alter - expectedAlterInDoMajor(degree)`
+- 計算式: `alteration = note.alter - expectedAlterInDoMajor(doPitch, degree)`
 - 例（do=G、F♮）: 度数7の期待は F♯（+1）、実音 F♮（0）→ alteration = -1
+
+**expectedAlterInDoMajor の計算手順**（do長音階における度数 d の期待変位）:
+
+```
+NATURAL_SEMITONES = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 }   // 幹音の半音位置
+MAJOR_SCALE_OFFSETS = [0, 2, 4, 5, 7, 9, 11]                  // 度数1〜7 の do からの半音数
+
+function expectedAlterInDoMajor(doPitch, d):
+  targetStep       = doPitch.step の幹音を (d - 1) つ進めた音名        // 例: do=G, d=7 → F
+  expectedSemitone = (NATURAL_SEMITONES[doPitch.step] + doPitch.alter
+                      + MAJOR_SCALE_OFFSETS[d - 1]) mod 12             // 例: (7 + 0 + 11) mod 12 = 6
+  return signedDiff12(expectedSemitone - NATURAL_SEMITONES[targetStep])
+         // 半音差を -2〜+2 の最小絶対値に正規化。例: 6 - 5 = +1（F♯）
+```
+
+- 検算: 結果は do を主音とする長調の調号と必ず一致する（do=G なら F のみ +1、do=E♭ なら B/E/A が -1）。ユニットテストでは全24調についてこの性質を表駆動で検証する
 
 #### ステップ4: 文字列化（表示時のみ）
 
 | 度数 | 変位0 (コダーイ式) | +1 | -1 | 変位0 (Tonic sol-fa略記) | +1 | -1 |
 |---|---|---|---|---|---|---|
-| 1 | do | di | ra | d | de | — |
+| 1 | do | di | — | d | de | — |
 | 2 | re | ri | ra | r | re | ra |
 | 3 | mi | — | me | m | — | ma |
 | 4 | fa | fi | — | f | fe | — |
 | 5 | so | si | se | s | se | — |
-| 6 | la | li | le | l | le | la♭相当 |
-| 7 | ti | — | ta | t | — | ta |
+| 6 | la | li | le | l | le | — |
+| 7 | ti | — | te | t | — | ta |
 
-- Do基準短調では自然短音階の3・6・7度が変位-1として me/le/te（略記 ma/…/ta）で現れる。La基準では同じ音が度数5・1・2の変位0として現れ、表全体は共通に使える（2軸直交の担保）
+- 各列はそれぞれの流儀の規則に厳密に従う: コダーイ式は幹音の7度を **ti** と綴り、上げは母音 i（di, ri, fi, si, li）、下げは ra/me/se/le/**te**。Tonic sol-fa（Curwen式）は幹音の7度を te（略記 t）と綴り、上げは母音 e（de, re, fe, se, le）、下げは母音 a（ra, ma, **ta**）。同じ「下げた7度」がコダーイ式では te、Tonic sol-fa 略記では ta になる点に注意（両者を混用しない）
+- Do基準短調では自然短音階の3・6・7度が変位-1として me/le/te で現れる。La基準では同じ音が度数1・4・5（do/fa/so）の変位0として現れ、表全体は共通に使える（2軸直交の担保）。例: イ短調の C/F/G は、Do基準では me/le/te、La基準では平行長調ハ長調の do/fa/so
 - 表の空欄・稀な変位（重変化含む）は「異名同音に読み替えず、変位記号付き文字列（例: `do♯♯`）」でフォールバック表示する
 
 **実装例**:
@@ -349,7 +384,7 @@ class ProjectStore {
 function computeDegree(note: Pitch, region: KeyRegion, basis: 'la' | 'do'): SolfaDegree {
   const doPitch = resolveDo(region, basis);           // ステップ1
   const degree = letterDistance(doPitch.step, note.step); // ステップ2
-  const alteration = note.alter - expectedAlter(doPitch, degree); // ステップ3
+  const alteration = note.alter - expectedAlterInDoMajor(doPitch, degree); // ステップ3
   return { degree, alteration };
 }
 ```
@@ -392,7 +427,7 @@ sequenceDiagram
     OMR-->>Builder: MusicXML + .omr + book.xml
     Builder-->>UI: 検出結果（音部記号・調号・構造の一覧）
     User->>UI: 確認・修正して承認（F-2）
-    UI->>Builder: build(artifacts, confirmation)
+    UI->>Builder: build(artifacts, structure, confirmation)
     Builder-->>Solfa: ScoreModel
     Solfa-->>Annot: 度数計算結果
     Annot-->>UI: 注釈プレビュー＋スキップ小節一覧
@@ -432,6 +467,35 @@ stateDiagram-v2
 
 ## UI設計
 
+### StructureConfirm 画面
+
+| 項目 | 説明 |
+|------|------|
+| ページサムネイル | 検出されたシステム・譜表の境界をオーバーレイ表示 |
+| 構造ツリー | movement／システム／譜表／パート割当の一覧（BookStructureResolver の検出結果） |
+| 誤分割の警告 | インチピット等による分割疑い箇所を、復元候補付きで提示 |
+
+**操作フロー**:
+1. 誤分割の警告を確認し、復元候補を承認する（または手動でシステムを統合・分離する）
+2. 譜表→パートの割当を確認・修正する
+3. 「構造を承認」で ClefKeyConfirm へ進む
+
+### ClefKeyConfirm 画面（F-2 の中心画面）
+
+| 項目 | 説明 |
+|------|------|
+| 確認テーブル | 譜表ごとに1行: ページ／段／譜表／パート／音部記号／調号 |
+| 元画像切り抜き | 各行に `clipRect` の切り抜き画像を並置し、検出値と目視照合できるようにする |
+| 修正コントロール | 音部記号（G / G-8vb / F / C 等）・調号（♯♭の種類と数）のドロップダウン |
+| 警告表示 | 音高クロスチェック不一致のある譜表を強調し、一覧の先頭に出す |
+
+**操作フロー**:
+1. 一覧を上から順に切り抜き画像と照合し、誤検出は行内のドロップダウンで修正する（特にテノールの G-8vb は重点確認）
+2. 全行を確認済みにする（行単位のチェック。問題ない行の一括チェックも可）
+3. 「承認して階名を生成」で `completedAt` がセットされ、Editor へ進む
+
+- 分量の目安: 1曲（10ページ以内）で数十行。**5分以内に完了できる**ことを受け入れ条件とする（PRD F-2）
+
 ### Editor画面の表示
 
 | 項目 | 説明 | フォーマット |
@@ -441,6 +505,14 @@ stateDiagram-v2
 | スキップ小節 | 階名が欠落している小節 | 一覧パネル＋楽譜上のハイライト。クリックでジャンプ |
 | 転調点 | KeyRegion の境界 | 小節上のマーカー（auto=グレー、user=青） |
 | 孤立注釈・配置警告 | 再照合失敗・衝突回避失敗 | 警告アイコン |
+
+### 転調点の指定・修正の操作フロー（F-6）
+
+1. Editor で任意の小節（または小節内の拍位置）を選択し、「ここから転調」を実行する
+2. ダイアログで解釈先の調（主音・長/短）を指定する。初期値はその位置で現在有効な KeyRegion の値
+3. 適用すると新しい KeyRegion（`source: 'user'`）が挿入され、次の転調点までの範囲の階名が再計算・再描画される
+4. 既存の転調点マーカー（auto/user）はクリックで編集・削除できる。auto マーカーを編集した場合は user として上書きされる
+5. 再計算後も手動注釈（`origin: 'manual'`）と削除フラグは保全される（フロー説明3の原則）
 
 ### カラーコーディング
 
@@ -469,7 +541,7 @@ score.solfaproj/
 - OMRはページ単位で進捗通知し、UIスレッドをブロックしない（子プロセス＋非同期）
 - 階名の再計算（転調指定・設定変更時）は影響を受ける KeyRegion 範囲に限定する
 - Editor のレンダリングはページ単位の遅延描画とし、5,000注釈でも操作性を維持する（PRD スケーラビリティ要件）
-- 自動保存は編集操作のデバウンス（数百ms）で行い、UI操作をブロックしない
+- 自動保存は編集操作のデバウンス（300ms。architecture.md と同値）で行い、UI操作をブロックしない
 
 ## セキュリティ考慮事項
 
@@ -510,3 +582,9 @@ score.solfaproj/
 - 新規プロジェクト作成→確認画面承認→階名修正→PDF出力の一連操作
 - テノールのオクターブ下ト音記号を確認画面で修正した場合に、該当パートの階名が正しく再計算されること
 - 転調点をユーザー指定した場合の再計算と、手動注釈の保全
+
+### 手動QA（判読性チェックリスト）
+
+- 書体: 小文字「l」が縦線・数字「1」と弁別できること（プロトタイプで判明した Helvetica の視認性問題への対応）
+- 印刷: A4モノクロ印刷で幹音/変化音が区別でき、密集箇所（和音・臨時記号付近）で階名が判読できること
+- リリース前に検証済み題材の出力PDFを実際に印刷して確認する
