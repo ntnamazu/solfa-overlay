@@ -4,7 +4,7 @@
 
 このドキュメントは、プロジェクト内で使用される用語の定義を管理します。コード内の識別子は本用語集の英語表記に統一します（[開発ガイドライン](development-guidelines.md)参照）。
 
-**更新日**: 2026-07-13
+**更新日**: 2026-07-17
 
 ## ドメイン用語（音楽）
 
@@ -64,7 +64,7 @@
 
 **説明**: OMRの鬼門であり、通常のト音記号と誤認されると段全体の階名が1オクターブ（実質的には全部）ずれる。確認画面の最重要チェック項目
 
-**英語表記**: G clef 8vb / octave-down treble clef
+**英語表記**: octave-down treble clef（コード内の検出値: `'G-clef-8vb'`、UIのドロップダウン表記: G-8vb）
 
 ### 転調 / 転調点
 
@@ -76,13 +76,13 @@
 
 **英語表記**: modulation / modulation point
 
-### 平行調
+### 平行調 / 平行長調
 
-**定義**: 同じ調号を持つ長調と短調の組（例: ハ長調とイ短調）
+**定義**: 平行調＝同じ調号を持つ長調と短調の組（例: ハ長調とイ短調）。平行長調＝短調から見た平行調の長調側（イ短調にとってのハ長調）
 
-**説明**: La基準短調では「do」が平行長調の主音に置かれる（主音の短3度上）
+**説明**: La基準短調では「do」が平行長調の主音に置かれる（主音の短3度上）。他ドキュメントでは主に「平行長調の主音」の形で登場する
 
-**英語表記**: relative key
+**英語表記**: relative key / relative major
 
 ### 和音役割
 
@@ -172,6 +172,22 @@
 
 **英語表記**: matching
 
+### プロジェクト（Project）
+
+**定義**: 1曲分の作業状態を表すルートエンティティ。楽譜モデル（ScoreModel）・調文脈（KeyRegion）・注釈（Annotation）・確認状態（ConfirmationState）・設定（ProjectSettings）を束ねる
+
+**説明**: project.json としてプロジェクトファイル（.solfaproj）に永続化される。`schemaVersion` で互換性を判定する
+
+**英語表記**: `Project`
+
+### 楽譜モデル（ScoreModel）
+
+**定義**: 照合済み楽譜の論理＋物理モデル。パート・システム（段）・小節から成り、各音符（NoteEvent）は MusicXML 由来の音高と .omr 由来の符頭座標を併せ持つ
+
+**説明**: ScoreModelBuilder が構築し、階名計算（SolfaEngine）と注釈生成の入力となる。OMR未実行の間は null
+
+**英語表記**: `ScoreModel`
+
 ### プロジェクトファイル（.solfaproj）
 
 **定義**: 1曲分の作業状態を格納する zip 形式ファイル（project.json ＋ source.pdf ＋ omr/）
@@ -179,6 +195,76 @@
 **説明**: 楽譜由来データをこの中に閉じ込める。保存ごとに .bak 3世代のバックアップを保持
 
 **英語表記**: project file
+
+## アーキテクチャ・コンポーネント
+
+### 4層構成（UI / 編成 / サービス / データレイヤー）
+
+**定義**: 本アプリの層分割。UIレイヤー（Renderer: 画面表示・入力受付）、編成レイヤー（Main: IPC受付・委譲・OMR実行制御）、サービスレイヤー（Main: ドメインロジック。Electron 非依存の純粋TS）、データレイヤー（Main: 永続化）の4層
+
+**説明**: 依存方向は「UI→編成→サービス」「編成→データ」のみ許可。サービス→データは禁止（永続化は編成レイヤーが仲介する）。ディレクトリ対応は UI=`src/renderer/`、編成=`src/main/`、サービス=`src/domain/`、データ=`src/storage/`。詳細は[アーキテクチャ設計書](architecture.md)参照
+
+### OmrRunner
+
+**定義**: 同梱 Audiveris をヘッドレス子プロセスとして実行し、MusicXML・.omr・book.xml を取得するコンポーネント（進捗通知・キャンセル対応。F-1）
+
+**所属**: 編成レイヤー（`src/main/omr/OmrRunner.ts`）
+
+**関連用語**: Audiveris、OMR
+
+### BookStructureResolver
+
+**定義**: book.xml と sheet XML から、インチピット等による譜表構造の誤分割を検出・復元し、確定構造（`ResolvedStructure`）を出力するコンポーネント
+
+**所属**: サービスレイヤー（`src/domain/score/BookStructureResolver.ts`）
+
+**関連用語**: インチピット、確認画面（StructureConfirm）
+
+### ScoreModelBuilder
+
+**定義**: MusicXML（論理）と .omr（座標）をパート×小節単位で照合し、楽譜モデル（ScoreModel）を構築するコンポーネント。不一致小節は skipped として隔離し、音高のクロスチェックも行う
+
+**所属**: サービスレイヤー（`src/domain/score/ScoreModelBuilder.ts`）
+
+**関連用語**: 照合（小節照合）、スキップ小節、楽譜モデル（ScoreModel）
+
+### SolfaEngine
+
+**定義**: 調文脈（KeyRegion）から各音符の度数＋変位（SolfaDegree）を計算し、設定（音節体系×短調基準）に応じた表示文字列を導出するコンポーネント
+
+**所属**: サービスレイヤー（`src/domain/solfa/SolfaEngine.ts`）
+
+**関連用語**: 階名計算、度数＋変位（SolfaDegree）、音節体系
+
+### AnnotationManager
+
+**定義**: 注釈レイヤーを管理するコンポーネント。階名計算結果からの自動生成（衝突回避配置を含む）、手動注釈の追加・編集・削除、再計算時の手動修正の保全を担う
+
+**所属**: サービスレイヤー（`src/domain/annotations/AnnotationManager.ts`）
+
+**関連用語**: 注釈レイヤー、衝突回避配置
+
+### OverlayRenderer
+
+**定義**: 元PDFの版面を変えずに注釈を重ね書きしたPDFのバイト列を生成するコンポーネント（.omr px→PDF pt の座標変換を含む）。ファイルへの書き込みは行わない（writeExportPdf が担当）
+
+**所属**: サービスレイヤー（`src/domain/render/OverlayRenderer.ts`）
+
+**関連用語**: オーバーレイ方式
+
+### ProjectStore
+
+**定義**: プロジェクトファイル（.solfaproj）の保存・読込・自動保存・世代バックアップを担うコンポーネント
+
+**所属**: データレイヤー（`src/storage/ProjectStore.ts`）
+
+**関連用語**: プロジェクトファイル（.solfaproj）
+
+### writeExportPdf
+
+**定義**: OverlayRenderer が生成した注釈付きPDFのバイト列を、ユーザー指定パスへ原子的に書き出す関数（一時ファイルに書いてからリネームし、不完全なPDFを残さない）
+
+**所属**: データレイヤー（`src/storage/writeExportPdf.ts`）
 
 ## 技術用語
 
