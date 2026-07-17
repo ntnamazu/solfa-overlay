@@ -32,10 +32,12 @@ graph TB
     BookResolver --> ScoreBuilder
     ScoreBuilder --> SolfaEngine
     SolfaEngine --> AnnotMgr
-    AnnotMgr --> Store
+    UI --> Store
     Renderer --> OutPdf
     Store --> Files
 ```
+
+※ UI からの矢印は、型付きIPC経由で Main プロセスの IPCハンドラ（編成レイヤー）が受け、各コンポーネントへ委譲する呼び出しを表す。注釈の編集結果の永続化も IPCハンドラが AnnotationManager（計算）の結果を ProjectStore（永続化）へ渡す形で編成し、ドメインロジックから ProjectStore への直接依存はしない（[アーキテクチャ設計書](architecture.md)の依存方向を参照）。
 
 ## 技術スタック
 
@@ -62,6 +64,7 @@ graph TB
 ```typescript
 /** プロジェクト全体（プロジェクトファイルのルート） */
 interface Project {
+  schemaVersion: number;         // project.json のスキーマ版数（v1 = 1）。互換性判定に使う
   id: string;                    // UUID
   sourcePdf: string;             // プロジェクト内に取り込んだ元PDFの相対パス
   pages: PageInfo[];             // ページごとの画像サイズ・スケール係数

@@ -336,9 +336,9 @@ stateDiagram-v2
 
 **クラス名**: `ProjectFileError`
 
-**発生条件**: .solfaproj の zip 破損（cause: 'zip'）、project.json のスキーマ不一致（'schema'）、入出力失敗（'io'）
+**発生条件**: .solfaproj の zip 破損（cause: 'zip'）、project.json のスキーマ不一致（'schema'）、アプリより新しい schemaVersion（'version'）、入出力失敗（'io'）
 
-**対処方法**: 読込は安全に失敗させ、.bak 世代からの復元を案内する
+**対処方法**: 読込は安全に失敗させ、.bak 世代からの復元を案内する。'version' の場合はファイルを変更せず、アプリの更新を案内する
 
 ## 計算・アルゴリズム
 
