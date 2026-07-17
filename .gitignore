@@ -1,1 +1,22 @@
 .claude/settings.local.json
+
+# 依存・ビルド成果物
+node_modules/
+dist/
+out/
+coverage/
+
+# 作業単位の一時ドキュメント
+.steering/
+
+# ビルド時ダウンロードで取得する同梱バイナリ
+resources/audiveris/
+resources/jre/
+
+# ログ・OS固有ファイル
+*.log
+.DS_Store
+
+# 手元の検証用プロジェクトファイル（著作権のある楽譜を含み得るため必ず除外）
+*.solfaproj
+*.solfaproj.bak*
