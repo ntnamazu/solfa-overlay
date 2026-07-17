@@ -18,7 +18,7 @@ graph TB
     SolfaEngine[SolfaEngine<br>調文脈・階名計算]
     AnnotMgr[AnnotationManager<br>注釈レイヤー管理]
     Renderer[OverlayRenderer<br>PDF合成出力]
-    Store[ProjectStore<br>プロジェクト永続化]
+    Store[storage<br>プロジェクト永続化・PDF書き出し]
     Audiveris[Audiveris<br>同梱JREで子プロセス実行]
     Files[(プロジェクトファイル<br>.solfaproj)]
     OutPdf[(注釈付きPDF)]
@@ -33,11 +33,11 @@ graph TB
     ScoreBuilder --> SolfaEngine
     SolfaEngine --> AnnotMgr
     UI --> Store
-    Renderer --> OutPdf
+    Store --> OutPdf
     Store --> Files
 ```
 
-※ UI からの矢印は、型付きIPC経由で Main プロセスの IPCハンドラ（編成レイヤー）が受け、各コンポーネントへ委譲する呼び出しを表す。注釈の編集結果の永続化も IPCハンドラが AnnotationManager（計算）の結果を ProjectStore（永続化）へ渡す形で編成し、ドメインロジックから ProjectStore への直接依存はしない（[アーキテクチャ設計書](architecture.md)の依存方向を参照）。
+※ UI からの矢印は、型付きIPC経由で Main プロセスの IPCハンドラ（編成レイヤー）が受け、各コンポーネントへ委譲する呼び出しを表す。注釈の編集結果の永続化も IPCハンドラが AnnotationManager（計算）の結果を ProjectStore（永続化）へ渡す形で編成し、ドメインロジックから ProjectStore への直接依存はしない（[アーキテクチャ設計書](architecture.md)の依存方向を参照）。PDF出力も同様に、IPCハンドラが OverlayRenderer（バイト列生成）の結果を storage の書き出し処理（`writeExportPdf`）へ渡して注釈付きPDFを出力する。
 
 ## 技術スタック
 
@@ -301,14 +301,15 @@ class AnnotationManager {
 ### OverlayRenderer
 
 **責務**:
-- 元PDFの版面を変更せず、注釈を重ね書きしたPDFを生成（F-4）
+- 元PDFの版面を変更せず、注釈を重ね書きしたPDFのバイト列を生成（F-4）
 - .omr ピクセル座標→PDFポイント座標の線形変換
 - モノクロ印刷でも判読できるスタイル（色＋書体差）の適用
+- ファイルへの書き込みは行わない（domain の純粋性維持）。IPCハンドラが生成結果を storage の書き出し処理（`writeExportPdf`）へ渡して編成する
 
 **インターフェース**:
 ```typescript
 class OverlayRenderer {
-  render(project: Project, outPath: string): Promise<void>;
+  render(project: Project): Promise<Uint8Array>;
 }
 ```
 
@@ -327,6 +328,18 @@ class ProjectStore {
   load(path: string): Promise<Project>;
 }
 ```
+
+### writeExportPdf（storage）
+
+**責務**:
+- OverlayRenderer が生成した注釈付きPDFのバイト列を、ユーザー指定パスへ原子的に書き出す（一時ファイルに書いてからリネームし、書き込み途中の失敗で不完全なPDFを残さない。エラーハンドリング表「PDF出力失敗」に対応）
+
+**インターフェース**:
+```typescript
+function writeExportPdf(outPath: string, pdfBytes: Uint8Array): Promise<void>;
+```
+
+**依存関係**: なし（Node.js fs のみ。呼び出しは IPCハンドラが編成する）
 
 ## アルゴリズム設計
 
@@ -423,6 +436,7 @@ sequenceDiagram
     participant Solfa as SolfaEngine
     participant Annot as AnnotationManager
     participant Render as OverlayRenderer
+    participant Store as storage
 
     User->>UI: 楽譜PDFを開く
     UI->>OMR: run(pdf)
@@ -437,8 +451,10 @@ sequenceDiagram
     User->>UI: 階名の修正・追加、転調点の指定（F-5, F-6）
     UI->>Annot: 編集操作（自動保存）
     User->>UI: PDF出力
-    UI->>Render: render(project, outPath)
-    Render-->>User: 注釈付きPDF
+    UI->>Render: render(project)
+    Render-->>UI: PDFバイト列
+    UI->>Store: writeExportPdf(outPath, バイト列)
+    Store-->>User: 注釈付きPDF
 ```
 
 **フロー説明**:

@@ -26,8 +26,17 @@ project-root/
 ├── docs/                  # プロジェクトドキュメント（6つの永続ドキュメント）
 │   └── ideas/             # 着想メモ（PRD前の入力）
 ├── scripts/               # ビルド・開発補助スクリプト
+├── .github/
+│   └── workflows/         # CI/CD定義（品質チェック・リリースパッケージング）
 ├── .steering/             # 作業単位の計画ドキュメント（Git管理外）
-└── .claude/               # Claude Code 設定（commands/skills/agents）
+├── .claude/               # Claude Code 設定（commands/skills/agents）
+├── README.md              # プロジェクト概要・セットアップ手順の入口
+├── LICENSE                # 本アプリ自体のライセンス
+├── THIRD_PARTY_LICENSES.md # 同梱物（Audiveris/JRE/フォント）のライセンス全文と入手元
+├── package.json
+├── tsconfig.json          # ＋プロセス別の tsconfig.*.json
+├── electron-builder.yml   # パッケージング設定
+└── vitest.config.ts       # ほかツール設定は [ツール名].config.ts
 ```
 
 ## ディレクトリ詳細
@@ -84,7 +93,7 @@ project-root/
 
 **配置ファイル**:
 - `score/`: `ScoreModelBuilder.ts`, `MusicXmlParser.ts`, `OmrSheetParser.ts`, `BookStructureResolver.ts`（誤分割復元）
-- `solfa/`: `SolfaEngine.ts`, `syllableTables.ts`（コダーイ式/Tonic sol-fa の文字列化表）, `KeyContext.ts`
+- `solfa/`: `SolfaEngine.ts`, `syllableTables.ts`（コダーイ式/Tonic sol-fa の文字列化表）
 - `annotations/`: `AnnotationManager.ts`, `placementResolver.ts`（衝突回避）
 - `render/`: `OverlayRenderer.ts`, `coordinateTransform.ts`（.omr px → PDF pt）
 
@@ -97,13 +106,14 @@ project-root/
 
 ### src/storage/ (データレイヤー)
 
-**役割**: `.solfaproj`（zip）の保存・読込・世代バックアップ・スキーマ検証、アプリ設定の永続化
+**役割**: `.solfaproj`（zip）の保存・読込・世代バックアップ・スキーマ検証、アプリ設定の永続化、出力PDF（注釈付きPDF）の原子的書き出し
 
 **配置ファイル**:
 - `ProjectStore.ts`: 保存・読込・自動保存・原子的書き込み
 - `projectSchema.ts`: Zod スキーマ（project.json の検証）
 - `backupRotation.ts`: .bak 3世代管理
 - `AppSettingsStore.ts`: アプリ設定（楽譜由来データを含まない）
+- `writeExportPdf.ts`: 注釈付きPDFの原子的書き出し（OverlayRenderer が生成したバイト列を IPCハンドラ経由で受け取る）
 
 **依存関係**:
 - 依存可能: `shared/`
@@ -129,9 +139,11 @@ project-root/
 **構造**:
 ```
 tests/unit/
-└── domain/
-    └── solfa/
-        └── SolfaEngine.test.ts   # src と同構造をミラー
+├── domain/
+│   └── solfa/
+│       └── SolfaEngine.test.ts   # src と同構造をミラー
+└── storage/
+    └── backupRotation.test.ts    # storage も同様にミラー
 ```
 
 **命名規則**: `[テスト対象ファイル名].test.ts`
@@ -194,7 +206,9 @@ tests/fixtures/
 - `jre/<platform>/`: OS別の同梱JRE
 - `fonts/`: 階名描画用フォント（小サイズ判読性で選定したもの。再配布可能なライセンスに限る）
 
-**注意**: 大容量バイナリは Git LFS またはビルド時ダウンロードスクリプト（`scripts/fetch-resources.ts`）で管理し、リポジトリ肥大を避ける
+**注意**: 大容量バイナリ（Audiveris/JRE）はリポジトリにコミットせず、ビルド時ダウンロードスクリプト（`scripts/fetch-resources.ts`。取得先のバージョン・ハッシュ固定で再現性を担保）で取得する。Git LFS は採用しない（ストレージ・帯域の無料枠制約と clone コスト増を避ける）
+
+**ライセンス表記**: 同梱物のライセンス全文と入手元をルートの `THIRD_PARTY_LICENSES.md` に集約し、配布物（インストーラ）にも同梱する。Audiveris は AGPL-3.0 のため、別プロセス実行（ファイルパス渡しのみ）の構成を維持したうえで、公開リリース前に同梱・再配布の条件を確認することを必須とする（JRE・フォントも同様に表記する）
 
 ### scripts/
 
@@ -230,6 +244,7 @@ tests/fixtures/
 | ツール設定 | プロジェクトルート | `[ツール名].config.ts`（`vitest.config.ts` 等） |
 | Electron ビルド設定 | プロジェクトルート | `electron-builder.yml` |
 | TypeScript 設定 | プロジェクトルート | `tsconfig.json`（＋プロセス別の `tsconfig.*.json`） |
+| CI/CD ワークフロー | .github/workflows/ | `[目的].yml`（`ci.yml`, `release.yml`） |
 
 ## 命名規則
 
@@ -241,7 +256,7 @@ tests/fixtures/
 ### ファイル名
 
 - **クラスファイル**: PascalCase（例: `ScoreModelBuilder.ts`）
-- **関数ファイル**: camelCase・動詞始まり（例: `coordinateTransform.ts` のような変換モジュールは名詞可）
+- **関数ファイル**: camelCase。主エクスポートが単一の処理なら動詞始まり（例: `writeExportPdf.ts`）、関連する純関数・対応表をまとめたモジュールなら名詞（例: `coordinateTransform.ts`, `syllableTables.ts`, `backupRotation.ts`）
 - **定数ファイル**: UPPER_SNAKE_CASE（例: `DEFAULT_SETTINGS.ts`）
 
 ## 依存関係のルール
@@ -308,6 +323,19 @@ shared (型・定数)      shared (型・定数)
 └── agents/                  # サブエージェント定義
 ```
 
+### .github/ (CI/CD設定)
+
+**役割**: GitHub Actions のワークフロー定義
+
+```
+.github/
+└── workflows/
+    ├── ci.yml               # push/PRごと: lint → typecheck → test（開発ガイドライン「品質自動化」に対応。E2E は develop/main への PR のみ）
+    └── release.yml          # タグ作成時: fetch-resources.ts → electron-builder で3OSのインストーラを生成し GitHub Releases に添付
+```
+
+**注意**: ビルド成果物（インストーラ）はリポジトリにコミットせず、GitHub Releases で配布する。PR検証用の一時成果物は Actions アーティファクト（保持期限つき）を使う
+
 ## 除外設定
 
 ### .gitignore
@@ -315,7 +343,7 @@ shared (型・定数)      shared (型・定数)
 - `node_modules/`
 - `dist/` / `out/`（ビルド成果物）
 - `.steering/`（作業単位の一時ドキュメント）
-- `resources/audiveris/` / `resources/jre/`（`scripts/fetch-resources.ts` で取得する場合）
+- `resources/audiveris/` / `resources/jre/`（`scripts/fetch-resources.ts` で取得するためコミットしない）
 - `*.log`
 - `.DS_Store`
 - `*.solfaproj` / `*.solfaproj.bak*`（手元の検証用プロジェクトファイル。著作権のある楽譜を含み得るため必ず除外）
