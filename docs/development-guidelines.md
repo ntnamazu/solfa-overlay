@@ -100,7 +100,9 @@ class OmrExecutionError extends Error {
 }
 
 class ProjectFileError extends Error {
-  constructor(message: string, public readonly cause: 'schema' | 'zip' | 'io') {
+  // cause の種別は用語集「プロジェクトファイルエラー」の定義を正とする
+  // （'version' はアプリより新しい schemaVersion の検出。ファイルを変更せずアプリ更新を案内する）
+  constructor(message: string, public readonly cause: 'zip' | 'schema' | 'version' | 'io') {
     super(message);
     this.name = 'ProjectFileError';
   }
@@ -113,6 +115,8 @@ class ProjectFileError extends Error {
 - 子プロセス起動は `spawn` の引数配列のみ。シェル文字列連結（`exec`）禁止
 - zip 展開時はエントリ名を検証し、パストラバーサルを拒否する
 - Electron は `nodeIntegration: false` / `contextIsolation: true` / `sandbox: true` を変更しない
+- Renderer の CSP（`default-src 'self'`）を緩和しない（外部リソース読込の遮断を維持する）
+- `shell.openExternal` 等でユーザー提供の URL を開かない
 
 ## Git運用ルール
 
@@ -155,7 +159,7 @@ feat(solfa): La基準短調の度数計算を実装
 - 度数＋変位の内部表現を返し、文字列化はsyllableTablesに分離
 ```
 
-- 件名は日本語可（既存コミットの慣習に合わせる）
+- `type`・`scope` は英語、件名（subject）と本文は日本語を基本とする（既存コミットの慣習。例: `docs: repository-structure.md へのレビュー指摘を反映`）
 
 ### プルリクエストプロセス
 
@@ -273,6 +277,7 @@ describe('SolfaEngine', () => {
 - [ ] レイヤー境界（domainの純粋性・rendererの隔離）を守っているか
 - [ ] 内部表現（度数＋変位）と表示（文字列化）の分離を壊していないか
 - [ ] 重複コードがないか
+- [ ] ファイルサイズが指針内か（300行以下推奨・500行超は分割を強く推奨。詳細は[リポジトリ構造定義書](repository-structure.md)「ファイルサイズの管理」）
 
 **パフォーマンス**:
 - [ ] 全ページ・全注釈を無条件に舐める処理を UI 操作経路に入れていないか

@@ -36,6 +36,7 @@ project-root/
 ├── package.json
 ├── tsconfig.json          # ＋プロセス別の tsconfig.*.json
 ├── electron-builder.yml   # パッケージング設定
+├── .prettierrc            # コードフォーマット設定（JSON）
 └── vitest.config.ts       # ほかツール設定は [ツール名].config.ts
 ```
 
@@ -242,6 +243,7 @@ tests/fixtures/
 | ファイル種別 | 配置先 | 命名規則 |
 |------------|--------|---------|
 | ツール設定 | プロジェクトルート | `[ツール名].config.ts`（`vitest.config.ts` 等） |
+| Prettier 設定 | プロジェクトルート | `.prettierrc`（JSON。ロジック不要のため dotfile 形式を採用） |
 | Electron ビルド設定 | プロジェクトルート | `electron-builder.yml` |
 | TypeScript 設定 | プロジェクトルート | `tsconfig.json`（＋プロセス別の `tsconfig.*.json`） |
 | CI/CD ワークフロー | .github/workflows/ | `[目的].yml`（`ci.yml`, `release.yml`） |
