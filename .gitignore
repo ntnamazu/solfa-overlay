@@ -6,9 +6,6 @@ dist/
 out/
 coverage/
 
-# 作業単位の一時ドキュメント
-.steering/
-
 # ビルド時ダウンロードで取得する同梱バイナリ
 resources/audiveris/
 resources/jre/
