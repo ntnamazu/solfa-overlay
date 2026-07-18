@@ -1,6 +1,14 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { BrowserWindow, app, ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc/channels';
+
+// Linux コンテナ（devcontainer 等）では GPU が使えず、ウィンドウが白画面になる
+// ことがあるため、開発実行時のみソフトウェアレンダリングに切り替える
+// （app の ready 前に呼ぶ必要がある。--no-sandbox の付与は scripts/dev.mjs 側）
+if (!app.isPackaged && process.platform === 'linux' && fs.existsSync('/.dockerenv')) {
+  app.disableHardwareAcceleration();
+}
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -22,6 +30,7 @@ function createWindow(): void {
   } else {
     void window.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+
 }
 
 function registerIpcHandlers(): void {
