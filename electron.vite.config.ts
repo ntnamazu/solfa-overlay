@@ -21,7 +21,16 @@ function relaxCspForDev(): Plugin {
     name: 'relax-csp-for-dev',
     apply: 'serve',
     transformIndexHtml(html) {
-      return html.replace(`content="default-src 'self'"`, `content="${devCsp}"`);
+      const prodCsp = `content="default-src 'self'"`;
+      // 置換が無言で失敗すると dev でも厳格 CSP のままになり原因不明の白画面に
+      // なるため、CSP meta タグの変更・整形で一致しなくなったら明示的に落とす
+      if (!html.includes(prodCsp)) {
+        throw new Error(
+          `relaxCspForDev: index.html に ${prodCsp} が見つかりません。` +
+            'CSP meta タグの変更に合わせてこのプラグインも更新してください',
+        );
+      }
+      return html.replace(prodCsp, `content="${devCsp}"`);
     },
   };
 }

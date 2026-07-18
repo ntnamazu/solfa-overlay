@@ -27,6 +27,12 @@ if (isLinuxContainer) {
   // として Electron に渡る）で指定する必要がある。
   if (process.env.WAYLAND_DISPLAY !== undefined) {
     args.push('--', '--ozone-platform=wayland');
+  } else {
+    console.warn(
+      '[dev] WAYLAND_DISPLAY が見つかりません。コンテナ内の X11 経由の起動には ' +
+        'ウィンドウが表示されないままハングする既知の問題があるため、起動しない場合は ' +
+        'Wayland ソケットの転送（WSLg 等）を確認してください。',
+    );
   }
 }
 

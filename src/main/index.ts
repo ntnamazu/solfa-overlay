@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { BrowserWindow, app, ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../shared/ipc/channels';
+import type { IpcContract } from '../shared/ipc/contract';
 
 // Linux コンテナ（devcontainer 等）では GPU が使えず、ウィンドウが白画面になる
 // ことがあるため、開発実行時のみソフトウェアレンダリングに切り替える
@@ -25,16 +26,27 @@ function createWindow(): void {
 
   // electron-vite が dev 時のみ Renderer の dev サーバURLを設定する
   const rendererUrl = process.env['ELECTRON_RENDERER_URL'];
-  if (rendererUrl !== undefined) {
-    void window.loadURL(rendererUrl);
-  } else {
-    void window.loadFile(path.join(__dirname, '../renderer/index.html'));
-  }
+  const loading =
+    rendererUrl !== undefined
+      ? window.loadURL(rendererUrl)
+      : window.loadFile(path.join(__dirname, '../renderer/index.html'));
+  loading.catch((error: unknown) => {
+    // 失敗を握りつぶすと無言の空ウィンドウだけが残るため必ずログに出す
+    console.error('Renderer の読み込みに失敗しました:', error);
+  });
 
 }
 
+/** IpcContract に無いチャネル名・合わない引数/戻り値の登録をコンパイルエラーにする */
+function handleIpc<C extends keyof IpcContract>(
+  channel: C,
+  handler: (...args: Parameters<IpcContract[C]>) => ReturnType<IpcContract[C]>,
+): void {
+  ipcMain.handle(channel, (_event, ...args) => handler(...(args as Parameters<IpcContract[C]>)));
+}
+
 function registerIpcHandlers(): void {
-  ipcMain.handle(IPC_CHANNELS.appGetVersion, () => app.getVersion());
+  handleIpc(IPC_CHANNELS.appGetVersion, () => app.getVersion());
 }
 
 void app.whenReady().then(() => {

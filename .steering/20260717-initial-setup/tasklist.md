@@ -146,6 +146,19 @@ devcontainer での `npm run dev` 起動失敗を解決した。原因は2段階
 - `ERROR:...drm_render_node_path_finder.cc` (`drmGetDevices2() has not found any devices`): コンテナに GPU デバイス（`/dev/dri/*`）が渡されていないだけ。ソフトウェアレンダリングに自動フォールバックする。そもそもコンテナ内 dev はハードウェアアクセラレーション無効（`src/main/index.ts`）
 - どちらも devcontainer 特有で、配布パッケージ版を通常のデスクトップ環境で実行する際には出ない。握りつぶす細工はしない方針
 
+### 追記（2026-07-17 コードレビュー指摘の修正）
+
+/code-review（high）の指摘 21件（CONFIRMED 0・PLAUSIBLE 21）のうち上位6件を修正:
+
+1. `scripts/dev.mjs`: WAYLAND_DISPLAY 不在時に無言で X11（デッドロック既知）へ落ちず警告を出す
+2. `electron.vite.config.ts`: CSP 置換が不一致で無言 no-op にならないよう throw を追加
+3. `src/shared/ipc/contract.ts` 新設: IPC の引数・戻り値契約を単一ソース化。main は `handleIpc()`、preload は `invoke()` が契約から型導出（preload の `as Promise<string>` 手動キャスト廃止）
+4. `global.d.ts`: `window.solfaOverlay` をオプショナルに（ブラウザ直開きで undefined になる実態と一致）
+5. `src/main/index.ts`: loadURL/loadFile の失敗を catch してログ出力（無言の空ウィンドウ防止）
+6. `Home.tsx`: getAppVersion() に catch を追加（「取得中…」のまま固まる問題）
+
+未対応（低優先のクリーンアップ系・次回以降の候補）: MAJOR_SCALE_OFFSETS の導出化、DoPitch の Pick 化、SolfaEngine クラスの整理、v8-ignore 付き到達不能ガード、テストフィクスチャ共有化、setWindowOpenHandler/will-navigate ガード、コンテナ判定の共通化（Podman 対応）、firewall の wikipedia.org 要否確認
+
 ### 次回への改善提案
 - 次の作業単位の候補: (1) MusicXML パーサ + ScoreModelBuilder（フィクスチャ整備込み）、(2) ProjectStore + Zod スキーマ、(3) OmrRunner。(1) が SolfaEngine の成果を最短で繋げられる
 - 実機（GUI環境）での `npm run dev` 起動確認を次回作業の冒頭に行うこと。dev モードで CSP が @vitejs/plugin-react の HMR 用インラインスクリプトをブロックする可能性があり、その場合は「dev のみ緩和・本番は default-src 'self' 維持」の対応を検討する
