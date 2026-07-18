@@ -1,0 +1,30 @@
+# push / PR ごとの品質チェック: lint → typecheck → test（開発ガイドライン「品質自動化」）
+# E2E（Playwright）は develop / main への PR のみで実行する予定（E2Eテスト導入時に追加）
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # Electron バイナリは lint/typecheck/test に不要
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm run test

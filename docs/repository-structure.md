@@ -28,7 +28,7 @@ project-root/
 ├── scripts/               # ビルド・開発補助スクリプト
 ├── .github/
 │   └── workflows/         # CI/CD定義（品質チェック・リリースパッケージング）
-├── .steering/             # 作業単位の計画ドキュメント（Git管理外）
+├── .steering/             # 作業単位の計画ドキュメント（Git管理・履歴として保持）
 ├── .claude/               # Claude Code 設定（commands/skills/agents）
 ├── README.md              # プロジェクト概要・セットアップ手順の入口
 ├── LICENSE                # 本アプリ自体のライセンス
@@ -316,6 +316,8 @@ shared (型・定数)      shared (型・定数)
 
 **命名規則**: `20260713-add-solfa-engine` 形式
 
+**Git管理**: コミットして履歴として保持する。作業中の判断理由・トラブルシュートの知見（環境特有の問題と検証済みの不採用案など）が将来の作業の参照資料になるため。ただし著作権のある楽譜データや秘密情報は含めないこと
+
 ### .claude/ (Claude Code設定)
 
 ```
@@ -344,7 +346,6 @@ shared (型・定数)      shared (型・定数)
 
 - `node_modules/`
 - `dist/` / `out/`（ビルド成果物）
-- `.steering/`（作業単位の一時ドキュメント）
 - `resources/audiveris/` / `resources/jre/`（`scripts/fetch-resources.ts` で取得するためコミットしない）
 - `*.log`
 - `.DS_Store`

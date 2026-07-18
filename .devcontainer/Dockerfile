@@ -27,6 +27,31 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   vim \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Electron (Chromium) の実行に必要なシステムライブラリ
+# devcontainer 内で `npm run dev` するために必要（WSLg の Wayland 転送で画面表示する）
+# fonts-noto-cjk はウィンドウ内の日本語表示用（無いと豆腐になる）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+  libnss3 \
+  libnspr4 \
+  libatk1.0-0 \
+  libatk-bridge2.0-0 \
+  libcups2 \
+  libdrm2 \
+  libgtk-3-0 \
+  libgbm1 \
+  libasound2 \
+  libxcomposite1 \
+  libxdamage1 \
+  libxfixes3 \
+  libxrandr2 \
+  libxkbcommon0 \
+  fonts-noto-cjk \
+  && apt-get clean && rm -rf /var/lib/apt/lists/*
+# ※ コンテナ内での Chromium サンドボックス無効化（--no-sandbox）と Wayland 明示
+#   （--ozone-platform=wayland、X11 転送経由は起動デッドロックするため）は
+#   scripts/dev.mjs が実行時に判定して付与する
+#   （環境変数は VS Code ターミナルまで伝播しないことがあるため）
+
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
   chown -R node:node /usr/local/share
