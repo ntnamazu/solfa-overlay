@@ -211,6 +211,7 @@ Renderer → ファイルシステム  (NG)
 | audiveris（同梱バイナリ） | OMR | 完全固定。更新時は統合テストのフィクスチャ再生成と精度回帰確認を必須とする |
 | pdf-lib / pdfjs-dist | PDF入出力 | ^（マイナー自動）。出力PDFのスナップショットテストで回帰検知 |
 | fflate / zod | zip・検証 | ^（マイナー自動） |
+| fast-xml-parser | MusicXML / .omr sheet XML / book.xml の解析（サービスレイヤー） | ^（マイナー自動）。全 transitive 依存に network/fs/child_process コードがないことを追加時に確認済み（楽譜由来データの外部送信禁止に抵触しない） |
 | vitest / playwright / eslint | 開発ツール | ^。CIで検証 |
 
 **方針**:

@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  合成フィクスチャ: Audiveris の sheet XML（.omr 内 sheet#N.xml）を模した最小構造。
+  設計意図・座標の逆算根拠は README.md を参照。
+
+  構造: 1ページ・2システム（各システム 2 stack × 2 譜表）
+    - system 0: staff 11 = P1(TREBLE) / staff 12 = P2(BASS)  → 論理小節 0,1
+    - system 1: staff 21 = P1(TREBLE) / staff 22 = P2(BASS)  → 論理小節 2,3
+  座標はすべて 300dpi 画像ピクセル。符頭中心 x = bounds.x + trunc(w/2)（w=20 → +10）。
+  part@id は "1"/"2"（パーサが 'P' を前置 → P1/P2 で MusicXML の part id と一致）。
+  staff 22 の最終小節（論理小節3）だけ符頭を 3 個にして音符数不一致（skipped）を意図的に発生させる。
+-->
+<sheet number="1">
+  <page>
+    <system>
+      <stack left="100" right="500"/>
+      <stack left="500" right="900"/>
+      <part id="1">
+        <staff id="11">
+          <clef staff="11" kind="TREBLE"/>
+          <!-- 論理小節0 [100,500): G4, A4 -->
+          <head staff="11" pitch="2"><bounds x="150" y="300" w="20" h="16"/></head>
+          <head staff="11" pitch="1"><bounds x="400" y="300" w="20" h="16"/></head>
+          <!-- 論理小節1 [500,900): D5, B4（和音） -->
+          <head staff="11" pitch="-2"><bounds x="550" y="300" w="20" h="16"/></head>
+          <head staff="11" pitch="0"><bounds x="551" y="300" w="20" h="16"/></head>
+        </staff>
+      </part>
+      <part id="2">
+        <staff id="12">
+          <clef staff="12" kind="BASS"/>
+          <!-- 論理小節0 [100,500): G2 -->
+          <head staff="12" pitch="4"><bounds x="200" y="600" w="20" h="16"/></head>
+          <!-- 論理小節1 [500,900): C3, D3 -->
+          <head staff="12" pitch="1"><bounds x="550" y="600" w="20" h="16"/></head>
+          <head staff="12" pitch="0"><bounds x="700" y="600" w="20" h="16"/></head>
+        </staff>
+      </part>
+    </system>
+    <system>
+      <stack left="100" right="500"/>
+      <stack left="500" right="900"/>
+      <part id="1">
+        <staff id="21">
+          <clef staff="21" kind="TREBLE"/>
+          <!-- 論理小節2 [100,500): F#5, E5, C5 -->
+          <head staff="21" pitch="-4"><bounds x="150" y="1100" w="20" h="16"/></head>
+          <head staff="21" pitch="-3"><bounds x="250" y="1100" w="20" h="16"/></head>
+          <head staff="21" pitch="-1"><bounds x="380" y="1100" w="20" h="16"/></head>
+          <!-- 論理小節3 [500,900): G4 -->
+          <head staff="21" pitch="2"><bounds x="600" y="1100" w="20" h="16"/></head>
+        </staff>
+      </part>
+      <part id="2">
+        <staff id="22">
+          <clef staff="22" kind="BASS"/>
+          <!-- 論理小節2 [100,500): B2, E♭3 -->
+          <head staff="22" pitch="2"><bounds x="180" y="1400" w="20" h="16"/></head>
+          <head staff="22" pitch="-1"><bounds x="350" y="1400" w="20" h="16"/></head>
+          <!-- 論理小節3 [500,900): 意図的に 3 符頭（MusicXML は 2 音）→ 音符数不一致で skipped -->
+          <head staff="22" pitch="4"><bounds x="550" y="1400" w="20" h="16"/></head>
+          <head staff="22" pitch="3"><bounds x="650" y="1400" w="20" h="16"/></head>
+          <head staff="22" pitch="4"><bounds x="750" y="1400" w="20" h="16"/></head>
+        </staff>
+      </part>
+    </system>
+  </page>
+</sheet>

@@ -49,7 +49,7 @@ npm run build
 - [x] プロジェクト基盤（TypeScript strict / ESLint レイヤー境界 / Vitest / CI）
 - [x] Electron 最小シェル（ハードニング済み Main + 型付きIPC + React Renderer）
 - [x] SolfaEngine（階名計算コア: 度数＋変位の内部表現、コダーイ式 / Tonic sol-fa 略記の文字列化）
-- [ ] OmrRunner（Audiveris 統合）
-- [ ] ScoreModelBuilder（MusicXML × .omr 照合）
+- [x] ScoreModelBuilder（MusicXML × .omr 照合コア: MusicXmlParser / OmrSheetParser / clefTable による小節照合・音高クロスチェック。合成フィクスチャで通し回帰済み）
+- [ ] OmrRunner（Audiveris 統合: zip(.omr/.mxl) 展開・ヘッドレス実行・実 Victoria 楽譜フィクスチャ）
 - [ ] 確認画面（StructureConfirm / ClefKeyConfirm）
 - [ ] Editor（注釈修正UI）・PDF出力

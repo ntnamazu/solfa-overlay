@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 合成フィクスチャ: Audiveris の book.xml を模した最小構造（1 sheet・1ページ・単一 movement） -->
+<book>
+  <sheet number="1">
+    <page/>
+  </sheet>
+</book>
