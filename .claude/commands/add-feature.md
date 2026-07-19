@@ -100,10 +100,9 @@ description: 新機能を既存パターンに従って、完全に無停止で�
 
 1. 以下のコマンドを順番に実行し、全てのテストがパスすることを確認する。
   ```bash
-  Bash('docker compose build')
-  Bash('docker compose run --rm app npm test')
-  Bash('docker compose run --rm app npm run lint')
-  Bash('docker compose run --rm app npm run typecheck')
+  Bash('npm test')
+  Bash('npm run lint')
+  Bash('npm run typecheck')
   ```
 2. いずれかのコマンドでエラーが発生した場合は、問題を分析し、修正コードを生成・適用してから、再度このステップを実行する。
 
