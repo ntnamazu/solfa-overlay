@@ -1,0 +1,165 @@
+import { spawn as nodeSpawn } from 'node:child_process';
+import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { OmrArtifacts } from '../../domain/score/ScoreModelBuilder';
+import type { OmrProgress } from '../../shared/types/OmrProgress';
+import { buildAudiverisArgs, buildAudiverisEnv, parseProgressLine } from './audiverisCommand';
+import { OmrRunError } from './errors';
+import { assembleArtifacts } from './omrArchive';
+
+/**
+ * 子プロセスの最小インターフェース（node:child_process の ChildProcess の必要部分だけ）
+ *
+ * これを DI（差し替え可能）にすることで、Audiveris 非搭載の環境でも擬似プロセスを注入して
+ * run / cancel / 進捗通知のロジックを単体テストできる。
+ */
+export interface ChildLike {
+  stdout: { on(event: 'data', listener: (chunk: Buffer | string) => void): void } | null;
+  on(event: 'error', listener: (error: Error) => void): void;
+  on(event: 'close', listener: (code: number | null) => void): void;
+  kill(signal?: NodeJS.Signals): boolean;
+}
+
+/** 子プロセス起動関数の型（既定は node:child_process の spawn を包んだもの） */
+export type SpawnFn = (
+  command: string,
+  args: string[],
+  options: { env: NodeJS.ProcessEnv; shell: false },
+) => ChildLike;
+
+const DEFAULT_SPAWN: SpawnFn = (command, args, options) => nodeSpawn(command, args, options);
+
+/** 出力ディレクトリから `.mxl` を movement 順に並べるためのキー（`<name>.mvtN.mxl` の N。無ければ 0） */
+function movementOrder(fileName: string): number {
+  const match = /\.mvt(\d+)\.mxl$/i.exec(fileName);
+  return match === null ? 0 : Number.parseInt(match[1] ?? '', 10);
+}
+
+/**
+ * Audiveris をヘッドレス子プロセスとして実行し、成果物を `OmrArtifacts` に組み立てる（F-1 後半）
+ *
+ * 副作用（子プロセス・一時ファイル）の入口。純粋ロジック（コマンド組み立て・zip 展開・照合）は
+ * audiverisCommand / omrArchive / domain パーサへ委譲する。
+ *
+ * 注: 実 Audiveris の起動確認はホスト実機での手動検証とする（コンテナに Audiveris/JRE 非搭載）。
+ */
+export class OmrRunner {
+  private readonly spawn: SpawnFn;
+  private readonly audiverisPath: string;
+  private child: ChildLike | null = null;
+  private canceled = false;
+  private running = false;
+
+  constructor(deps?: { spawn?: SpawnFn; audiverisPath?: string }) {
+    this.spawn = deps?.spawn ?? DEFAULT_SPAWN;
+    // 同梱 Audiveris のパスは配布時に解決する。既定はコマンド名（PATH 解決）
+    this.audiverisPath = deps?.audiverisPath ?? 'audiveris';
+  }
+
+  /**
+   * PDF を OMR にかけ、成果物（MusicXML movements ＋ sheet ページ）を返す
+   *
+   * @param pdfPath - 入力 PDF の絶対パス
+   * @param onProgress - シート単位の進捗通知
+   * @throws OmrRunError 起動・実行・出力収集の失敗、またはキャンセル
+   */
+  async run(pdfPath: string, onProgress: (progress: OmrProgress) => void): Promise<OmrArtifacts> {
+    // 同一インスタンスの多重起動を防ぐ（可変状態 child/canceled の競合回避。IPC 誤多重起動対策）
+    if (this.running) {
+      throw new OmrRunError('OMR は既に実行中です');
+    }
+    this.running = true;
+    const outputDir = await mkdtemp(join(tmpdir(), 'solfa-omr-'));
+    try {
+      await this.execAudiveris(pdfPath, outputDir, onProgress);
+      const { omr, movements } = await this.collectOutputs(outputDir);
+      const artifacts = assembleArtifacts({ omr, movements });
+      onProgress({ phase: 'completed', sheet: null, totalSheets: null, message: '' });
+      return artifacts;
+    } finally {
+      this.child = null;
+      this.running = false;
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  }
+
+  /** 実行中の OMR をキャンセルする（子プロセスへ kill を送る） */
+  cancel(): void {
+    this.canceled = true;
+    this.child?.kill();
+  }
+
+  /** 子プロセスを起動し、close/error を Promise 化する。stdout を行単位で進捗通知する */
+  private execAudiveris(
+    pdfPath: string,
+    outputDir: string,
+    onProgress: (progress: OmrProgress) => void,
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.canceled = false;
+      let child: ChildLike;
+      try {
+        child = this.spawn(this.audiverisPath, buildAudiverisArgs(pdfPath, outputDir), {
+          env: buildAudiverisEnv(process.platform, process.env),
+          shell: false, // ユーザー入力を引数配列で渡す（シェル経由を禁止）
+        });
+      } catch (cause) {
+        reject(new OmrRunError('Audiveris の起動に失敗しました', { cause }));
+        return;
+      }
+      this.child = child;
+      // spawn 直後の 1 回（最初のログ受信まで）を starting として通知する
+      onProgress({ phase: 'starting', sheet: null, totalSheets: null, message: '' });
+
+      let buffer = '';
+      child.stdout?.on('data', (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() ?? ''; // 最後の未改行断片は次チャンクへ持ち越す
+        for (const line of lines) {
+          const progress = parseProgressLine(line);
+          if (progress !== null) {
+            onProgress(progress);
+          }
+        }
+      });
+
+      child.on('error', (error) => {
+        reject(new OmrRunError('Audiveris の実行でエラーが発生しました', { cause: error }));
+      });
+
+      child.on('close', (code) => {
+        if (this.canceled) {
+          reject(new OmrRunError('OMR がキャンセルされました'));
+        } else if (code === 0) {
+          resolve();
+        } else {
+          reject(new OmrRunError(`Audiveris が異常終了しました (exit code=${code})`));
+        }
+      });
+    });
+  }
+
+  /** 出力ディレクトリから `.omr` と `.mxl`（movement 昇順）を読み出す */
+  private async collectOutputs(
+    outputDir: string,
+  ): Promise<{ omr: Uint8Array; movements: Uint8Array[] }> {
+    const names = await readdir(outputDir);
+    const omrName = names.find((name) => name.toLowerCase().endsWith('.omr'));
+    if (omrName === undefined) {
+      throw new OmrRunError('Audiveris が .omr を出力しませんでした');
+    }
+    const mxlNames = names
+      .filter((name) => name.toLowerCase().endsWith('.mxl'))
+      .sort((a, b) => movementOrder(a) - movementOrder(b));
+    if (mxlNames.length === 0) {
+      throw new OmrRunError('Audiveris が .mxl を出力しませんでした');
+    }
+    const omr = new Uint8Array(await readFile(join(outputDir, omrName)));
+    const movements = await Promise.all(
+      mxlNames.map(async (name) => new Uint8Array(await readFile(join(outputDir, name)))),
+    );
+    return { omr, movements };
+  }
+}

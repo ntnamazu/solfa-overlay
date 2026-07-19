@@ -180,8 +180,16 @@ Renderer → ファイルシステム  (NG)
 - **カバレッジ目標**: サービスレイヤーのコアロジック 90%以上
 
 ### 統合テスト
-- **方法**: パブリックドメイン楽譜（Victoria《O magnum mysterium》）の OMR 成果物をフィクスチャとして同梱し、照合→階名→PDF出力を回帰テスト化（期待値: 784音・ミスマッチ0・skipped 5小節）
-- **対象**: パイプライン全体、プロジェクトファイルの保存→再読込の同一性
+- **方法**: パブリックドメイン楽譜（Victoria《O magnum mysterium》）の実 Audiveris 5.6.1 成果物を
+  フィクスチャとして同梱し、パース→照合を回帰テスト化（実測値: matched 295小節・808音・
+  クロスチェック不一致0・skipped 1小節。根拠は `tests/fixtures/victoria/README.md`）。
+  数値は Audiveris バージョンに依存するため、更新時はフィクスチャ再生成と差分レビューを行う。
+- **divisi ベースライン**: SSAATTBB divisi 曲（PD）の実成果物も同梱するが、声部の段階的入りによる
+  構造誤分割のため BookStructureResolver 実装（別フェーズ）までは大量 skip となる。現状値を
+  「Phase 2 前ベースライン」として固定する（`tests/fixtures/divisi/README.md`）。
+- **対象**: パース→照合パイプライン、プロジェクトファイルの保存→再読込の同一性（後者は後続フェーズ）
+- **申し送り**: 本物の Audiveris 起動を伴う E2E はコンテナでは不可（Audiveris/JRE 非搭載）。ホスト
+  実機での手動確認に委ねる。OmrRunner は spawn を DI 化し、子プロセス以外のロジックを単体テスト化。
 
 ### E2Eテスト
 - **ツール**: Playwright（Electron ドライバ）

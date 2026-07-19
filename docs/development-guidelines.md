@@ -235,8 +235,8 @@ describe('SolfaEngine', () => {
 
 **対象**: パイプライン全体（OMR成果物フィクスチャ → 照合 → 階名 → PDF出力）
 
-- 検証済み題材（Victoria《O magnum mysterium》）の定量回帰: 784音・音高ミスマッチ0・skipped 5小節を期待値として固定する
-- Audiveris 本体はテストで実行しない（フィクスチャ化した出力を使う）。Audiveris 更新時のみ `scripts/generate-fixtures.ts` で再生成し、差分をレビューする
+- 検証済み題材（Victoria《O magnum mysterium》）の実 Audiveris 出力で定量回帰: matched 295小節・808音・音高クロスチェック不一致0・skipped 1小節（実測値。`tests/fixtures/victoria/README.md` を正とする）。数値は Audiveris バージョン依存のため更新時は差分レビュー必須
+- Audiveris 本体はテストで実行しない（フィクスチャ化した出力を使う）。Audiveris 更新時はフィクスチャを再生成し、差分をレビューする
 
 #### E2Eテスト（Playwright）
 

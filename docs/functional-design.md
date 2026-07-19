@@ -223,12 +223,30 @@ erDiagram
 **インターフェース**:
 ```typescript
 class OmrRunner {
+  // 子プロセス起動（spawn）は DI 可能。既定は node:child_process.spawn を shell:false で使用
+  constructor(deps?: { spawn?: SpawnFn; audiverisPath?: string });
   run(pdfPath: string, onProgress: (p: OmrProgress) => void): Promise<OmrArtifacts>;
   cancel(): void;
 }
 ```
 
-**依存関係**: Audiveris（子プロセス）
+**実装の構成**（`src/main/omr/`）:
+- `OmrRunner.ts`: オーケストレーション（副作用の入口）。一時ディレクトリ作成→spawn→stdout 行を
+  `parseProgressLine` で進捗化→正常終了後に出力を収集→`assembleArtifacts`→後片付け。
+- `audiverisCommand.ts`（純粋）: `buildAudiverisArgs`（引数配列。`--` 以降に PDF パスを分離）/
+  `buildAudiverisEnv`（`-Djava.awt.headless=true`、Linux は `GDK_SCALE=1`）/ `parseProgressLine`。
+- `omrArchive.ts`（純粋）: fflate による zip 展開（パストラバーサル拒否）と `assembleArtifacts`
+  （`.omr`→`sheet#N/sheet#N.xml` を N 昇順にページ化、`.mxl`→`META-INF/container.xml` 経由で本体
+  MusicXML を取り出す）。domain のパーサへ委譲。
+- `errors.ts`: `OmrRunError`（起動・実行・出力収集の失敗）/ `OmrArchiveError`（zip・パストラバーサル）。
+- 進捗型は `src/shared/types/OmrProgress.ts`（`phase` / `sheet` / `totalSheets` / `message`）。
+
+**依存関係**: Audiveris（子プロセス）、fflate（zip）
+
+> **申し送り**: 本物の Audiveris を起動しての E2E 動作確認は、コンテナに Audiveris/JRE が非搭載の
+> ため実施できず、ホスト実機での手動確認に委ねる（GUI 起動確認と同じ扱い）。DI した spawn に
+> 擬似プロセスを注入し、進捗パース・zip 展開・成果物組み立て・キャンセルは単体テスト済み。
+> `parseProgressLine` のログ書式は代表パターンで実装しており、実ログでの調整余地がある。
 
 ### BookStructureResolver
 
@@ -411,8 +429,14 @@ function computeDegree(note: Pitch, region: KeyRegion, basis: 'la' | 'do'): Solf
 
 1. sheet XML の `part id`（= book.xml の logical-id）で譜表→パートを対応付ける
 2. パート×小節ごとに、MusicXMLの発音音符数と.omrの符頭数を比較する
-3. 一致: 同 offset の音群を「同時に鳴る列」として時間順に並べ、x 昇順の符頭を列サイズどおり先頭から貪欲に切り出す（総数一致を照合済みのため x 距離の閾値は不要）。列内は縦位置（符頭の譜表位置 × 幹音の絶対音高、いずれも高い音から）で対にする。これにより和音・オクターブ重複 divisi・異リズム多声（backup/forward）でも対応が一意に決まる。対ごとに .omr符頭の譜表位置（中線=0・下向き正）＋確認済み音部記号から音名を逆算して MusicXML の音名とクロスチェックする（プロトタイプ実測: 784音中不一致0）
-4. 不一致: 当該小節を `skipped` とし、修正UIの一覧に登録する（プロトタイプ実測: 約296パート小節中5小節）。ユニゾン共有符頭（1符頭に2声部）も現状はこの扱い（照合の緩和は実フィクスチャでの Audiveris 実出力確認後に判断）
+3. 一致: 同 offset の音群を「同時に鳴る列」として時間順に並べ、x 昇順の符頭を列サイズどおり先頭から貪欲に切り出す（総数一致を照合済みのため x 距離の閾値は不要）。列内は縦位置（符頭の譜表位置 × 幹音の絶対音高、いずれも高い音から）で対にする。これにより和音・オクターブ重複 divisi・異リズム多声（backup/forward）でも対応が一意に決まる。対ごとに .omr符頭の譜表位置（中線=0・下向き正）＋確認済み音部記号から音名を逆算して MusicXML の音名とクロスチェックする（実 Audiveris フィクスチャ Victoria で 808音・クロスチェック不一致0 を確認。`tests/fixtures/victoria/`）
+4. 不一致: 当該小節を `skipped` とし、修正UIの一覧に登録する（Victoria 実測: 295 matched 中 skipped 1 小節）。ユニゾン共有符頭（1符頭に2声部）も現状はこの扱い（照合の緩和は実フィクスチャでの Audiveris 実出力確認後に判断）
+
+> **実データ検証の限界（2026-07 時点）**: 上記の列対付けの正しさは、声部の段階的入りを含む
+> divisi 曲（`tests/fixtures/divisi/`）では**構造の誤分割**により単独では検証しきれない。
+> ScoreModelBuilder は「全パートが全システムに存在する」前提で通し小節番号を累積するため、
+> 遅れて入るパートの小節番号がずれる。これは BookStructureResolver（確定構造の復元）で解消する
+> 想定であり、divisi の完全な列対付け検証はその実装後に持ち越す。
 
 ### 注釈配置と衝突回避（AnnotationManager）
 
@@ -593,7 +617,8 @@ score.solfaproj/
 
 ### 統合テスト
 
-- 検証済み題材（Victoria《O magnum mysterium》= パブリックドメイン）を固定入力とし、OMR→照合→階名→PDF出力のパイプライン全体を回帰テスト化する（期待値: 784音・ミスマッチ0・skipped 5小節）
+- 検証済み題材（Victoria《O magnum mysterium》= パブリックドメイン）の実 Audiveris 出力を固定入力とし、パース→照合を回帰テスト化する（実測値: matched 295小節・808音・クロスチェック不一致0・skipped 1小節。正確な期待値と根拠は `tests/fixtures/victoria/README.md` を正とする。数値は Audiveris バージョンに依存するため、更新時はフィクスチャ再生成と差分レビューを行う）
+- OMR→照合→階名→PDF出力の全パイプライン結合は、後続フェーズ（階名結線・PDF出力）実装時に拡張する
 - プロジェクトファイルの保存→再読込の同一性
 
 ### E2Eテスト

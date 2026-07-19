@@ -157,7 +157,10 @@ tests/unit/
 ```
 tests/integration/
 ├── pipeline/
-│   └── victoria-regression.test.ts  # 784音・ミスマッチ0・skipped 5小節を期待値とする
+│   ├── synthetic-mini.test.ts       # 合成フィクスチャの通し回帰（パース→照合）
+│   ├── realFixtureHelpers.ts        # 実 .omr/.mxl → 照合まで走らせる共有ヘルパー
+│   ├── victoria-regression.test.ts  # 実 Audiveris: matched295・808音・不一致0・skipped1
+│   └── divisi-regression.test.ts    # SSAATTBB divisi: Phase2 前ベースライン（構造誤分割）
 └── project-file/
     └── save-load-roundtrip.test.ts
 ```
@@ -180,12 +183,19 @@ tests/e2e/
 
 ```
 tests/fixtures/
-└── victoria-o-magnum/
-    ├── source.pdf         # IMSLP #19716（パブリックドメイン）
-    ├── score.mxl          # Audiveris 出力（固定バージョンで生成）
-    ├── score.omr
-    └── expected/          # 期待値（annotations 等）
+├── synthetic-mini/       # 手作りの最小データ（パーサ通し回帰用）
+├── victoria/             # Victoria《O magnum mysterium》= PD（実 Audiveris 5.6.1 出力）
+│   ├── IMSLP19716.omr        # book 出力（PNG 除去の slim 版）
+│   ├── IMSLP19716.mvt1.mxl   # movement 1（インチピット）
+│   ├── IMSLP19716.mvt2.mxl   # movement 2（本体 SATB）
+│   └── README.md             # 実測値の根拠・プロトタイプ実測との差分
+└── divisi/               # The Message of the Angels（Reed, 1919）= PD
+    ├── IMSLP175782.omr       # book 出力（slim 版・20ページ8パート）
+    ├── IMSLP175782.mxl       # 単一 movement
+    └── README.md             # Phase2 前ベースラインの根拠・構造誤分割の記録
 ```
+> Audiveris 出力（`.omr`/`.mxl`）は zip。`.omr` 内の生画像（`BINARY.png`）はリポジトリ肥大化
+> 防止のため除去した slim 版を置く（パーサが読むのは XML のみで回帰結果に影響しない）。
 
 ### docs/ (ドキュメントディレクトリ)
 
