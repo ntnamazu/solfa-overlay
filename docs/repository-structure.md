@@ -93,7 +93,7 @@ project-root/
 **役割**: OMR成果物の照合・階名計算・注釈管理・PDF合成というドメインロジック。**Electron 非依存の純粋 TypeScript** に保ち、ユニットテスト容易性を担保する
 
 **配置ファイル**:
-- `score/`: `ScoreModelBuilder.ts`, `MusicXmlParser.ts`, `OmrSheetParser.ts`, `BookStructureResolver.ts`（誤分割復元）
+- `score/`: `ScoreModelBuilder.ts`, `MusicXmlParser.ts`, `OmrSheetParser.ts`, `BookStructureResolver.ts`（段ごとの小節番号アンカーの確定）
 - `solfa/`: `SolfaEngine.ts`, `syllableTables.ts`（コダーイ式/Tonic sol-fa の文字列化表）
 - `annotations/`: `AnnotationManager.ts`, `placementResolver.ts`（衝突回避）
 - `render/`: `OverlayRenderer.ts`, `coordinateTransform.ts`（.omr px → PDF pt）
@@ -160,7 +160,7 @@ tests/integration/
 │   ├── synthetic-mini.test.ts       # 合成フィクスチャの通し回帰（パース→照合）
 │   ├── realFixtureHelpers.ts        # 実 .omr/.mxl → 照合まで走らせる共有ヘルパー
 │   ├── victoria-regression.test.ts  # 実 Audiveris: matched295・808音・不一致0・skipped1
-│   └── divisi-regression.test.ts    # SSAATTBB divisi: Phase2 前ベースライン（構造誤分割）
+│   └── divisi-regression.test.ts    # SSAATTBB divisi: 構造解決後 matched1029・3500音・skipped135
 └── project-file/
     └── save-load-roundtrip.test.ts
 ```
@@ -192,7 +192,7 @@ tests/fixtures/
 └── divisi/               # The Message of the Angels（Reed, 1919）= PD
     ├── IMSLP175782.omr       # book 出力（slim 版・20ページ8パート）
     ├── IMSLP175782.mxl       # 単一 movement
-    └── README.md             # Phase2 前ベースラインの根拠・構造誤分割の記録
+    └── README.md             # 実測値の根拠・真因（小節番号ドリフト）と残る限界の記録
 ```
 > Audiveris 出力（`.omr`/`.mxl`）は zip。`.omr` 内の生画像（`BINARY.png`）はリポジトリ肥大化
 > 防止のため除去した slim 版を置く（パーサが読むのは XML のみで回帰結果に影響しない）。

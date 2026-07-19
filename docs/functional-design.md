@@ -258,12 +258,53 @@ class OmrRunner {
 **インターフェース**:
 ```typescript
 class BookStructureResolver {
-  detect(artifacts: OmrArtifacts): StructureIssue[];   // 誤分割の検出と復元候補の生成
-  resolve(artifacts: OmrArtifacts, decisions: StructureDecision[]): ResolvedStructure;
+  // 構造上の問題の検出（例外は投げず StructureIssue[] を返す）
+  detect(artifacts: OmrArtifacts, bookPages: BookPageRef[]): StructureIssue[];
+  // 確定構造の組み立て（decisions 省略時は検出結果をそのまま採用）
+  resolve(
+    artifacts: OmrArtifacts,
+    bookPages: BookPageRef[],
+    decisions?: StructureDecision[],
+  ): ResolvedStructure;
 }
 ```
 
-**依存関係**: OmrRunner の成果物（book.xml・sheet XML）
+> `bookPages`（`parseBookXml` の結果）を引数に取るのは、movement とページの対応が book.xml に
+> しかないため。`OmrArtifacts` を汚さず、既存パーサの戻り値をそのまま渡せる形にしている。
+
+**中核: 段ごとの小節番号アンカー**
+
+`resolve` の要点は、**段（システム）ごとの通し小節番号をここで確定させる**ことにある。
+段の小節数は「ユーザー判断 → MusicXML の段レイアウト（`<print new-system>` / `<print new-page>`）
+→ .omr の stack 数」の順に決まり、必ず値が決まる。
+
+これは実データで裏付けられた設計判断である。divisi 実フィクスチャでは 20 ページ中 2 段だけ
+.omr の stack 数が MusicXML より 1 つ多く、ScoreModelBuilder が stack 数を累積していたために
+そのズレが以降の全ページへ波及していた（skipped 561）。アンカー方式でズレが当該段に閉じ、
+skipped 135・照合音符 3500 へ改善した（`tests/fixtures/divisi/README.md`）。
+
+**検出する StructureIssue**:
+
+| kind | 内容 |
+| --- | --- |
+| `movementCountMismatch` | book.xml の movement 分割数と MusicXML の数が違う |
+| `pageCountMismatch` | movement のページ数が MusicXML のページ数と違う |
+| `systemCountMismatch` | ページ内の段数が MusicXML の段数と違う |
+| `systemMeasureCountMismatch` | 段の stack 数が MusicXML の小節数と違う（MusicXML 側を採用） |
+| `inconsistentSystemStaffCount` | 同一ページ内で段ごとの譜表数が不揃い（段検出が疑わしい警告） |
+| `pageCorrespondenceMismatch` | book.xml のページ数と sheet XML を持つページ数が違う（下記） |
+
+> **ページ対応が壊れている場合**: `OmrArtifacts.pages` は sheet XML を持つページだけを連結した
+> 配列のため、book.xml のページ数と一致するときに限り「k 番目 ↔ k 番目」の対応が成立する。
+> 数が違う場合、どのページが欠けたかはこの情報だけでは決められないので、
+> **推測でアンカーせず** .omr の stack 数へフォールバックし、`pageCorrespondenceMismatch` で報告する
+> （黙って小節番号をずらさない）。detect と resolve はこの対応づけ規則を共有する。
+
+> **誤分割の統合について**: Audiveris が 1 つの物理システムを複数の system に分断することが実際に
+> あるが、**MusicXML 側も同じ分断で出力される**ため、OMR 側だけを統合すると整合が崩れる。
+> 現状は `inconsistentSystemStaffCount` として検出・報告するに留め、自動統合は行わない。
+
+**依存関係**: OmrRunner の成果物（book.xml・sheet XML）、MusicXmlParser の段レイアウト
 
 ### ScoreModelBuilder
 
@@ -432,11 +473,33 @@ function computeDegree(note: Pitch, region: KeyRegion, basis: 'la' | 'do'): Solf
 3. 一致: 同 offset の音群を「同時に鳴る列」として時間順に並べ、x 昇順の符頭を列サイズどおり先頭から貪欲に切り出す（総数一致を照合済みのため x 距離の閾値は不要）。列内は縦位置（符頭の譜表位置 × 幹音の絶対音高、いずれも高い音から）で対にする。これにより和音・オクターブ重複 divisi・異リズム多声（backup/forward）でも対応が一意に決まる。対ごとに .omr符頭の譜表位置（中線=0・下向き正）＋確認済み音部記号から音名を逆算して MusicXML の音名とクロスチェックする（実 Audiveris フィクスチャ Victoria で 808音・クロスチェック不一致0 を確認。`tests/fixtures/victoria/`）
 4. 不一致: 当該小節を `skipped` とし、修正UIの一覧に登録する（Victoria 実測: 295 matched 中 skipped 1 小節）。ユニゾン共有符頭（1符頭に2声部）も現状はこの扱い（照合の緩和は実フィクスチャでの Audiveris 実出力確認後に判断）
 
-> **実データ検証の限界（2026-07 時点）**: 上記の列対付けの正しさは、声部の段階的入りを含む
-> divisi 曲（`tests/fixtures/divisi/`）では**構造の誤分割**により単独では検証しきれない。
-> ScoreModelBuilder は「全パートが全システムに存在する」前提で通し小節番号を累積するため、
-> 遅れて入るパートの小節番号がずれる。これは BookStructureResolver（確定構造の復元）で解消する
-> 想定であり、divisi の完全な列対付け検証はその実装後に持ち越す。
+**通し小節番号は累積しない**: 小節番号は `ResolvedStructure` の段アンカー
+（`firstMeasureIndex` + stack 添字）から引く。段の `measureCount` と .omr の stack 数は食い違い得るため、
+両方向を issue にする（いずれも段の中で閉じ、後続段の番号には影響しない）:
+
+| 状況 | 扱い |
+| --- | --- |
+| stack はあるが対応する論理小節がない | `measureOutOfRange`（その stack を捨てる） |
+| 論理小節はあるが対応する stack がない | `measureNotDetected` ＋ 当該小節を `skipped` として残す |
+
+後者を `skipped` として残すのは、黙って小節を欠落させると `SystemInfo.measureCount` が
+ScoreModel の実態と食い違い、下流（OverlayRenderer・手動修正UI）が存在しない小節を参照するため。
+
+**構造の契約検証**: movement 間で通し小節番号が重複する `ResolvedStructure` は、別 movement の音符が
+同じ `Measure` に混入するため例外にする（認識エラーではなく呼び出し側の契約違反）。
+movement の先頭小節は段の並び順に依存しないよう `firstMeasureIndex` の最小値を採る。
+
+> **実データ検証の限界（2026-07 時点）**: divisi 曲（`tests/fixtures/divisi/`）では構造解決後も
+> クロスチェック不一致が 569 件残る。その 86%（487件）は「MusicXML の音名が .omr 由来より
+> 幹音 1 つ低い」という系統的なズレで、402 件が P6 に集中している。P6 は 35 段で `ALTO`
+> （ハ音記号）と検出されており、アルト記号の中線 C4 とト音記号の中線 B4 はちょうど幹音 1 つ違う。
+> つまりこれは**音部記号の誤検出**であり、列対付けの取り違えではない。ClefKeyConfirm（F-2）で
+> ユーザーが修正する対象であり、ScoreModelBuilder は既に `ConfirmationState` の clef 修正値を
+> 受け取れる。
+>
+> 併せて、Audiveris が段ごとに譜表→パート id を割り当て直す現象も残る。MusicXML 側も同じ割当で
+> 出力されるため OMR 側だけの再割当では整合が取れず、正しい声部同定には MusicXML のパート
+> 再スライスが必要（現時点ではスコープ外）。
 
 ### 注釈配置と衝突回避（AnnotationManager）
 

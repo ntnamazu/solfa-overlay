@@ -6,6 +6,20 @@ import { attr, find, findAll, findText, parseXml } from './xmlTree';
 /** MusicXML から抽出した論理情報（1ファイル = Audiveris の 1 movement） */
 export interface ParsedMusicXml {
   parts: MusicXmlPart[];
+  /** `<print>` が表現する段レイアウト（ページ順・段順）。BookStructureResolver のアンカー材料 */
+  layout: MusicXmlSystemLayout[];
+}
+
+/** MusicXML が表現する段（システム）1 つ分のレイアウト */
+export interface MusicXmlSystemLayout {
+  /** この MusicXML（movement）内のページ順（0始まり） */
+  pageIndex: number;
+  /** ページ内の段順（0始まり） */
+  systemIndex: number;
+  /** この MusicXML（movement）内での 0 始まりの先頭小節番号 */
+  firstMeasureIndex: number;
+  /** この段に属する小節数 */
+  measureCount: number;
 }
 
 export interface MusicXmlPart {
@@ -135,6 +149,50 @@ function parseMeasure(
 }
 
 /**
+ * measure 要素列から段レイアウトを導出する
+ *
+ * `<print>` を一切持たない MusicXML（合成フィクスチャ等）では「1 ページ・1 段・全小節」を返す。
+ * これは BookStructureResolver 側で OMR の stack 数へフォールバックさせるための素直な既定値
+ */
+function buildLayout(measureElements: XmlElement[]): MusicXmlSystemLayout[] {
+  const layout: MusicXmlSystemLayout[] = [];
+  let pageIndex = 0;
+  let systemIndex = 0;
+  let firstMeasureIndex = 0;
+  let measureCount = 0;
+
+  const flush = (startsNewPage: boolean): void => {
+    if (measureCount === 0) {
+      return; // 先頭小節の <print> で空の段を作らない
+    }
+    layout.push({ pageIndex, systemIndex, firstMeasureIndex, measureCount });
+    firstMeasureIndex += measureCount;
+    measureCount = 0;
+    if (startsNewPage) {
+      pageIndex += 1;
+      systemIndex = 0;
+    } else {
+      systemIndex += 1;
+    }
+  };
+
+  for (const measureElement of measureElements) {
+    const print = find(measureElement, 'print');
+    if (print !== null) {
+      // new-page は暗黙に段の開始でもある（ページ先頭は必ず段先頭）
+      if (attr(print, 'new-page') === 'yes') {
+        flush(true);
+      } else if (attr(print, 'new-system') === 'yes') {
+        flush(false);
+      }
+    }
+    measureCount += 1;
+  }
+  flush(false);
+  return layout;
+}
+
+/**
  * score-partwise の MusicXML 文字列をパースする
  *
  * ファイル I/O・zip（.mxl）展開は行わない（編成レイヤーが展開済みの XML 文字列を渡す）
@@ -152,16 +210,23 @@ export function parseMusicXml(xml: string): ParsedMusicXml {
   }
   const partNames = parsePartNames(root);
   const parts: MusicXmlPart[] = [];
+  // 段レイアウトは小節数が最大のパートから導出する（Audiveris 出力ではパートによって最終小節が
+  // 欠けることがあり[divisi 実データの P7 は 328・他は 329]、常に第1パートを使うと最終段を取り逃がす）
+  let layoutSource: XmlElement[] = [];
   for (const partElement of findAll(root, 'part')) {
     const id = attr(partElement, 'id');
     if (id === null) {
       throw new ScoreParseError('part 要素に id 属性がありません', 'musicxml');
     }
     const state: MeasureParseState = { divisions: 1 };
-    const measures = findAll(partElement, 'measure').map((measureElement, index) =>
+    const measureElements = findAll(partElement, 'measure');
+    const measures = measureElements.map((measureElement, index) =>
       parseMeasure(measureElement, index, state),
     );
+    if (measureElements.length > layoutSource.length) {
+      layoutSource = measureElements;
+    }
     parts.push({ id, name: partNames.get(id) ?? id, measures });
   }
-  return { parts };
+  return { parts, layout: buildLayout(layoutSource) };
 }

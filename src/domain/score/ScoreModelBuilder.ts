@@ -64,6 +64,14 @@ export type BuildIssue =
       pageIndex: number;
       systemIndex: number;
       measureIndex: number;
+    }
+  | {
+      /** 確定構造が存在を主張する小節に対応する stack が .omr にない（小節線の検出漏れ等） */
+      kind: 'measureNotDetected';
+      partId: string;
+      pageIndex: number;
+      systemIndex: number;
+      measureIndex: number;
     };
 
 /** 確認画面の clef 修正値を (page, system, staff) で引くためのキー */
@@ -81,11 +89,6 @@ function collectClefCorrections(confirmation: ConfirmationState): Map<string, st
     }
   }
   return corrections;
-}
-
-/** movement の論理小節数（パート間で最大値。通し小節番号の累積に使う） */
-function measureCountOf(musicXml: ParsedMusicXml): number {
-  return musicXml.parts.reduce((max, part) => Math.max(max, part.measures.length), 0);
 }
 
 interface BuildContext {
@@ -217,8 +220,12 @@ function matchStack(
 
 /** システム内の走査位置（buildStaff へ渡す文脈） */
 interface SystemPosition {
-  globalMeasureBase: number;
-  movementCursor: number;
+  /** この movement の先頭小節の通し小節番号（MusicXML のローカル小節番号を引くのに使う） */
+  movementFirstMeasureIndex: number;
+  /** この段の先頭小節の通し小節番号（BookStructureResolver が確定させた値） */
+  firstMeasureIndex: number;
+  /** この段が担当する論理小節数（超過した stack は段内で隔離する） */
+  measureCount: number;
   pageIndex: number;
   systemIndex: number;
 }
@@ -229,6 +236,9 @@ interface SystemPosition {
  *
  * 譜表構造は BookStructureResolver の確定結果（ResolvedStructure）を前提とし、
  * 音部記号は確認画面（ClefKeyConfirm）の修正値を優先して解決する
+ *
+ * 通し小節番号は **ResolvedStructure の段アンカーから引くだけ**で、ここでは stack 数を累積しない。
+ * 累積すると 1 段の検出のブレが以降の全小節へ波及するため（divisi 実データで実証）
  */
 export class ScoreModelBuilder {
   build(
@@ -240,7 +250,8 @@ export class ScoreModelBuilder {
     const systems: SystemInfo[] = [];
     const corrections = collectClefCorrections(confirmation);
 
-    let globalMeasureBase = 0;
+    /** ここまでに確定した通し小節番号の終端（movement 間の重複検知に使う） */
+    let previousMovementEnd = 0;
     for (const movement of structure.movements) {
       const musicXml = artifacts.movements[movement.musicXmlIndex]?.musicXml;
       if (musicXml === undefined) {
@@ -254,30 +265,45 @@ export class ScoreModelBuilder {
           context.parts.set(part.id, { id: part.id, name: part.name, staves: [] });
         }
       }
-      let movementCursor = 0;
-      for (const pageIndex of movement.pageIndices) {
-        const page = artifacts.pages[pageIndex];
-        if (page === undefined) {
-          throw new Error(`ResolvedStructure が指すページがありません: ${pageIndex}`);
+      // movement の先頭小節（MusicXML のローカル小節番号を引く基準）。段の並び順に依存しないよう
+      // 最小値を採る。movement 間で通し小節番号が重なると別 movement の音符が同じ Measure に
+      // 混ざるため、契約違反として拒否する（呼び出し側が組んだ構造の健全性チェック）
+      const movementFirstMeasureIndex = movement.systems.reduce(
+        (min, system) => Math.min(min, system.firstMeasureIndex),
+        Number.POSITIVE_INFINITY,
+      );
+      if (movement.systems.length > 0) {
+        if (movementFirstMeasureIndex < previousMovementEnd) {
+          throw new Error(
+            `ResolvedStructure の movement 間で通し小節番号が重複しています: ` +
+              `${movementFirstMeasureIndex} < ${previousMovementEnd}`,
+          );
         }
-        for (const [systemIndex, system] of page.systems.entries()) {
-          systems.push({
-            pageIndex,
-            systemIndex,
-            firstMeasureIndex: globalMeasureBase + movementCursor,
-            measureCount: system.stacks.length,
-          });
-          this.buildSystem(context, musicXml, system.staves, system.stacks, corrections, {
-            globalMeasureBase,
-            movementCursor,
-            pageIndex,
-            systemIndex,
-          });
-          movementCursor += system.stacks.length;
-        }
+        previousMovementEnd = movement.systems.reduce(
+          (end, system) => Math.max(end, system.firstMeasureIndex + system.measureCount),
+          previousMovementEnd,
+        );
       }
-      // 通し小節番号は MusicXML の論理小節数で累積する（OMR 側のページ欠落に影響されない）
-      globalMeasureBase += measureCountOf(musicXml);
+      for (const resolvedSystem of movement.systems) {
+        const { pageIndex, systemIndex } = resolvedSystem;
+        const system = artifacts.pages[pageIndex]?.systems[systemIndex];
+        if (system === undefined) {
+          throw new Error(`ResolvedStructure が指す段がありません: ${pageIndex}:${systemIndex}`);
+        }
+        systems.push({
+          pageIndex,
+          systemIndex,
+          firstMeasureIndex: resolvedSystem.firstMeasureIndex,
+          measureCount: resolvedSystem.measureCount,
+        });
+        this.buildSystem(context, musicXml, system.staves, system.stacks, corrections, {
+          movementFirstMeasureIndex,
+          firstMeasureIndex: resolvedSystem.firstMeasureIndex,
+          measureCount: resolvedSystem.measureCount,
+          pageIndex,
+          systemIndex,
+        });
+      }
     }
 
     return { score: assemble(context, systems), issues: context.issues };
@@ -347,13 +373,36 @@ export class ScoreModelBuilder {
     position: SystemPosition,
     staffRole: { ordinal: number; isMultiStaffPart: boolean },
   ): void {
-    for (const [stackIndex, stack] of stacks.entries()) {
-      const localMeasure = position.movementCursor + stackIndex;
-      const globalMeasureIndex = position.globalMeasureBase + localMeasure;
-      const xmlMeasure = xmlPart.measures[localMeasure];
+    // 確定構造の小節数と .omr の stack 数は食い違い得るため、両方を覆う範囲を走査して
+    // 「stack はあるが小節がない」「小節はあるが stack がない」の両方を issue にする
+    // （どちらも段の中で閉じるため、後続段の小節番号はずれない）
+    const localCount = Math.max(stacks.length, position.measureCount);
+    for (let localIndex = 0; localIndex < localCount; localIndex += 1) {
+      const globalMeasureIndex = position.firstMeasureIndex + localIndex;
+      const localMeasure = globalMeasureIndex - position.movementFirstMeasureIndex;
+      const xmlMeasure =
+        localIndex < position.measureCount ? xmlPart.measures[localMeasure] : undefined;
+      const stack = stacks[localIndex];
+      if (stack === undefined && xmlMeasure === undefined) {
+        continue; // .omr にも MusicXML にも実体がない＝失われた情報はない
+      }
       if (xmlMeasure === undefined) {
         context.issues.push({
           kind: 'measureOutOfRange',
+          partId: staff.partId,
+          pageIndex: position.pageIndex,
+          systemIndex: position.systemIndex,
+          measureIndex: globalMeasureIndex,
+        });
+        continue;
+      }
+      if (stack === undefined) {
+        // 小節の存在は確定しているので skipped として残す（黙って欠落させず修正UIの対象にする）
+        const measure = ensureMeasure(context, staff.partId, globalMeasureIndex);
+        measure.status = 'skipped';
+        measure.notes = [];
+        context.issues.push({
+          kind: 'measureNotDetected',
           partId: staff.partId,
           pageIndex: position.pageIndex,
           systemIndex: position.systemIndex,

@@ -214,11 +214,13 @@
 
 ### BookStructureResolver
 
-**定義**: book.xml と sheet XML から、インチピット等による譜表構造の誤分割を検出・復元し、確定構造（`ResolvedStructure`）を出力するコンポーネント
+**定義**: book.xml・sheet XML と MusicXML の段レイアウトを突き合わせて譜表構造の問題を検出し、**段ごとの通し小節番号を確定させた**構造（`ResolvedStructure`）を出力するコンポーネント
 
 **所属**: サービスレイヤー（`src/domain/score/BookStructureResolver.ts`）
 
-**関連用語**: インチピット、確認画面（StructureConfirm）
+**補足**: 段の小節番号を構造側で確定させることで、Audiveris の段検出のブレ（ある段だけ stack が 1 つ多い等）が以降の全小節へ波及するのを防ぐ。誤分割そのものの自動統合は行わず、`StructureIssue` として確認画面に報告する
+
+**関連用語**: インチピット、確認画面（StructureConfirm）、ScoreModelBuilder
 
 ### ScoreModelBuilder
 

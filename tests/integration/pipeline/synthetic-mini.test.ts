@@ -1,15 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { BookStructureResolver } from '../../../src/domain/score/BookStructureResolver';
 import { parseMusicXml } from '../../../src/domain/score/MusicXmlParser';
-import {
-  groupMovements,
-  parseBookXml,
-  parseSheetXml,
-} from '../../../src/domain/score/OmrSheetParser';
+import { parseBookXml, parseSheetXml } from '../../../src/domain/score/OmrSheetParser';
 import type { OmrArtifacts } from '../../../src/domain/score/ScoreModelBuilder';
 import { ScoreModelBuilder } from '../../../src/domain/score/ScoreModelBuilder';
 import type { ConfirmationState } from '../../../src/shared/types/Confirmation';
-import type { ResolvedStructure } from '../../../src/shared/types/ResolvedStructure';
 
 /**
  * synthetic-mini フィクスチャによるパース→照合の通し回帰。
@@ -22,27 +18,20 @@ const readFixture = (name: string): string =>
 
 const noCorrections: ConfirmationState = { items: [], completedAt: '2026-07-18T00:00:00Z' };
 
-/** parseBookXml → groupMovements の分割を ResolvedStructure（movement → 通しページ index）に変換する */
-function resolveStructure(bookXml: string): ResolvedStructure {
-  const movements = groupMovements(parseBookXml(bookXml));
-  let pageCursor = 0;
-  return {
-    movements: movements.map((movementPages, movementIndex) => ({
-      musicXmlIndex: movementIndex,
-      pageIndices: movementPages.map(() => pageCursor++),
-    })),
-  };
-}
-
 describe('synthetic-mini パイプライン統合', () => {
   const musicXml = parseMusicXml(readFixture('score.musicxml'));
   const sheet = parseSheetXml(readFixture('sheet1.xml'));
-  const structure = resolveStructure(readFixture('book.xml'));
 
   const artifacts: OmrArtifacts = {
     movements: [{ musicXml }],
     pages: sheet.pages,
   };
+  // フィクスチャの MusicXML は <print> を持たないため、段の小節数は OMR の stack 数へ
+  // フォールバックする（BookStructureResolver の既定動作）
+  const structure = new BookStructureResolver().resolve(
+    artifacts,
+    parseBookXml(readFixture('book.xml')),
+  );
   const result = new ScoreModelBuilder().build(artifacts, structure, noCorrections);
 
   it('各パーサがフィクスチャの構造を復元する', () => {
@@ -58,7 +47,18 @@ describe('synthetic-mini パイプライン統合', () => {
     expect(sheet.pages).toHaveLength(1);
     expect(sheet.pages[0]?.systems).toHaveLength(2);
     // 単一 movement（movement-start なし・先頭ページの暗黙開始）
-    expect(structure).toEqual({ movements: [{ musicXmlIndex: 0, pageIndices: [0] }] });
+    expect(structure).toEqual({
+      movements: [
+        {
+          musicXmlIndex: 0,
+          pageIndices: [0],
+          systems: [
+            { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 },
+            { pageIndex: 0, systemIndex: 1, firstMeasureIndex: 2, measureCount: 2 },
+          ],
+        },
+      ],
+    });
   });
 
   it('音符数一致の小節が対付けされ、不一致の小節だけが skipped で隔離される', () => {

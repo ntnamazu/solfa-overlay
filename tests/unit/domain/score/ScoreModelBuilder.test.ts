@@ -55,9 +55,20 @@ const twoStackSystem = (staves: OmrStaff[]): OmrSystem => ({
   staves,
 });
 
-const singleMovement: ResolvedStructure = {
-  movements: [{ musicXmlIndex: 0, pageIndices: [0] }],
-};
+/** 1 movement・1 ページの確定構造（段の小節数は stackCount で与える） */
+const oneSystemMovement = (stackCount: number): ResolvedStructure => ({
+  movements: [
+    {
+      musicXmlIndex: 0,
+      pageIndices: [0],
+      systems: [
+        { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: stackCount },
+      ],
+    },
+  ],
+});
+
+const singleMovement: ResolvedStructure = oneSystemMovement(2);
 
 const noCorrections: ConfirmationState = { items: [], completedAt: '2026-07-18T00:00:00Z' };
 
@@ -69,7 +80,7 @@ describe('ScoreModelBuilder', () => {
     const artifacts: OmrArtifacts = {
       movements: [
         {
-          musicXml: {
+          musicXml: { layout: [],
             parts: [
               part('P1', 'Soprano', [
                 // 逐次音は offset を分けて実パーサの出力に合わせる（同 offset は同時発音の意味になる）
@@ -129,7 +140,7 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: {
+            musicXml: { layout: [],
               parts: [
                 part('P1', 'Alto', [
                   measure(0, [note('C', 4), note('D', 4, 0, null, 4)]), // OMR 側は 1 個 → 不一致
@@ -167,7 +178,7 @@ describe('ScoreModelBuilder', () => {
       // 旧方式（文書順×x順の添字 zip）では座標取り違え＋クロスチェック誤検出になったケース
       const artifacts: OmrArtifacts = {
         movements: [
-          { musicXml: { parts: [part('P1', 'Sop', [measure(0, [note('C', 4), note('E', 4)])])] } },
+          { musicXml: { layout: [], parts: [part('P1', 'Sop', [measure(0, [note('C', 4), note('E', 4)])])] } },
         ],
         pages: [
           {
@@ -197,7 +208,7 @@ describe('ScoreModelBuilder', () => {
       // TREBLE: G5 = pitch -5（x=40）, G4 = pitch 2（x=10）
       const artifacts: OmrArtifacts = {
         movements: [
-          { musicXml: { parts: [part('P1', 'Sop', [measure(0, [note('G', 5), note('G', 4)])])] } },
+          { musicXml: { layout: [], parts: [part('P1', 'Sop', [measure(0, [note('G', 5), note('G', 4)])])] } },
         ],
         pages: [
           {
@@ -226,7 +237,7 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: {
+            musicXml: { layout: [],
               parts: [
                 part('P1', 'Sop', [
                   measure(0, [
@@ -267,7 +278,7 @@ describe('ScoreModelBuilder', () => {
       // 確認してから導入判断するため、現状の厳格照合（skip + issue）を固定する
       const artifacts: OmrArtifacts = {
         movements: [
-          { musicXml: { parts: [part('P1', 'Sop', [measure(0, [note('G', 4), note('G', 4)])])] } },
+          { musicXml: { layout: [], parts: [part('P1', 'Sop', [measure(0, [note('G', 4), note('G', 4)])])] } },
         ],
         pages: [
           {
@@ -298,7 +309,7 @@ describe('ScoreModelBuilder', () => {
     // 同じ譜表位置 pitch=0 が BASS では D、TREBLE では B に逆算される
     const bassArtifacts = (): OmrArtifacts => ({
       movements: [
-        { musicXml: { parts: [part('P1', 'Bass', [measure(0, [note('D', 3)])])] } },
+        { musicXml: { layout: [], parts: [part('P1', 'Bass', [measure(0, [note('D', 3)])])] } },
       ],
       pages: [
         {
@@ -376,7 +387,7 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: {
+            musicXml: { layout: [],
               parts: [
                 part('P1', 'Tenor', [
                   measure(0, [note('G', 3)]),
@@ -385,7 +396,7 @@ describe('ScoreModelBuilder', () => {
               ],
             },
           },
-          { musicXml: { parts: [part('P1', 'Tenor', [measure(0, [note('B', 3)])])] } },
+          { musicXml: { layout: [], parts: [part('P1', 'Tenor', [measure(0, [note('B', 3)])])] } },
         ],
         pages: [
           {
@@ -406,8 +417,20 @@ describe('ScoreModelBuilder', () => {
       };
       const structure: ResolvedStructure = {
         movements: [
-          { musicXmlIndex: 0, pageIndices: [0] },
-          { musicXmlIndex: 1, pageIndices: [1] },
+          {
+            musicXmlIndex: 0,
+            pageIndices: [0],
+            systems: [
+              { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 },
+            ],
+          },
+          {
+            musicXmlIndex: 1,
+            pageIndices: [1],
+            systems: [
+              { pageIndex: 1, systemIndex: 0, firstMeasureIndex: 2, measureCount: 1 },
+            ],
+          },
         ],
       };
       const result = builder.build(artifacts, structure, noCorrections);
@@ -423,7 +446,7 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: {
+            musicXml: { layout: [],
               parts: [
                 part('P1', 'Piano', [
                   measure(0, [note('C', 5, 0, 1), note('E', 3, 0, 2)]),
@@ -460,7 +483,7 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: {
+            musicXml: { layout: [],
               parts: [
                 part('P1', 'Piano', [
                   measure(0, [note('C', 5, 0, 1), note('E', 3, 0, 2)]),
@@ -506,7 +529,7 @@ describe('ScoreModelBuilder', () => {
   describe('構造の不整合', () => {
     it('MusicXML に存在しないパートの譜表は partNotFound issue になる', () => {
       const artifacts: OmrArtifacts = {
-        movements: [{ musicXml: { parts: [part('P1', 'Sop', [measure(0, [])])] } }],
+        movements: [{ musicXml: { layout: [], parts: [part('P1', 'Sop', [measure(0, [])])] } }],
         pages: [
           {
             systems: [
@@ -524,7 +547,7 @@ describe('ScoreModelBuilder', () => {
     it('MusicXML の小節数を超える stack は measureOutOfRange issue になる', () => {
       const artifacts: OmrArtifacts = {
         movements: [
-          { musicXml: { parts: [part('P1', 'Sop', [measure(0, [note('C', 4)])])] } },
+          { musicXml: { layout: [], parts: [part('P1', 'Sop', [measure(0, [note('C', 4)])])] } },
         ],
         pages: [{ systems: [twoStackSystem([staff('P1', 'TREBLE', [head(6, 10)])])] }],
       };
@@ -535,18 +558,176 @@ describe('ScoreModelBuilder', () => {
       expect(result.score.measures).toHaveLength(1);
     });
 
-    it('ResolvedStructure が存在しない MusicXML / ページを指す場合は契約違反として例外にする', () => {
+    it('ResolvedStructure が存在しない MusicXML / 段を指す場合は契約違反として例外にする', () => {
       const artifacts: OmrArtifacts = { movements: [], pages: [] };
       expect(() => builder.build(artifacts, singleMovement, noCorrections)).toThrowError(
         /MusicXML がありません/,
       );
       const withMovement: OmrArtifacts = {
-        movements: [{ musicXml: { parts: [] } }],
+        movements: [{ musicXml: { layout: [], parts: [] } }],
         pages: [],
       };
       expect(() => builder.build(withMovement, singleMovement, noCorrections)).toThrowError(
-        /ページがありません/,
+        /段がありません/,
       );
+    });
+  });
+
+  describe('段アンカー（BookStructureResolver の確定構造）', () => {
+    /** 2 段構成: 第1段は stack 2 個・第2段は stack 1 個。P1 は 3 小節ぶんの音符を持つ */
+    const twoSystemArtifacts = (): OmrArtifacts => ({
+      movements: [
+        {
+          musicXml: {
+            layout: [],
+            parts: [
+              part('P1', 'Sop', [
+                measure(0, [note('C', 4)]),
+                measure(1, [note('D', 4)]),
+                measure(2, [note('E', 4)]),
+              ]),
+            ],
+          },
+        },
+      ],
+      pages: [
+        {
+          systems: [
+            twoStackSystem([staff('P1', 'TREBLE', [head(6, 10), head(5, 110)])]),
+            {
+              stacks: [{ left: 0, right: 100 }],
+              staves: [staff('P1', 'TREBLE', [head(4, 10)])],
+            },
+          ],
+        },
+      ],
+    });
+
+    /** 第1段の担当小節数を measureCount で与える確定構造（第2段は必ず measureCount から始まる） */
+    const structureWith = (firstSystemMeasureCount: number): ResolvedStructure => ({
+      movements: [
+        {
+          musicXmlIndex: 0,
+          pageIndices: [0],
+          systems: [
+            {
+              pageIndex: 0,
+              systemIndex: 0,
+              firstMeasureIndex: 0,
+              measureCount: firstSystemMeasureCount,
+            },
+            {
+              pageIndex: 0,
+              systemIndex: 1,
+              firstMeasureIndex: firstSystemMeasureCount,
+              measureCount: 1,
+            },
+          ],
+        },
+      ],
+    });
+
+    it('確定構造の小節数を超える stack は段内に隔離され、後続段の小節番号をずらさない', () => {
+      // 第1段は stack 2 個だが確定構造では 1 小節ぶん → 2 個目の stack は measureOutOfRange
+      const result = builder.build(twoSystemArtifacts(), structureWith(1), noCorrections);
+      // 第2段の符頭は m2（E）向けのため m1（D）とはクロスチェックが合わない。ここでの関心事ではない
+      expect(result.issues.filter((issue) => issue.kind === 'measureOutOfRange')).toEqual([
+        { kind: 'measureOutOfRange', partId: 'P1', pageIndex: 0, systemIndex: 0, measureIndex: 1 },
+      ]);
+      // 第2段は 1（＝確定構造の firstMeasureIndex）から始まる。stack 数の累積なら 2 になっていた
+      expect(result.score.measures.map((m) => m.index)).toEqual([0, 1]);
+      expect(result.score.measures[1]?.notes.map((n) => n.pitch.step)).toEqual(['D']);
+    });
+
+    it('SystemInfo には確定構造の小節数が入る（OMR の stack 数ではない）', () => {
+      const result = builder.build(twoSystemArtifacts(), structureWith(1), noCorrections);
+      expect(result.score.systems).toEqual([
+        { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 1 },
+        { pageIndex: 0, systemIndex: 1, firstMeasureIndex: 1, measureCount: 1 },
+      ]);
+    });
+
+    it('確定構造が主張する小節に stack がない場合は skipped として残す（黙って欠落させない）', () => {
+      // 第1段は MusicXML 3 小節ぶんを担当するが .omr の stack は 2 個（小節線の検出漏れ相当）
+      const structure: ResolvedStructure = {
+        movements: [
+          {
+            musicXmlIndex: 0,
+            pageIndices: [0],
+            systems: [
+              { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 3 },
+              { pageIndex: 0, systemIndex: 1, firstMeasureIndex: 3, measureCount: 0 },
+            ],
+          },
+        ],
+      };
+      const result = builder.build(twoSystemArtifacts(), structure, noCorrections);
+      expect(result.issues).toContainEqual({
+        kind: 'measureNotDetected',
+        partId: 'P1',
+        pageIndex: 0,
+        systemIndex: 0,
+        measureIndex: 2,
+      });
+      // m2 は消えず skipped として残る（修正UIの一覧に載る）
+      expect(result.score.measures.map((m) => [m.index, m.status])).toEqual([
+        [0, 'matched'],
+        [1, 'matched'],
+        [2, 'skipped'],
+      ]);
+    });
+
+    it('movement 間で通し小節番号が重複する構造は契約違反として例外にする', () => {
+      const artifacts = twoSystemArtifacts();
+      const overlapping: ResolvedStructure = {
+        movements: [
+          {
+            musicXmlIndex: 0,
+            pageIndices: [0],
+            systems: [
+              { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 },
+            ],
+          },
+          {
+            // 前 movement が 0-1 を使っているのに 1 から始まる＝小節が重なる
+            musicXmlIndex: 0,
+            pageIndices: [0],
+            systems: [
+              { pageIndex: 0, systemIndex: 1, firstMeasureIndex: 1, measureCount: 1 },
+            ],
+          },
+        ],
+      };
+      expect(() => builder.build(artifacts, overlapping, noCorrections)).toThrowError(
+        /通し小節番号が重複/,
+      );
+    });
+
+    it('段が小節番号順に並んでいなくても movement 先頭を取り違えない', () => {
+      const artifacts = twoSystemArtifacts();
+      const reordered: ResolvedStructure = {
+        movements: [
+          {
+            musicXmlIndex: 0,
+            pageIndices: [0],
+            systems: [
+              // 意図的に後ろの段を先に置く（先頭要素＝movement 先頭とは限らない）
+              { pageIndex: 0, systemIndex: 1, firstMeasureIndex: 2, measureCount: 1 },
+              { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 },
+            ],
+          },
+        ],
+      };
+      const result = builder.build(artifacts, reordered, noCorrections);
+      expect(result.issues).toEqual([]);
+      expect(result.score.measures.map((m) => m.index)).toEqual([0, 1, 2]);
+    });
+
+    it('確定構造と stack 数が一致していれば全小節が照合される', () => {
+      const result = builder.build(twoSystemArtifacts(), structureWith(2), noCorrections);
+      expect(result.issues).toEqual([]);
+      expect(result.score.measures.map((m) => m.index)).toEqual([0, 1, 2]);
+      expect(result.score.measures[2]?.notes.map((n) => n.pitch.step)).toEqual(['E']);
     });
   });
 });

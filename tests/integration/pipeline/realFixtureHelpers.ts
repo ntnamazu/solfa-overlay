@@ -1,4 +1,6 @@
-import { parseBookXml, groupMovements } from '../../../src/domain/score/OmrSheetParser';
+import { BookStructureResolver } from '../../../src/domain/score/BookStructureResolver';
+import type { StructureIssue } from '../../../src/domain/score/BookStructureResolver';
+import { parseBookXml } from '../../../src/domain/score/OmrSheetParser';
 import { assembleArtifacts, unzipEntries } from '../../../src/main/omr/omrArchive';
 import type { OmrArtifacts } from '../../../src/domain/score/ScoreModelBuilder';
 import { ScoreModelBuilder } from '../../../src/domain/score/ScoreModelBuilder';
@@ -9,24 +11,11 @@ import type { ResolvedStructure } from '../../../src/shared/types/ResolvedStruct
 /**
  * 実 Audiveris フィクスチャ（.omr / .mxl）の回帰テスト用ヘルパー
  *
- * BookStructureResolver（別フェーズ）は未実装のため、book.xml の movement-start による
- * 素朴な分割で ResolvedStructure を組む（synthetic-mini 統合テストの resolveStructure と同方針）。
- * 確定構造の復元が入る Phase 2 までは、この素朴な構造が実データ検証の前提になる。
+ * 実運用と同じ経路で確定構造を組む: book.xml をパース → BookStructureResolver で
+ * MusicXML の段レイアウトへアンカー → ScoreModelBuilder で照合。
+ * 確認画面（StructureConfirm）はまだないため decisions は空＝検出結果をそのまま採用する
  */
 const NO_CORRECTIONS: ConfirmationState = { items: [], completedAt: '2026-07-19T00:00:00Z' };
-
-/** book.xml の movement 分割を「movement → 通しページ index」の ResolvedStructure に変換する */
-function resolveStructure(bookXml: string, movementCount: number): ResolvedStructure {
-  const movements = groupMovements(parseBookXml(bookXml));
-  let pageCursor = 0;
-  return {
-    movements: movements.map((pages, index) => ({
-      // .mxl が movement 数より少ない場合は末尾 movement に寄せる（実データの誤分割対策）
-      musicXmlIndex: Math.min(index, movementCount - 1),
-      pageIndices: pages.map(() => pageCursor++),
-    })),
-  };
-}
 
 export interface FixtureSummary {
   movements: number;
@@ -39,12 +28,15 @@ export interface FixtureSummary {
   multiNoteColumnMeasures: number;
   /** BuildIssue の種別ごとの件数 */
   issueCounts: Record<string, number>;
+  /** BookStructureResolver.detect が返した StructureIssue の種別ごとの件数 */
+  structureIssueCounts: Record<string, number>;
   skippedRefs: string[];
 }
 
 export interface FixtureRun {
   artifacts: OmrArtifacts;
   structure: ResolvedStructure;
+  structureIssues: StructureIssue[];
   result: BuildResult;
   summary: FixtureSummary;
 }
@@ -56,7 +48,10 @@ export function runFixture(omr: Uint8Array, movements: Uint8Array[]): FixtureRun
   if (bookBytes === undefined) {
     throw new Error('フィクスチャの .omr に book.xml がありません');
   }
-  const structure = resolveStructure(Buffer.from(bookBytes).toString('utf-8'), movements.length);
+  const bookPages = parseBookXml(Buffer.from(bookBytes).toString('utf-8'));
+  const resolver = new BookStructureResolver();
+  const structureIssues = resolver.detect(artifacts, bookPages);
+  const structure = resolver.resolve(artifacts, bookPages);
   const result = new ScoreModelBuilder().build(artifacts, structure, NO_CORRECTIONS);
 
   const matched = result.score.measures.filter((m) => m.status === 'matched');
@@ -64,6 +59,10 @@ export function runFixture(omr: Uint8Array, movements: Uint8Array[]): FixtureRun
   const issueCounts: Record<string, number> = {};
   for (const issue of result.issues) {
     issueCounts[issue.kind] = (issueCounts[issue.kind] ?? 0) + 1;
+  }
+  const structureIssueCounts: Record<string, number> = {};
+  for (const issue of structureIssues) {
+    structureIssueCounts[issue.kind] = (structureIssueCounts[issue.kind] ?? 0) + 1;
   }
 
   const summary: FixtureSummary = {
@@ -75,9 +74,10 @@ export function runFixture(omr: Uint8Array, movements: Uint8Array[]): FixtureRun
     notes: result.score.measures.reduce((sum, m) => sum + m.notes.length, 0),
     multiNoteColumnMeasures: matched.filter(hasMultiNoteColumn).length,
     issueCounts,
+    structureIssueCounts,
     skippedRefs: skipped.map((m) => `${m.partId}:m${m.index}`),
   };
-  return { artifacts, structure, result, summary };
+  return { artifacts, structure, structureIssues, result, summary };
 }
 
 /** 同一符頭中心 x を共有する音符が 2 つ以上ある＝和音・divisi の列が含まれる小節か */

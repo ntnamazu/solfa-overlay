@@ -1,9 +1,9 @@
-# divisi《The Message of the Angels》実 Audiveris フィクスチャ（Phase 2 前ベースライン）
+# divisi《The Message of the Angels》実 Audiveris フィクスチャ（構造解決後）
 
 ロードマップ Phase 1 で「SSAATTBB divisi 曲による列対付けの実データ検証」を狙ったフィクスチャ。
-実データ検証の結果、**この曲は BookStructureResolver（Phase 2）なしでは正しく照合できない**ことが
-判明した。本フィクスチャは列対付けの正しさを主張するものではなく、**現状のスナップショット**と
-**Phase 2 の改善目標**を固定する。
+Phase 1 時点では大量の小節が skipped になり「構造誤分割のため Phase 2 待ち」とベースライン
+commit したが、**Phase 2（BookStructureResolver）の事前調査でその推定は誤りだったことが判明した**。
+本 README は真因と現在の実測値を記録する。
 
 ## 出典・著作権
 
@@ -20,40 +20,69 @@
 | `IMSLP175782.mxl` | 単一 movement の MusicXML（OPC zip・8 パート・329 小節） |
 
 - **slim 済み**: `BINARY.png` を除去（5.1MB → 2.4MB）。回帰結果は除去前後で一致。
-- sheet#1/#2 は画像のみで sheet XML を持たない（Audiveris が未転写としたページ）。assembleArtifacts は
-  XML を持つシートのみをページ化するため、これらは自然に飛ばされる。
 
-## 実データが露呈させた構造問題（重要）
+## 真因（Phase 1 の推定を訂正）
 
-- この曲は**声部の段階的入り**を含む。`book.xml` の 1 ページ目は
-  `part8 → part7,8 → part7,8 → part4-8` とシステムごとに登場パートが変化する。
-- ScoreModelBuilder は「全パートが全システムに存在する」前提で、システムの stack 数を
-  movement 全体で累積して通し小節番号を決める。遅れて入るパートは小節番号が全体的にずれ、
-  結果として大量の小節が `measureCountMismatch` / `pitchCrossCheckMismatch` になる。
-- これはまさに BookStructureResolver（機能設計書: インチピット等による**誤分割の検出と復元**）が
-  解決すべき領域であり、**Phase 2 の対象**。列対付けアルゴリズム自体の欠陥ではない。
+Phase 1 の README では「声部の段階的入りによる構造誤分割」を主因と推定していたが、
+Phase 2 の事前調査で定量的に切り分けた結果、**主因は段あたり小節数のわずかなズレの累積**だった。
 
-## 現状値（`divisi-regression.test.ts` が固定するベースライン）
+1. **ページ・段の対応は 20 ページすべて 1:1 に一致していた**。MusicXML の `<print new-system>` /
+   `<print new-page>` による段レイアウトと `.omr` の system 構成は同じ構造を指している。
+2. **段あたり小節数が食い違うのは 20 ページ中わずか 2 か所**
+   （page 5 の第2段・page 10 の第2段。いずれも `.omr` の stack が MusicXML より 1 つ多い）。
+   `.omr` の総 stack 数 331 に対し MusicXML は 329 小節。
+3. 旧 `ScoreModelBuilder` は通し小節番号を **OMR の stack 数の累積**で決めていたため、この +1 が
+   **以降の全ページへ波及**した。実際、mismatch はページ 0〜5 では 0〜1 件、ドリフトが始まる
+   page 6 以降で急増していた（page 7 以降は 1 段あたり 11〜28 件）。
+4. `BookStructureResolver` が段ごとの小節番号を MusicXML の段レイアウトにアンカーすることで
+   ズレは当該段に閉じ、以下のとおり改善した。
 
-| 指標 | 値 | 備考 |
+> **教訓**: 「構造がおかしい」という印象で原因を推定せず、ページ単位・段単位で不一致の分布を
+> 実測すべきだった。分布を見れば「特定ページ以降で急増」というドリフト特有の形が一目で分かる。
+
+## 現状値（`divisi-regression.test.ts` が固定する）
+
+| 指標 | Phase 2 前 | **現在** | 備考 |
+| --- | --- | --- | --- |
+| movements / pages / parts | 1 / 20 / 8 | 1 / 20 / 8 | P8 は Audiveris が 2 段（Piano）として検出 |
+| matched 小節 | 604 | **1029** | |
+| skipped 小節 | 561 | **135** | |
+| matched 音符 | 1433 | **3500** | |
+| 和音・divisi 列を持つ小節 | 84 | **222** | 列対付けが実際に稼働している証拠 |
+| `pitchCrossCheckMismatch` | 395 | 569 | 照合対象が増えたため増加。内訳は下記 |
+| `measureCountMismatch` | 561 | **135** | |
+| `measureOutOfRange` | 13 | 14 | アンカー超過の stack（段内に隔離） |
+
+`BookStructureResolver.detect()` の検出結果:
+
+| StructureIssue | 件数 | 内容 |
 | --- | --- | --- |
-| movements / pages / parts | 1 / 20 / 8 | P8 は Audiveris が 2 段（Piano）として検出 |
-| matched 小節 | 604 | 構造ずれを含む |
-| skipped 小節 | 561 | **Phase 2 で減少見込み** |
-| matched 音符 | 1433 | |
-| 和音・divisi 列を持つ小節 | 84 | **列対付けが実際に稼働している証拠** |
-| `pitchCrossCheckMismatch` | 395 | 大半は構造ずれ由来（列対付けの取り違えではない） |
-| `measureCountMismatch` | 561 | |
-| `measureOutOfRange` | 13 | |
+| `systemMeasureCountMismatch` | 2 | page5/第2段・page10/第2段（omr 8 stack vs xml 7 小節） |
+| `inconsistentSystemStaffCount` | 4 | page 0 / 4 / 6 / 16（同一ページ内で段の譜表数が不揃い） |
 
-> これらの数値は BookStructureResolver 未実装ゆえの構造ずれを含む。Phase 2 実装後、
-> skipped・mismatch は減少方向に更新される想定であり、テストの期待値もその時点で更新する。
+## 残る限界（本フェーズでは解消しない）
 
-## 既知の限界（Phase 2 以降で観察・判断する項目）
+### 1. 音部記号の誤検出（`pitchCrossCheckMismatch` 569 件の主因）
 
-前作業（chord-column-pairing）の申し送りで実フィクスチャ観察が求められた項目。構造ずれが解消
-する Phase 2 以降でないと個別現象を切り分けられないため、現時点では**未確定**として記録する:
+不一致 569 件のうち **487 件（86%）が「MusicXML の音名が .omr 由来より幹音 1 つ低い」という
+系統的なズレ**で、**402 件が P6 に集中**している。P6 は 35 段で `ALTO`（ハ音記号）と検出されており、
+アルト記号の中線は C4・ト音記号の中線は B4 と**ちょうど幹音 1 つ違う**。つまりこれは列対付けの
+取り違えではなく、**音部記号の誤検出**である。
 
-- **ユニゾン共有符頭**（1 符頭 2 声部）の Audiveris 実出力挙動 → 照合緩和ルールの要否
+これは `ClefKeyConfirm` 画面（F-2・Phase 4）でユーザーが修正する対象であり、
+`ScoreModelBuilder` は既に `ConfirmationState` の clef 修正値を受け取れる。**構造の問題ではない**。
+
+### 2. 段ごとのパート id の付け替え
+
+Audiveris は段ごとに譜表 → パート id を割り当て直すことがある（例: page 7 は第1段が P4〜P8・
+第2段が P2〜P7）。そのため P1 は 14 音・P2 は 30 音しか照合されず、実際のソプラノ声部の音符は
+別のパート id に散っている。**MusicXML 側も同じ割当で出力される**ため、OMR 側だけを付け替えても
+整合が取れない。正しい声部同定には MusicXML のパート再スライスが必要で、本フェーズの範囲外。
+
+### 3. 未確定のまま持ち越す項目
+
+- **ユニゾン共有符頭**（1 符頭 2 声部）の照合緩和ルールの要否
 - **列間 x 逆転**（2 度衝突の符頭シフトが隣列を跨ぐか）の頻度
-- **グレースノート**の符頭が head として出力されるか（出力されない場合は音数不一致になる）
+- **グレースノート**の符頭が head として出力されるか
+
+> Audiveris を更新した場合はフィクスチャを再生成し、上表の期待値の差分をレビューすること。

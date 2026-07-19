@@ -184,9 +184,10 @@ Renderer → ファイルシステム  (NG)
   フィクスチャとして同梱し、パース→照合を回帰テスト化（実測値: matched 295小節・808音・
   クロスチェック不一致0・skipped 1小節。根拠は `tests/fixtures/victoria/README.md`）。
   数値は Audiveris バージョンに依存するため、更新時はフィクスチャ再生成と差分レビューを行う。
-- **divisi ベースライン**: SSAATTBB divisi 曲（PD）の実成果物も同梱するが、声部の段階的入りによる
-  構造誤分割のため BookStructureResolver 実装（別フェーズ）までは大量 skip となる。現状値を
-  「Phase 2 前ベースライン」として固定する（`tests/fixtures/divisi/README.md`）。
+- **divisi 回帰**: SSAATTBB divisi 曲（PD・20ページ8パート）の実成果物も同梱し、
+  BookStructureResolver による構造解決後の実測値（matched 1029小節・3500音・skipped 135・
+  StructureIssue 6件）を固定する。残るクロスチェック不一致は音部記号の誤検出が主因で、
+  ClefKeyConfirm での修正が前提（根拠は `tests/fixtures/divisi/README.md`）。
 - **対象**: パース→照合パイプライン、プロジェクトファイルの保存→再読込の同一性（後者は後続フェーズ）
 - **申し送り**: 本物の Audiveris 起動を伴う E2E はコンテナでは不可（Audiveris/JRE 非搭載）。ホスト
   実機での手動確認に委ねる。OmrRunner は spawn を DI 化し、子プロセス以外のロジックを単体テスト化。

@@ -205,3 +205,64 @@ describe('parseMusicXml', () => {
     expect(() => parseMusicXml(xml)).toThrowError(ScoreParseError);
   });
 });
+
+describe('parseMusicXml の段レイアウト抽出', () => {
+  /** number 番の小節（print 属性つき）を組み立てる */
+  const measure = (number: number, print = ''): string =>
+    `<measure number="${number}">${print}</measure>`;
+  const newSystem = '<print new-system="yes"/>';
+  const newPage = '<print new-page="yes"/>';
+
+  it('new-system / new-page から ページ→段→小節数 を導出する', () => {
+    const xml = partwise(
+      `<score-part id="P1"/>`,
+      `<part id="P1">
+         ${measure(1)}${measure(2)}
+         ${measure(3, newSystem)}${measure(4)}${measure(5)}
+         ${measure(6, newPage)}${measure(7)}
+       </part>`,
+    );
+    expect(parseMusicXml(xml).layout).toEqual([
+      { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 },
+      { pageIndex: 0, systemIndex: 1, firstMeasureIndex: 2, measureCount: 3 },
+      { pageIndex: 1, systemIndex: 0, firstMeasureIndex: 5, measureCount: 2 },
+    ]);
+  });
+
+  it('print を持たない MusicXML は 1 ページ・1 段・全小節になる', () => {
+    const xml = partwise(
+      `<score-part id="P1"/>`,
+      `<part id="P1">${measure(1)}${measure(2)}${measure(3)}</part>`,
+    );
+    expect(parseMusicXml(xml).layout).toEqual([
+      { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 3 },
+    ]);
+  });
+
+  it('先頭小節の print は空の段を作らない', () => {
+    const xml = partwise(
+      `<score-part id="P1"/>`,
+      `<part id="P1">${measure(1, newPage)}${measure(2)}</part>`,
+    );
+    expect(parseMusicXml(xml).layout).toEqual([
+      { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 },
+    ]);
+  });
+
+  it('小節数が最大のパートからレイアウトを導出する（末尾が欠けたパートに引きずられない）', () => {
+    const xml = partwise(
+      `<score-part id="P1"/><score-part id="P2"/>`,
+      `<part id="P1">${measure(1)}${measure(2, newSystem)}</part>
+       <part id="P2">${measure(1)}${measure(2, newSystem)}${measure(3)}</part>`,
+    );
+    // P1 基準なら最終段は 1 小節。P2（最大）基準では 2 小節になる
+    expect(parseMusicXml(xml).layout).toEqual([
+      { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 1 },
+      { pageIndex: 0, systemIndex: 1, firstMeasureIndex: 1, measureCount: 2 },
+    ]);
+  });
+
+  it('part が 1 つもない場合はレイアウトが空になる', () => {
+    expect(parseMusicXml(partwise('', '')).layout).toEqual([]);
+  });
+});
