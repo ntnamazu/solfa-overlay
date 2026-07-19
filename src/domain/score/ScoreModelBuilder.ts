@@ -11,6 +11,7 @@ import type {
 import { diatonicIndex, headStepOctave, isKnownClefKind } from './clefTable';
 import type { MusicXmlNote, MusicXmlPart, ParsedMusicXml } from './MusicXmlParser';
 import type { OmrHead, OmrPageContent, OmrStack, OmrStaff } from './OmrSheetParser';
+import { movementEndMeasureIndex, movementFirstMeasureIndex } from './structureAnchors';
 
 /** パース済みの OMR 成果物一式（zip 展開・パースは呼び出し側で済ませて渡す） */
 export interface OmrArtifacts {
@@ -268,21 +269,15 @@ export class ScoreModelBuilder {
       // movement の先頭小節（MusicXML のローカル小節番号を引く基準）。段の並び順に依存しないよう
       // 最小値を採る。movement 間で通し小節番号が重なると別 movement の音符が同じ Measure に
       // 混ざるため、契約違反として拒否する（呼び出し側が組んだ構造の健全性チェック）
-      const movementFirstMeasureIndex = movement.systems.reduce(
-        (min, system) => Math.min(min, system.firstMeasureIndex),
-        Number.POSITIVE_INFINITY,
-      );
+      const firstMeasureIndex = movementFirstMeasureIndex(movement);
       if (movement.systems.length > 0) {
-        if (movementFirstMeasureIndex < previousMovementEnd) {
+        if (firstMeasureIndex < previousMovementEnd) {
           throw new Error(
             `ResolvedStructure の movement 間で通し小節番号が重複しています: ` +
-              `${movementFirstMeasureIndex} < ${previousMovementEnd}`,
+              `${firstMeasureIndex} < ${previousMovementEnd}`,
           );
         }
-        previousMovementEnd = movement.systems.reduce(
-          (end, system) => Math.max(end, system.firstMeasureIndex + system.measureCount),
-          previousMovementEnd,
-        );
+        previousMovementEnd = movementEndMeasureIndex(movement, previousMovementEnd);
       }
       for (const resolvedSystem of movement.systems) {
         const { pageIndex, systemIndex } = resolvedSystem;
@@ -297,7 +292,7 @@ export class ScoreModelBuilder {
           measureCount: resolvedSystem.measureCount,
         });
         this.buildSystem(context, musicXml, system.staves, system.stacks, corrections, {
-          movementFirstMeasureIndex,
+          movementFirstMeasureIndex: firstMeasureIndex,
           firstMeasureIndex: resolvedSystem.firstMeasureIndex,
           measureCount: resolvedSystem.measureCount,
           pageIndex,

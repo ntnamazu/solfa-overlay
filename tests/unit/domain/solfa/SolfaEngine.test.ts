@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   SolfaEngine,
+  applyDegrees,
   computeDegree,
   expectedAlterInDoMajor,
   letterDistance,
@@ -9,6 +10,7 @@ import {
 import { DEFAULT_SETTINGS } from '../../../../src/shared/constants/DEFAULT_SETTINGS';
 import type { KeyRegion } from '../../../../src/shared/types/KeyRegion';
 import type { Pitch, PitchStep } from '../../../../src/shared/types/Pitch';
+import type { Measure, NoteEvent, ScoreModel } from '../../../../src/shared/types/ScoreModel';
 
 function keyRegion(partial: {
   tonicStep: PitchStep;
@@ -184,5 +186,277 @@ describe('SolfaEngine', () => {
         'ta',
       );
     });
+  });
+});
+
+describe('computeDegrees（ScoreModel との結線）', () => {
+  function regionAtMeasure(
+    measureIndex: number,
+    tonicStep: PitchStep,
+    mode: 'major' | 'minor' = 'major',
+    tonicAlter = 0,
+  ): KeyRegion {
+    return {
+      id: `key-${measureIndex}`,
+      start: { measureIndex, offset: 0 },
+      tonicStep,
+      tonicAlter,
+      mode,
+      source: 'auto',
+    };
+  }
+
+  function note(id: string, measureIndex: number, step: PitchStep, alter = 0): NoteEvent {
+    return {
+      id,
+      partId: 'P1',
+      measureIndex,
+      pitch: pitch(step, alter),
+      head: { pageIndex: 0, x: 0, y: 0 },
+      solfa: null,
+    };
+  }
+
+  function scoreOf(measures: Measure[]): ScoreModel {
+    return { parts: [{ id: 'P1', name: 'P1', staves: [] }], systems: [], measures };
+  }
+
+  function measure(index: number, notes: NoteEvent[], status: Measure['status'] = 'matched'): Measure {
+    return { partId: 'P1', index, status, notes };
+  }
+
+  it('全ての音符に階名を与える', () => {
+    const score = scoreOf([
+      measure(0, [note('n1', 0, 'C'), note('n2', 0, 'D')]),
+      measure(1, [note('n3', 1, 'E')]),
+    ]);
+
+    const degrees = new SolfaEngine().computeDegrees(score, [regionAtMeasure(0, 'C')], 'la');
+
+    expect(degrees.size).toBe(3);
+    expect(degrees.get('n1')).toEqual({ degree: 1, alteration: 0 });
+    expect(degrees.get('n2')).toEqual({ degree: 2, alteration: 0 });
+    expect(degrees.get('n3')).toEqual({ degree: 3, alteration: 0 });
+  });
+
+  it('転調をまたぐ音符はその位置で有効な KeyRegion で計算される', () => {
+    const score = scoreOf([
+      measure(0, [note('before', 0, 'G')]),
+      measure(4, [note('boundary', 4, 'G')]),
+      measure(9, [note('after', 9, 'G')]),
+    ]);
+    // m0〜m3 はハ長調（G は so）、m4 以降はト長調（G は do）
+    const regions = [regionAtMeasure(0, 'C'), regionAtMeasure(4, 'G')];
+
+    const degrees = new SolfaEngine().computeDegrees(score, regions, 'la');
+
+    expect(degrees.get('before')).toEqual({ degree: 5, alteration: 0 });
+    expect(degrees.get('boundary')).toEqual({ degree: 1, alteration: 0 });
+    expect(degrees.get('after')).toEqual({ degree: 1, alteration: 0 });
+  });
+
+  it('多数の KeyRegion でも各小節が正しい区間に割り当たる（二分探索の検証）', () => {
+    // 0,10,20,...,90 の 10 区間。主音は C,D,E,F,G,A,B,C,D,E と巡回する
+    const steps: PitchStep[] = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'C', 'D', 'E'];
+    const regions = steps.map((step, i) => regionAtMeasure(i * 10, step));
+    const score = scoreOf(
+      Array.from({ length: 100 }, (_, m) => measure(m, [note(`n${m}`, m, 'C')])),
+    );
+
+    const degrees = new SolfaEngine().computeDegrees(score, regions, 'la');
+
+    for (let m = 0; m < 100; m += 1) {
+      const expectedStep = steps[Math.floor(m / 10)];
+      expect(expectedStep).toBeDefined();
+      const expected = computeDegree(
+        pitch('C', 0),
+        regionAtMeasure(0, expectedStep ?? 'C'),
+        'la',
+      );
+      expect(degrees.get(`n${m}`)).toEqual(expected);
+    }
+  });
+
+  it('skipped 小節（音符なし）があっても例外にならない', () => {
+    const score = scoreOf([
+      measure(0, [note('n1', 0, 'C')]),
+      measure(1, [], 'skipped'),
+      measure(2, [note('n2', 2, 'D')]),
+    ]);
+
+    const degrees = new SolfaEngine().computeDegrees(score, [regionAtMeasure(0, 'C')], 'la');
+
+    expect([...degrees.keys()]).toEqual(['n1', 'n2']);
+  });
+
+  it('短調基準（La / Do）の切り替えが結果に反映される', () => {
+    const score = scoreOf([measure(0, [note('n1', 0, 'C')])]);
+    const regions = [regionAtMeasure(0, 'A', 'minor')];
+    const engine = new SolfaEngine();
+
+    // イ短調の C は La基準で do（度数1）、Do基準で me（度数3・変位-1）
+    expect(engine.computeDegrees(score, regions, 'la').get('n1')).toEqual({
+      degree: 1,
+      alteration: 0,
+    });
+    expect(engine.computeDegrees(score, regions, 'do').get('n1')).toEqual({
+      degree: 3,
+      alteration: -1,
+    });
+  });
+
+  describe('KeyRegion の契約検証', () => {
+    const score = scoreOf([measure(0, [note('n1', 0, 'C')])]);
+    const engine = new SolfaEngine();
+
+    it('空の KeyRegion 列を拒否する', () => {
+      expect(() => engine.computeDegrees(score, [], 'la')).toThrow('KeyRegion が空です');
+    });
+
+    it('曲頭の KeyRegion がない場合を拒否する', () => {
+      expect(() => engine.computeDegrees(score, [regionAtMeasure(3, 'C')], 'la')).toThrow(
+        'KeyRegion の先頭は曲頭',
+      );
+    });
+
+    it('先頭の offset が 0 でない場合を拒否する', () => {
+      const head = regionAtMeasure(0, 'C');
+      const shifted: KeyRegion = { ...head, start: { measureIndex: 0, offset: 12 } };
+      expect(() => engine.computeDegrees(score, [shifted], 'la')).toThrow('KeyRegion の先頭は曲頭');
+    });
+
+    it('小節番号が昇順でない場合を拒否する', () => {
+      const regions = [regionAtMeasure(0, 'C'), regionAtMeasure(5, 'G'), regionAtMeasure(2, 'D')];
+      expect(() => engine.computeDegrees(score, regions, 'la')).toThrow('昇順・重複なし');
+    });
+
+    it('小節番号が重複する場合を拒否する', () => {
+      const regions = [regionAtMeasure(0, 'C'), regionAtMeasure(0, 'G')];
+      expect(() => engine.computeDegrees(score, regions, 'la')).toThrow('昇順・重複なし');
+    });
+  });
+});
+
+describe('applyDegrees', () => {
+  const baseNote: NoteEvent = {
+    id: 'n1',
+    partId: 'P1',
+    measureIndex: 0,
+    pitch: { step: 'C', alter: 0, octave: 4 },
+    head: { pageIndex: 0, x: 1, y: 2 },
+    solfa: null,
+  };
+  const score: ScoreModel = {
+    parts: [{ id: 'P1', name: 'P1', staves: [] }],
+    systems: [],
+    measures: [
+      { partId: 'P1', index: 0, status: 'matched', notes: [baseNote] },
+      { partId: 'P1', index: 1, status: 'skipped', notes: [] },
+    ],
+  };
+
+  it('階名を埋めた新しい ScoreModel を返す', () => {
+    const applied = applyDegrees(score, new Map([['n1', { degree: 1, alteration: 0 }]]));
+
+    expect(applied.measures[0]?.notes[0]?.solfa).toEqual({ degree: 1, alteration: 0 });
+  });
+
+  it('元の ScoreModel を変更しない（非破壊）', () => {
+    applyDegrees(score, new Map([['n1', { degree: 1, alteration: 0 }]]));
+
+    expect(score.measures[0]?.notes[0]?.solfa).toBeNull();
+    expect(baseNote.solfa).toBeNull();
+  });
+
+  it('結果のない音符は solfa を null のまま残す', () => {
+    const applied = applyDegrees(score, new Map());
+
+    expect(applied.measures[0]?.notes[0]?.solfa).toBeNull();
+  });
+
+  it('結果のない音符の既存の階名を上書きしない（部分再計算の安全性）', () => {
+    // 転調指定の変更で影響範囲だけ再計算したとき、範囲外の階名が無言で消えてはいけない
+    const scored: ScoreModel = {
+      ...score,
+      measures: [
+        {
+          ...(score.measures[0] as Measure),
+          notes: [{ ...baseNote, solfa: { degree: 5, alteration: 0 } }],
+        },
+        ...score.measures.slice(1),
+      ],
+    };
+
+    const applied = applyDegrees(scored, new Map());
+
+    expect(applied.measures[0]?.notes[0]?.solfa).toEqual({ degree: 5, alteration: 0 });
+  });
+
+  it('結果のある音符は既存の階名を置き換える', () => {
+    const scored: ScoreModel = {
+      ...score,
+      measures: [
+        {
+          ...(score.measures[0] as Measure),
+          notes: [{ ...baseNote, solfa: { degree: 5, alteration: 0 } }],
+        },
+        ...score.measures.slice(1),
+      ],
+    };
+
+    const applied = applyDegrees(scored, new Map([['n1', { degree: 2, alteration: -1 }]]));
+
+    expect(applied.measures[0]?.notes[0]?.solfa).toEqual({ degree: 2, alteration: -1 });
+  });
+
+  it('音符以外のフィールドを保つ', () => {
+    const applied = applyDegrees(score, new Map([['n1', { degree: 1, alteration: 0 }]]));
+
+    expect(applied.parts).toEqual(score.parts);
+    expect(applied.measures[1]).toEqual(score.measures[1]);
+    expect(applied.measures[0]?.notes[0]?.head).toEqual({ pageIndex: 0, x: 1, y: 2 });
+  });
+});
+
+describe('computeDegrees → toSyllable の一気通貫', () => {
+  it('ト長調の音階が階名文字列になる', () => {
+    const engine = new SolfaEngine();
+    const steps: PitchStep[] = ['G', 'A', 'B', 'C', 'D', 'E', 'F'];
+    const score: ScoreModel = {
+      parts: [{ id: 'P1', name: 'P1', staves: [] }],
+      systems: [],
+      measures: [
+        {
+          partId: 'P1',
+          index: 0,
+          status: 'matched',
+          notes: steps.map((step, i) => ({
+            id: `n${i}`,
+            partId: 'P1',
+            measureIndex: 0,
+            pitch: { step, alter: step === 'F' ? 1 : 0, octave: 4 },
+            head: { pageIndex: 0, x: i, y: 0 },
+            solfa: null,
+          })),
+        },
+      ],
+    };
+    const regions: KeyRegion[] = [
+      {
+        id: 'key-0',
+        start: { measureIndex: 0, offset: 0 },
+        tonicStep: 'G',
+        tonicAlter: 0,
+        mode: 'major',
+        source: 'auto',
+      },
+    ];
+
+    const applied = applyDegrees(score, engine.computeDegrees(score, regions, 'la'));
+    const syllables = (applied.measures[0]?.notes ?? []).map((n) =>
+      n.solfa === null ? '?' : engine.toSyllable(n.solfa, DEFAULT_SETTINGS),
+    );
+
+    expect(syllables).toEqual(['do', 're', 'mi', 'fa', 'so', 'la', 'ti']);
   });
 });

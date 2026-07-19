@@ -188,7 +188,14 @@ Renderer → ファイルシステム  (NG)
   BookStructureResolver による構造解決後の実測値（matched 1029小節・3500音・skipped 135・
   StructureIssue 6件）を固定する。残るクロスチェック不一致は音部記号の誤検出が主因で、
   ClefKeyConfirm での修正が前提（根拠は `tests/fixtures/divisi/README.md`）。
-- **対象**: パース→照合パイプライン、プロジェクトファイルの保存→再読込の同一性（後者は後続フェーズ）
+- **階名パイプライン回帰**: 「.omr + .mxl → 構造解決 → 照合 → KeyRegion 生成 → 階名計算 → 階名文字列」を
+  UI なしで通し、階名側の実測値を固定する（`tests/integration/pipeline/solfa-pipeline.test.ts`）。
+  Victoria は KeyRegion 2 区間（曲頭ハ長調＋通し 28 小節目でト長調）・808 音全てに階名が付き
+  調号の食い違いなし。divisi は KeyRegion 8 区間・3500 音全てに階名が付き
+  `keySignatureConflict` 10 件。**Audiveris が `<mode>` を出力しないため自動生成の KeyRegion は
+  全て長調になり、La 基準と Do 基準の結果が一致する**（ClefKeyConfirm で調の長短を指定できるように
+  なるまで解消しない既知の制約。このテストはその制約自体を固定している）。
+- **対象**: パース→照合→階名パイプライン、プロジェクトファイルの保存→再読込の同一性（後者は後続フェーズ）
 - **申し送り**: 本物の Audiveris 起動を伴う E2E はコンテナでは不可（Audiveris/JRE 非搭載）。ホスト
   実機での手動確認に委ねる。OmrRunner は spawn を DI 化し、子プロセス以外のロジックを単体テスト化。
 

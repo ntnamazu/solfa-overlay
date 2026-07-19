@@ -15,6 +15,7 @@ graph TB
     OmrRunner[OmrRunner<br>Audiveris ヘッドレス実行]
     BookResolver[BookStructureResolver<br>譜表構造の検出・復元]
     ScoreBuilder[ScoreModelBuilder<br>MusicXML×.omr 照合]
+    KeyBuilder[KeyRegionBuilder<br>調文脈の自動生成]
     SolfaEngine[SolfaEngine<br>調文脈・階名計算]
     AnnotMgr[AnnotationManager<br>注釈レイヤー管理]
     Renderer[OverlayRenderer<br>PDF合成出力]
@@ -30,6 +31,8 @@ graph TB
     OmrRunner --> Audiveris
     OmrRunner --> BookResolver
     BookResolver --> ScoreBuilder
+    BookResolver --> KeyBuilder
+    KeyBuilder --> SolfaEngine
     ScoreBuilder --> SolfaEngine
     SolfaEngine --> AnnotMgr
     UI --> Store
@@ -195,6 +198,7 @@ interface ProjectSettings {
 **制約**:
 - `ConfirmationState.completedAt` が null の間は階名生成・PDF出力に進めない（F-2の受け入れ条件）
 - `KeyRegion` は `start` 昇順で重複なし。先頭要素は曲頭（measureIndex=0, offset=0）に必ず存在する
+  （`KeyRegionBuilder` が曲頭の既定を必ず置いて担保し、`SolfaEngine.computeDegrees` が契約として検証する）
 - `Annotation.noteId` を持つ注釈は、OMR再実行時に音符IDの再照合で引き継ぐ。照合できない場合は孤立注釈として修正UIに提示する
 
 ### ER図
@@ -323,6 +327,51 @@ class ScoreModelBuilder {
 
 **依存関係**: OmrRunner の成果物、BookStructureResolver の確定構造
 
+### KeyRegionBuilder
+
+**責務**:
+- MusicXML の調号宣言（`<key><fifths>`）から調文脈（`KeyRegion[]`）を自動生成
+- movement ローカルの小節番号を確定構造のアンカー経由で通し小節番号へ変換
+- パートごとに調号を持続計算し、小節単位の多数決で 1 つに決める
+- 検出した問題は例外にせず `KeyRegionIssue` として部分結果と共に返す
+
+**インターフェース**:
+```typescript
+class KeyRegionBuilder {
+  build(artifacts: OmrArtifacts, structure: ResolvedStructure): KeyRegionBuildResult;
+  // KeyRegionBuildResult = { keyRegions: KeyRegion[]; issues: KeyRegionIssue[] }
+}
+
+type KeyRegionIssue =
+  // 同じ小節でパートごとに有効な調号が食い違う（多数決で 1 つに決めた）
+  | { kind: 'keySignatureConflict'; measureIndex: number; fifthsByPart: Record<string, number>; adopted: number }
+  // 五度圏の範囲（-7〜+7）を外れた調号。その宣言は無視し直前の調号を維持する
+  | { kind: 'unsupportedKeySignature'; measureIndex: number; partId: string; fifths: number };
+```
+
+`ScoreModelBuilder` と**同じ入力**を取り、同じ基準（`structureAnchors`）で通し小節番号へ変換する。
+これにより照合結果と調文脈の小節番号が必ず揃う。`ResolvedStructure` と `OmrArtifacts` の
+不整合（movement が指す MusicXML の欠落・movement 間の小節番号の重複／曲順の逆転）は、
+`ScoreModelBuilder` と同じく**呼び出し側の契約違反として例外**にする。
+**同じ入力に対する受理／拒否は両者で必ず一致させる**（片方だけが並べ替え等で救うと、
+壊れた構造が一方では「正常」として通ってしまう）。
+
+曲頭の既定 KeyRegion を置く際、最初に検出された調が既定（ハ長調）と**同じ調**であれば
+区間を分けず開始位置を曲頭へ移す。単純に前置きすると転調していないのに同じ調の KeyRegion が
+2 つ並び、転調点 UI（F-6）が存在しない転調点を描いてしまう（調号なしの楽譜で必ず起きる）。
+
+**実データの制約（重要）**:
+Audiveris は `<key><fifths>` のみを出力し **`<mode>` を書かない**（Victoria・divisi 両フィクスチャの
+全宣言で確認）。このため**長調/短調の自動判別はできず**、自動生成される `KeyRegion` は全て長調になる。
+結果として **La 基準の移動ド（本アプリの主目的の1つ）は自動では効かない**（長調では La 基準と
+Do 基準で do の位置が変わらないため）。短調として読ませるにはユーザー指定が必要であり、
+**ClefKeyConfirm（F-2）で調の長短を指定できるようにすることが必須要件**となる。
+
+また実データでは曲頭に調号宣言がない（Victoria は通し 28 小節目、divisi は 48 小節目が初出）ため、
+曲頭には既定のハ長調を必ず置く（`KeyRegion` の「先頭要素は曲頭に必ず存在する」制約の担保）。
+
+**依存関係**: MusicXmlParser の出力、BookStructureResolver の確定構造
+
 ### SolfaEngine
 
 **責務**:
@@ -332,10 +381,26 @@ class ScoreModelBuilder {
 **インターフェース**:
 ```typescript
 class SolfaEngine {
-  computeDegrees(score: ScoreModel, keyRegions: KeyRegion[]): Map<string, SolfaDegree>;
+  computeDegrees(score: ScoreModel, keyRegions: readonly KeyRegion[], basis: MinorBasis): Map<string, SolfaDegree>;
   toSyllable(degree: SolfaDegree, settings: ProjectSettings): string;
 }
+
+/** 階名計算結果を反映した新しい ScoreModel を返す（非破壊） */
+function applyDegrees(score: ScoreModel, degrees: ReadonlyMap<string, SolfaDegree>): ScoreModel;
 ```
+
+- `basis`（短調基準）は第3引数として受け取る。これがないと短調の do の位置が決まらないため、
+  1音符版の `computeDegree(note, region, basis)` と引数を揃えた
+- `keyRegions` は「非空・先頭が曲頭（measureIndex=0, offset=0）・小節番号の昇順で重複なし」を
+  **契約**とし、違反は例外にする（認識エラーではなく呼び出し側が組んだデータの不整合のため）
+- 各音符の調文脈は通し小節番号から二分探索で引く
+- `applyDegrees` は `Map` を `ScoreModel` へ反映する純粋関数。注釈生成（AnnotationManager）と
+  通し回帰テストのために用意する。**結果のない音符は既存の `solfa` を保つ（上書きしない）**
+  マージ意味論とし、転調指定変更時の範囲限定再計算（性能要件）で範囲外の階名が無言で消えないようにする
+
+**既知の限界**: `NoteEvent` は小節内オフセットを持たないため `KeyRegion.start.offset` は無視され、
+転調はその小節の先頭から適用される。自動生成の `KeyRegion` は必ず offset=0 のため現時点で実害はない。
+小節途中の転調指定（F-6）を実装する際に `NoteEvent` へオフセットを持たせるか判断する。
 
 **依存関係**: ScoreModel、KeyRegion
 
@@ -405,6 +470,12 @@ function writeExportPdf(outPath: string, pdfBytes: Uint8Array): Promise<void>;
 ### 階名計算（SolfaEngine）
 
 **目的**: 調文脈と記譜音高から、音節体系に依存しない内部表現（度数＋変位）を計算する
+
+#### ステップ0: 調文脈の解決
+
+- 音符の通し小節番号から、その位置で有効な `KeyRegion` を二分探索で引く
+- **実データの制約**: Audiveris が `<mode>` を出力しないため自動生成の `KeyRegion` は全て長調になり、
+  ステップ1の分岐のうち短調側はユーザー指定（F-2 / F-6）がない限り選ばれない
 
 #### ステップ1: 「do」の位置の決定
 

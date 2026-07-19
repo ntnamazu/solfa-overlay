@@ -5,6 +5,9 @@ import { parseMusicXml } from '../../../src/domain/score/MusicXmlParser';
 import { parseBookXml, parseSheetXml } from '../../../src/domain/score/OmrSheetParser';
 import type { OmrArtifacts } from '../../../src/domain/score/ScoreModelBuilder';
 import { ScoreModelBuilder } from '../../../src/domain/score/ScoreModelBuilder';
+import { KeyRegionBuilder } from '../../../src/domain/solfa/KeyRegionBuilder';
+import { applyDegrees, SolfaEngine } from '../../../src/domain/solfa/SolfaEngine';
+import { DEFAULT_SETTINGS } from '../../../src/shared/constants/DEFAULT_SETTINGS';
 import type { ConfirmationState } from '../../../src/shared/types/Confirmation';
 
 /**
@@ -136,5 +139,38 @@ describe('synthetic-mini パイプライン統合', () => {
       { pageIndex: 0, systemIndex: 0, staffIndex: 1, partId: 'P2' },
       { pageIndex: 0, systemIndex: 1, staffIndex: 1, partId: 'P2' },
     ]);
+  });
+
+  describe('階名パイプラインの結線', () => {
+    const { keyRegions, issues } = new KeyRegionBuilder().build(artifacts, structure);
+    const engine = new SolfaEngine();
+    const degrees = engine.computeDegrees(result.score, keyRegions, DEFAULT_SETTINGS.minorBasis);
+    const scored = applyDegrees(result.score, degrees);
+
+    it('曲頭の調号宣言（fifths=1）からト長調の KeyRegion を生成する', () => {
+      expect(keyRegions).toHaveLength(1);
+      expect(keyRegions[0]?.start).toEqual({ measureIndex: 0, offset: 0 });
+      expect(keyRegions[0]?.tonicStep).toBe('G');
+      expect(keyRegions[0]?.tonicAlter).toBe(0);
+      // <mode> がないため長調として扱う（Audiveris の出力と同じ状況）
+      expect(keyRegions[0]?.mode).toBe('major');
+      expect(keyRegions[0]?.source).toBe('auto');
+      expect(issues).toEqual([]);
+    });
+
+    it('照合できた全ての音符が階名を得る', () => {
+      const total = result.score.measures.reduce((sum, m) => sum + m.notes.length, 0);
+      expect(degrees.size).toBe(total);
+      expect(scored.measures.flatMap((m) => m.notes.filter((n) => n.solfa === null))).toEqual([]);
+    });
+
+    it('ト長調の音符が階名文字列になる（G4 → do）', () => {
+      const p1m0 = scored.measures.find((m) => m.partId === 'P1' && m.index === 0);
+      expect(
+        (p1m0?.notes ?? []).map((n) =>
+          n.solfa === null ? '?' : engine.toSyllable(n.solfa, DEFAULT_SETTINGS),
+        ),
+      ).toEqual(['do', 're']);
+    });
   });
 });

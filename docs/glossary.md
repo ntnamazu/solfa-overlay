@@ -238,6 +238,16 @@
 
 **関連用語**: 階名計算、度数＋変位（SolfaDegree）、音節体系
 
+### KeyRegionBuilder
+
+**定義**: MusicXML の調号宣言から調文脈（KeyRegion）を自動生成するコンポーネント。パートごとに調号を持続計算し、小節単位の多数決で 1 つに決める
+
+**所属**: サービスレイヤー（`src/domain/solfa/KeyRegionBuilder.ts`）
+
+**説明**: ScoreModelBuilder と同じ入力（OmrArtifacts + ResolvedStructure）を取り、同じ基準で通し小節番号へ変換するため、照合結果と調文脈の小節番号が必ず揃う。Audiveris は `<mode>` を出力しないため、生成される調文脈は全て長調になる（長短の指定は ClefKeyConfirm の担当）
+
+**関連用語**: 調文脈（KeyRegion）、SolfaEngine、確定構造（ResolvedStructure）
+
 ### AnnotationManager
 
 **定義**: 注釈レイヤーを管理するコンポーネント。階名計算結果からの自動生成（衝突回避配置を含む）、手動注釈の追加・編集・削除、再計算時の手動修正の保全を担う
@@ -394,8 +404,8 @@
 
 | 値 | 意味 |
 |----|------|
-| auto | 調号（変更）から自動検出 |
-| user | ユーザーが転調点として指定（F-6）。auto を上書きできる |
+| auto | 調号（変更）から自動検出（KeyRegionBuilder が生成）。曲頭に調号宣言がない場合はハ長調を既定として置く |
+| user | ユーザーが転調点として指定（F-6）。auto を上書きできる。**長短（mode）の指定は現状 user のみ**（Audiveris が `<mode>` を出力しないため auto は常に長調になる） |
 
 ### 画面遷移
 

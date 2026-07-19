@@ -93,8 +93,8 @@ project-root/
 **役割**: OMR成果物の照合・階名計算・注釈管理・PDF合成というドメインロジック。**Electron 非依存の純粋 TypeScript** に保ち、ユニットテスト容易性を担保する
 
 **配置ファイル**:
-- `score/`: `ScoreModelBuilder.ts`, `MusicXmlParser.ts`, `OmrSheetParser.ts`, `BookStructureResolver.ts`（段ごとの小節番号アンカーの確定）
-- `solfa/`: `SolfaEngine.ts`, `syllableTables.ts`（コダーイ式/Tonic sol-fa の文字列化表）
+- `score/`: `ScoreModelBuilder.ts`, `MusicXmlParser.ts`, `OmrSheetParser.ts`, `BookStructureResolver.ts`（段ごとの小節番号アンカーの確定）, `structureAnchors.ts`（確定構造から通し小節番号の基準値を求める純粋関数。照合と調文脈生成が共有する）
+- `solfa/`: `SolfaEngine.ts`, `syllableTables.ts`（コダーイ式/Tonic sol-fa の文字列化表）, `KeyRegionBuilder.ts`（調号から調文脈を自動生成）, `keyTable.ts`（調号→主音の対応表）
 - `annotations/`: `AnnotationManager.ts`, `placementResolver.ts`（衝突回避）
 - `render/`: `OverlayRenderer.ts`, `coordinateTransform.ts`（.omr px → PDF pt）
 
@@ -141,8 +141,12 @@ project-root/
 ```
 tests/unit/
 ├── domain/
+│   ├── score/
+│   │   └── structureAnchors.test.ts  # src と同構造をミラー
 │   └── solfa/
-│       └── SolfaEngine.test.ts   # src と同構造をミラー
+│       ├── SolfaEngine.test.ts
+│       ├── KeyRegionBuilder.test.ts
+│       └── keyTable.test.ts
 └── storage/
     └── backupRotation.test.ts    # storage も同様にミラー
 ```
@@ -160,7 +164,8 @@ tests/integration/
 │   ├── synthetic-mini.test.ts       # 合成フィクスチャの通し回帰（パース→照合）
 │   ├── realFixtureHelpers.ts        # 実 .omr/.mxl → 照合まで走らせる共有ヘルパー
 │   ├── victoria-regression.test.ts  # 実 Audiveris: matched295・808音・不一致0・skipped1
-│   └── divisi-regression.test.ts    # SSAATTBB divisi: 構造解決後 matched1029・3500音・skipped135
+│   ├── divisi-regression.test.ts    # SSAATTBB divisi: 構造解決後 matched1029・3500音・skipped135
+│   └── solfa-pipeline.test.ts       # 階名まで通す一気通貫回帰（KeyRegion・階名分布の固定）
 └── project-file/
     └── save-load-roundtrip.test.ts
 ```
