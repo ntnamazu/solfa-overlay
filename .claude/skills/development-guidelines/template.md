@@ -7,17 +7,19 @@
 #### 変数・関数
 
 **TypeScript/JavaScript**:
+
 ```typescript
 // ✅ 良い例
 const userProfileData = fetchUserProfile();
-function calculateTotalPrice(items: CartItem[]): number { }
+function calculateTotalPrice(items: CartItem[]): number {}
 
 // ❌ 悪い例
 const data = fetch();
-function calc(arr: any[]): number { }
+function calc(arr: any[]): number {}
 ```
 
 **原則**:
+
 - 変数: camelCase、名詞または名詞句
 - 関数: camelCase、動詞で始める
 - 定数: UPPER_SNAKE_CASE
@@ -27,12 +29,12 @@ function calc(arr: any[]): number { }
 
 ```typescript
 // クラス: PascalCase、名詞
-class TaskManager { }
-class UserAuthenticationService { }
+class TaskManager {}
+class UserAuthenticationService {}
 
 // インターフェース: PascalCase、I接頭辞またはなし
-interface ITaskRepository { }
-interface Task { }
+interface ITaskRepository {}
+interface Task {}
 
 // 型エイリアス: PascalCase
 type TaskStatus = 'todo' | 'in_progress' | 'completed';
@@ -45,14 +47,16 @@ type TaskStatus = 'todo' | 'in_progress' | 'completed';
 **行の長さ**: 最大[80/100/120]文字
 
 **例**:
+
 ```typescript
 // [言語] コードフォーマット例
-[コード例]
+[コード例];
 ```
 
 ### コメント規約
 
 **関数・クラスのドキュメント**:
+
 ```typescript
 /**
  * タスクの合計数を計算する
@@ -62,15 +66,13 @@ type TaskStatus = 'todo' | 'in_progress' | 'completed';
  * @returns タスクの合計数
  * @throws {ValidationError} タスク配列が不正な場合
  */
-function countTasks(
-  tasks: Task[],
-  filter?: TaskFilter
-): number {
+function countTasks(tasks: Task[], filter?: TaskFilter): number {
   // 実装
 }
 ```
 
 **インラインコメント**:
+
 ```typescript
 // ✅ 良い例: なぜそうするかを説明
 // キャッシュを無効化して、最新データを取得
@@ -84,18 +86,20 @@ cache.clear();
 ### エラーハンドリング
 
 **原則**:
+
 - 予期されるエラー: 適切なエラークラスを定義
 - 予期しないエラー: 上位に伝播
 - エラーを無視しない
 
 **例**:
+
 ```typescript
 // エラークラス定義
 class ValidationError extends Error {
   constructor(
     message: string,
     public field: string,
-    public value: unknown
+    public value: unknown,
   ) {
     super(message);
     this.name = 'ValidationError';
@@ -121,6 +125,7 @@ try {
 ### ブランチ戦略
 
 **ブランチ種別**:
+
 - `main`: 本番環境にデプロイ可能な状態
 - `develop`: 開発の最新状態
 - `feature/[機能名]`: 新機能開発
@@ -128,6 +133,7 @@ try {
 - `refactor/[対象]`: リファクタリング
 
 **フロー**:
+
 ```
 main
   └─ develop
@@ -139,6 +145,7 @@ main
 ### コミットメッセージ規約
 
 **フォーマット**:
+
 ```
 <type>(<scope>): <subject>
 
@@ -148,6 +155,7 @@ main
 ```
 
 **Type**:
+
 - `feat`: 新機能
 - `fix`: バグ修正
 - `docs`: ドキュメント
@@ -157,6 +165,7 @@ main
 - `chore`: ビルド、補助ツール等
 
 **例**:
+
 ```
 feat(task): タスクの優先度設定機能を追加
 
@@ -171,35 +180,44 @@ Closes #123
 ### プルリクエストプロセス
 
 **作成前のチェック**:
+
 - [ ] 全てのテストがパス
 - [ ] Lintエラーがない
 - [ ] 型チェックがパス
 - [ ] 競合が解決されている
 
 **PRテンプレート**:
+
 ```markdown
 ## 概要
+
 [変更内容の簡潔な説明]
 
 ## 変更理由
+
 [なぜこの変更が必要か]
 
 ## 変更内容
+
 - [変更点1]
 - [変更点2]
 
 ## テスト
+
 - [ ] ユニットテスト追加
 - [ ] 手動テスト実施
 
 ## スクリーンショット(該当する場合)
+
 [画像]
 
 ## 関連Issue
+
 Closes #[Issue番号]
 ```
 
 **レビュープロセス**:
+
 1. セルフレビュー
 2. 自動テスト実行
 3. レビュアーアサイン
@@ -217,6 +235,7 @@ Closes #[Issue番号]
 **カバレッジ目標**: [80/90/100]%
 
 **例**:
+
 ```typescript
 describe('TaskService', () => {
   describe('create', () => {
@@ -234,9 +253,7 @@ describe('TaskService', () => {
     it('タイトルが空の場合ValidationErrorをスローする', async () => {
       const service = new TaskService(mockRepository);
 
-      await expect(
-        service.create({ title: '' })
-      ).rejects.toThrow(ValidationError);
+      await expect(service.create({ title: '' })).rejects.toThrow(ValidationError);
     });
   });
 });
@@ -247,6 +264,7 @@ describe('TaskService', () => {
 **対象**: 複数コンポーネントの連携
 
 **例**:
+
 ```typescript
 describe('Task CRUD', () => {
   it('タスクの作成・取得・更新・削除ができる', async () => {
@@ -275,6 +293,7 @@ describe('Task CRUD', () => {
 **対象**: ユーザーシナリオ全体
 
 **例**:
+
 ```typescript
 describe('タスク管理フロー', () => {
   it('ユーザーがタスクを追加して完了できる', async () => {
@@ -298,25 +317,28 @@ describe('タスク管理フロー', () => {
 **パターン**: `[対象]_[条件]_[期待結果]`
 
 **例**:
+
 ```typescript
 // ✅ 良い例
-it('create_emptyTitle_throwsValidationError', () => { });
-it('findById_existingId_returnsTask', () => { });
-it('delete_nonExistentId_throwsNotFoundError', () => { });
+it('create_emptyTitle_throwsValidationError', () => {});
+it('findById_existingId_returnsTask', () => {});
+it('delete_nonExistentId_throwsNotFoundError', () => {});
 
 // ❌ 悪い例
-it('test1', () => { });
-it('works', () => { });
-it('should work correctly', () => { });
+it('test1', () => {});
+it('works', () => {});
+it('should work correctly', () => {});
 ```
 
 ### モック・スタブの使用
 
 **原則**:
+
 - 外部依存(API、DB、ファイルシステム)はモック化
 - ビジネスロジックは実装を使用
 
 **例**:
+
 ```typescript
 // リポジトリをモック化
 const mockRepository: ITaskRepository = {
@@ -335,26 +357,31 @@ const service = new TaskService(mockRepository);
 ### レビューポイント
 
 **機能性**:
+
 - [ ] 要件を満たしているか
 - [ ] エッジケースが考慮されているか
 - [ ] エラーハンドリングが適切か
 
 **可読性**:
+
 - [ ] 命名が明確か
 - [ ] コメントが適切か
 - [ ] 複雑なロジックが説明されているか
 
 **保守性**:
+
 - [ ] 重複コードがないか
 - [ ] 責務が明確に分離されているか
 - [ ] 変更の影響範囲が限定的か
 
 **パフォーマンス**:
+
 - [ ] 不要な計算がないか
 - [ ] メモリリークの可能性がないか
 - [ ] データベースクエリが最適化されているか
 
 **セキュリティ**:
+
 - [ ] 入力検証が適切か
 - [ ] 機密情報がハードコードされていないか
 - [ ] 権限チェックが実装されているか
@@ -362,16 +389,20 @@ const service = new TaskService(mockRepository);
 ### レビューコメントの書き方
 
 **建設的なフィードバック**:
+
 ```markdown
 ## ✅ 良い例
+
 この実装だと、タスク数が増えた時にパフォーマンスが劣化する可能性があります。
 代わりに、インデックスを使った検索を検討してはどうでしょうか？
 
 ## ❌ 悪い例
+
 この書き方は良くないです。
 ```
 
 **優先度の明示**:
+
 - `[必須]`: 修正必須
 - `[推奨]`: 修正推奨
 - `[提案]`: 検討してほしい
@@ -381,10 +412,10 @@ const service = new TaskService(mockRepository);
 
 ### 必要なツール
 
-| ツール | バージョン | インストール方法 |
-|--------|-----------|-----------------|
-| [ツール1] | [バージョン] | [コマンド] |
-| [ツール2] | [バージョン] | [コマンド] |
+| ツール    | バージョン   | インストール方法 |
+| --------- | ------------ | ---------------- |
+| [ツール1] | [バージョン] | [コマンド]       |
+| [ツール2] | [バージョン] | [コマンド]       |
 
 ### セットアップ手順
 

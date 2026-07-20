@@ -5,12 +5,14 @@
 ### 1. 技術選定には理由を明記
 
 **悪い例**:
+
 ```
 - Node.js
 - TypeScript
 ```
 
 **良い例**:
+
 ```
 - Node.js v24.11.0 (LTS)
   - 2026年4月までの長期サポート保証により、本番環境での安定稼働が期待できる
@@ -47,6 +49,7 @@ UI → Data (NG)
 ### 各レイヤーの責務
 
 **UIレイヤー**:
+
 ```typescript
 // 責務: ユーザー入力の受付とバリデーション
 class CLI {
@@ -64,6 +67,7 @@ class CLI {
 ```
 
 **サービスレイヤー**:
+
 ```typescript
 // 責務: ビジネスロジックの実装
 class TaskService {
@@ -79,6 +83,7 @@ class TaskService {
 ```
 
 **データレイヤー**:
+
 ```typescript
 // 責務: データの永続化
 class TaskRepository {
@@ -107,12 +112,14 @@ class TaskRepository {
 ### データ保護の3原則
 
 1. **最小権限の原則**
+
 ```bash
 # ファイルパーミッション
 chmod 600 ~/.devtask/tasks.json  # 所有者のみ読み書き
 ```
 
 2. **入力検証**
+
 ```typescript
 function validateTitle(title: string): void {
   if (!title || title.length === 0) {
@@ -125,6 +132,7 @@ function validateTitle(title: string): void {
 ```
 
 3. **機密情報の管理**
+
 ```bash
 # 環境変数で管理
 export DEVTASK_API_KEY="xxxxx"  # コード内にハードコードしない
@@ -137,6 +145,7 @@ export DEVTASK_API_KEY="xxxxx"  # コード内にハードコードしない
 **想定データ量**: [例: 10,000件のタスク]
 
 **対策**:
+
 - データのページネーション
 - 古いデータのアーカイブ
 - インデックスの最適化
@@ -147,7 +156,7 @@ class ArchiveService {
   async archiveCompletedTasks(olderThan: Date): Promise<void> {
     const oldTasks = await this.repository.findCompleted(olderThan);
     await this.archiveStorage.save(oldTasks);
-    await this.repository.deleteMany(oldTasks.map(t => t.id));
+    await this.repository.deleteMany(oldTasks.map((t) => t.id));
   }
 }
 ```
@@ -159,17 +168,18 @@ class ArchiveService {
 ```json
 {
   "dependencies": {
-    "commander": "^11.0.0",  // マイナーバージョンアップは自動
-    "chalk": "5.3.0"         // 破壊的変更のリスクがある場合は固定
+    "commander": "^11.0.0", // マイナーバージョンアップは自動
+    "chalk": "5.3.0" // 破壊的変更のリスクがある場合は固定
   },
   "devDependencies": {
-    "typescript": "~5.3.0",  // パッチバージョンのみ自動
+    "typescript": "~5.3.0", // パッチバージョンのみ自動
     "eslint": "^9.0.0"
   }
 }
 ```
 
 **方針**:
+
 - 安定版は固定(^でマイナーバージョンまで許可)
 - 破壊的変更のリスクがある場合は完全固定
 - devDependenciesはパッチバージョンのみ自動(~)

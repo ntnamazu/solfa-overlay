@@ -55,16 +55,19 @@ Audiveris の出力（MusicXML / .omr sheet XML / book.xml）をパースし、�
 ## 受け入れ条件
 
 ### MusicXmlParser
+
 - [x] 複数パート・和音（chord）・休符除外・臨時記号（alter）・調号変更を正しく抽出できる
 - [x] backup / forward を含む多声小節でも小節内オフセットが正しい
 - [x] 不正な XML はドメインのエラークラスで安全に失敗する
 
 ### OmrSheetParser
+
 - [x] プロトタイプが実証した sheet XML 構造（system / stack / part / staff / clef / head+bounds）を
       抽出できる（符頭は x 昇順）
 - [x] book.xml の movement-start から movement ごとのページ列を得られる
 
 ### ScoreModelBuilder
+
 - [x] 音符数一致の小節は時間順×座標順で対になり、`status: 'matched'` の Measure ができる
 - [x] 不一致の小節は `status: 'skipped'` になり、他の小節の照合に影響しない
 - [x] 音高クロスチェック不一致が issue として報告される（音符自体は MusicXML の音高で生成）
@@ -74,6 +77,7 @@ Audiveris の出力（MusicXML / .omr sheet XML / book.xml）をパースし、�
 - [x] 複数 movement（誤分割された曲）を通し小節番号で連結できる
 
 ### 品質
+
 - [x] `src/domain/` のカバレッジ 90% 以上を維持（vitest.config.ts の閾値。実績 branches 92.97% / statements 99.04% / functions 100% / lines 99.34%）
 - [x] lint / typecheck / build がすべてパスする（レイヤー境界: domain は純粋TSのまま）
 

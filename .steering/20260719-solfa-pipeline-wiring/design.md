@@ -24,19 +24,19 @@ OmrArtifacts ─┬─→ BookStructureResolver.resolve() ─→ ResolvedStructu
 
 ## 新規ファイル
 
-| パス | 役割 |
-|---|---|
-| `src/domain/score/structureAnchors.ts` | `ResolvedMovement` から通し小節番号の基準値を求める純粋関数 |
-| `src/domain/solfa/keyTable.ts` | 調号（fifths）→ 主音の対応表（`clefTable.ts` と同じ表駆動パターン） |
-| `src/domain/solfa/KeyRegionBuilder.ts` | `KeyRegion[]` の自動生成 |
+| パス                                   | 役割                                                                |
+| -------------------------------------- | ------------------------------------------------------------------- |
+| `src/domain/score/structureAnchors.ts` | `ResolvedMovement` から通し小節番号の基準値を求める純粋関数         |
+| `src/domain/solfa/keyTable.ts`         | 調号（fifths）→ 主音の対応表（`clefTable.ts` と同じ表駆動パターン） |
+| `src/domain/solfa/KeyRegionBuilder.ts` | `KeyRegion[]` の自動生成                                            |
 
 ## 変更ファイル
 
-| パス | 変更内容 |
-|---|---|
-| `src/domain/score/ScoreModelBuilder.ts` | 基準値計算を `structureAnchors.ts` へ委譲（重複解消） |
-| `src/domain/solfa/SolfaEngine.ts` | `computeDegrees()` / `applyDegrees()` を追加 |
-| `tests/integration/pipeline/realFixtureHelpers.ts` | 階名まで通すヘルパーと要約項目を追加 |
+| パス                                               | 変更内容                                              |
+| -------------------------------------------------- | ----------------------------------------------------- |
+| `src/domain/score/ScoreModelBuilder.ts`            | 基準値計算を `structureAnchors.ts` へ委譲（重複解消） |
+| `src/domain/solfa/SolfaEngine.ts`                  | `computeDegrees()` / `applyDegrees()` を追加          |
+| `tests/integration/pipeline/realFixtureHelpers.ts` | 階名まで通すヘルパーと要約項目を追加                  |
 
 ## 詳細設計
 
@@ -62,8 +62,8 @@ export function movementEndMeasureIndex(movement: ResolvedMovement, fallback: nu
 **調号 → 主音の対応表**。`fifths` は -7〜+7 を扱う。
 
 ```typescript
-export const MAJOR_TONICS: Readonly<Record<number, KeyTonic>>;  // 0 → C, 1 → G, -1 → F, ...
-export const MINOR_TONICS: Readonly<Record<number, KeyTonic>>;  // 0 → A, 1 → E, -1 → D, ...
+export const MAJOR_TONICS: Readonly<Record<number, KeyTonic>>; // 0 → C, 1 → G, -1 → F, ...
+export const MINOR_TONICS: Readonly<Record<number, KeyTonic>>; // 0 → A, 1 → E, -1 → D, ...
 
 export function tonicForFifths(fifths: number, mode: 'major' | 'minor'): KeyTonic | null;
 ```
@@ -84,7 +84,12 @@ export interface KeyRegionBuildResult {
 }
 
 export type KeyRegionIssue =
-  | { kind: 'keySignatureConflict'; measureIndex: number; fifthsByPart: Record<string, number>; adopted: number }
+  | {
+      kind: 'keySignatureConflict';
+      measureIndex: number;
+      fifthsByPart: Record<string, number>;
+      adopted: number;
+    }
   | { kind: 'unsupportedKeySignature'; measureIndex: number; partId: string; fifths: number };
 
 export class KeyRegionBuilder {
@@ -117,7 +122,11 @@ export class KeyRegionBuilder {
 
 ```typescript
 class SolfaEngine {
-  computeDegrees(score: ScoreModel, keyRegions: KeyRegion[], basis: MinorBasis): Map<string, SolfaDegree>;
+  computeDegrees(
+    score: ScoreModel,
+    keyRegions: KeyRegion[],
+    basis: MinorBasis,
+  ): Map<string, SolfaDegree>;
 }
 
 export function applyDegrees(score: ScoreModel, degrees: Map<string, SolfaDegree>): ScoreModel;
@@ -128,6 +137,7 @@ export function applyDegrees(score: ScoreModel, degrees: Map<string, SolfaDegree
 揃えて第3引数に `basis: MinorBasis` を足す。機能設計書を実装に合わせて更新する。
 
 **KeyRegion の解決**:
+
 - `keyRegions` は `start` 昇順・先頭が `measureIndex 0` であることを**契約**とし、
   違反時は例外を投げる（`ScoreModelBuilder` が `ResolvedStructure` の契約違反を例外にするのと同じ扱い。
   呼び出し側が組んだデータの健全性チェックであり、認識エラーではない）
@@ -146,13 +156,13 @@ export function applyDegrees(score: ScoreModel, degrees: Map<string, SolfaDegree
 
 ## テスト方針
 
-| テスト | 内容 |
-|---|---|
-| `tests/unit/domain/score/structureAnchors.test.ts` | 基準値計算（空 systems・逆順 systems・複数 movement） |
-| `tests/unit/domain/solfa/keyTable.test.ts` | 全 15 fifths の主音・平行短調の検算・`resolveDo` との整合・範囲外 |
-| `tests/unit/domain/solfa/KeyRegionBuilder.test.ts` | 曲頭既定・調号持続・多数決・conflict 報告・範囲外報告・movement 跨ぎ |
+| テスト                                                | 内容                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| `tests/unit/domain/score/structureAnchors.test.ts`    | 基準値計算（空 systems・逆順 systems・複数 movement）                    |
+| `tests/unit/domain/solfa/keyTable.test.ts`            | 全 15 fifths の主音・平行短調の検算・`resolveDo` との整合・範囲外        |
+| `tests/unit/domain/solfa/KeyRegionBuilder.test.ts`    | 曲頭既定・調号持続・多数決・conflict 報告・範囲外報告・movement 跨ぎ     |
 | `tests/unit/domain/solfa/SolfaEngine.test.ts`（追記） | `computeDegrees` の region 解決・契約違反例外・`applyDegrees` の非破壊性 |
-| `tests/integration/pipeline/solfa-pipeline.test.ts` | victoria / divisi の一気通貫回帰（実測値を固定） |
+| `tests/integration/pipeline/solfa-pipeline.test.ts`   | victoria / divisi の一気通貫回帰（実測値を固定）                         |
 
 **退行検知の順序**（前作業の学びを踏襲）:
 既存の `victoria-regression.test.ts` / `divisi-regression.test.ts` を**先に**実行し、

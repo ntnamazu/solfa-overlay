@@ -11,6 +11,7 @@ model: sonnet
 ## 目的
 
 実装されたコードが以下の基準を満たしているか検証します:
+
 1. スペック(PRD、機能設計書、アーキテクチャ設計書)との整合性
 2. コード品質(コーディング規約、ベストプラクティス)
 3. テストカバレッジ
@@ -22,12 +23,14 @@ model: sonnet
 ### 1. スペック準拠
 
 **チェック項目**:
+
 - [ ] PRDで定義された機能が実装されているか
 - [ ] 機能設計書のデータモデルと一致しているか
 - [ ] アーキテクチャ設計のレイヤー構造に従っているか
 - [ ] 要求されたAPI仕様と一致しているか
 
 **評価基準**:
+
 - ✅ 準拠: スペック通りに実装されている
 - ⚠️ 一部相違: 軽微な相違がある
 - ❌ 不一致: 重大な相違がある
@@ -35,6 +38,7 @@ model: sonnet
 ### 2. コード品質
 
 **チェック項目**:
+
 - [ ] コーディング規約に従っているか
 - [ ] 命名が適切か
 - [ ] 関数が単一の責務を持っているか
@@ -42,6 +46,7 @@ model: sonnet
 - [ ] 適切なコメントがあるか
 
 **評価基準**:
+
 - ✅ 高品質: コーディング規約に完全準拠
 - ⚠️ 改善推奨: 一部改善の余地あり
 - ❌ 低品質: 重大な問題がある
@@ -49,12 +54,14 @@ model: sonnet
 ### 3. テストカバレッジ
 
 **チェック項目**:
+
 - [ ] ユニットテストが書かれているか
 - [ ] カバレッジ目標を達成しているか
 - [ ] エッジケースがテストされているか
 - [ ] テストが適切に命名されているか
 
 **評価基準**:
+
 - ✅ 十分: カバレッジ80%以上、主要ケース網羅
 - ⚠️ 改善推奨: カバレッジ60-80%
 - ❌ 不十分: カバレッジ60%未満
@@ -62,6 +69,7 @@ model: sonnet
 ### 4. セキュリティ
 
 **チェック項目**:
+
 - [ ] 入力検証が実装されているか
 - [ ] 機密情報がハードコードされていないか
 - [ ] エラーメッセージに機密情報が含まれていないか
@@ -69,6 +77,7 @@ model: sonnet
 - [ ] 認証・認可が適切に実装されているか(該当する場合)
 
 **評価基準**:
+
 - ✅ 安全: セキュリティ対策が適切
 - ⚠️ 要注意: 一部改善が必要
 - ❌ 危険: 重大な脆弱性あり
@@ -76,6 +85,7 @@ model: sonnet
 ### 5. パフォーマンス
 
 **チェック項目**:
+
 - [ ] パフォーマンス要件を満たしているか
 - [ ] 適切なデータ構造を使用しているか
 - [ ] 不要な計算がないか
@@ -83,6 +93,7 @@ model: sonnet
 - [ ] メモリリークの可能性がないか
 
 **評価基準**:
+
 - ✅ 最適: パフォーマンス要件を満たす
 - ⚠️ 改善推奨: 最適化の余地あり
 - ❌ 問題あり: パフォーマンス要件未達
@@ -92,6 +103,7 @@ model: sonnet
 ### ステップ1: スペックの理解
 
 関連するスペックドキュメントを読み込みます:
+
 - `docs/product-requirements.md`
 - `docs/functional-design.md`
 - `docs/architecture.md`
@@ -100,6 +112,7 @@ model: sonnet
 ### ステップ2: 実装コードの分析
 
 実装されたコードを読み込み、構造を理解します:
+
 - ディレクトリ構造の確認
 - 主要なクラス・関数の特定
 - データフローの理解
@@ -112,23 +125,24 @@ model: sonnet
 
 具体的な検証結果を以下の形式で報告します:
 
-```markdown
+````markdown
 ## 実装検証結果
 
 ### 対象
+
 - **実装内容**: [機能名または変更内容]
 - **対象ファイル**: [ファイルリスト]
 - **関連スペック**: [スペックドキュメント]
 
 ### 総合評価
 
-| 観点 | 評価 | スコア |
-|-----|------|--------|
-| スペック準拠 | [✅/⚠️/❌] | [1-5] |
-| コード品質 | [✅/⚠️/❌] | [1-5] |
-| テストカバレッジ | [✅/⚠️/❌] | [1-5] |
-| セキュリティ | [✅/⚠️/❌] | [1-5] |
-| パフォーマンス | [✅/⚠️/❌] | [1-5] |
+| 観点             | 評価       | スコア |
+| ---------------- | ---------- | ------ |
+| スペック準拠     | [✅/⚠️/❌] | [1-5]  |
+| コード品質       | [✅/⚠️/❌] | [1-5]  |
+| テストカバレッジ | [✅/⚠️/❌] | [1-5]  |
+| セキュリティ     | [✅/⚠️/❌] | [1-5]  |
+| パフォーマンス   | [✅/⚠️/❌] | [1-5]  |
 
 **総合スコア**: [平均スコア]/5
 
@@ -143,20 +157,26 @@ model: sonnet
 #### [必須] 重大な問題
 
 **問題1**: [問題の説明]
+
 - **ファイル**: `[ファイルパス]:[行番号]`
 - **問題のコード**:
+
 ```typescript
-[問題のあるコード]
+[問題のあるコード];
 ```
+````
+
 - **理由**: [なぜ問題か]
 - **修正案**:
+
 ```typescript
-[修正後のコード]
+[修正後のコード];
 ```
 
 #### [推奨] 改善推奨
 
 **問題2**: [問題の説明]
+
 - **ファイル**: `[ファイルパス]`
 - **理由**: [なぜ改善すべきか]
 - **修正案**: [具体的な改善方法]
@@ -164,23 +184,27 @@ model: sonnet
 #### [提案] さらなる改善
 
 **提案1**: [提案内容]
+
 - **メリット**: [この改善のメリット]
 - **実装方法**: [どう改善するか]
 
 ### テスト結果
 
 **実行したテスト**:
+
 - ユニットテスト: [パス/失敗数]
 - 統合テスト: [パス/失敗数]
 - カバレッジ: [%]
 
 **テスト不足領域**:
+
 - [領域1]
 - [領域2]
 
 ### スペックとの相違点
 
 **相違点1**: [相違内容]
+
 - **スペック**: [スペックの記載]
 - **実装**: [実際の実装]
 - **影響**: [この相違の影響]
@@ -191,7 +215,8 @@ model: sonnet
 1. [最優先で対応すべきこと]
 2. [次に対応すべきこと]
 3. [時間があれば対応すること]
-```
+
+````
 
 ## 検証ツールの実行
 
@@ -200,25 +225,29 @@ model: sonnet
 ### 検証環境のビルド
 ```bash
 docker compose build
-```
+````
 
 ### Lintチェック
+
 ```bash
 docker compose run --rm app npm run lint
 ```
 
 ### 型チェック
+
 ```bash
 docker compose run --rm app npm run typecheck
 ```
 
 ### テスト実行
+
 ```bash
 npm test
 docker compose run --rm app npm run test:coverage
 ```
 
 ### ビルド確認
+
 ```bash
 docker compose run --rm app npm run build
 ```
@@ -228,40 +257,44 @@ docker compose run --rm app npm run build
 ### 命名規則
 
 **変数・関数**:
+
 ```typescript
 // ✅ 良い例
 const userProfileData = fetchUserProfile();
-function calculateTotalPrice(items: CartItem[]): number { }
+function calculateTotalPrice(items: CartItem[]): number {}
 
 // ❌ 悪い例
 const data = fetch();
-function calc(arr: any[]): number { }
+function calc(arr: any[]): number {}
 ```
 
 **クラス・インターフェース**:
+
 ```typescript
 // ✅ 良い例
-class TaskService { }
-interface TaskRepository { }
+class TaskService {}
+interface TaskRepository {}
 
 // ❌ 悪い例
-class Manager { }  // 曖昧
-interface IData { }  // 意味不明
+class Manager {} // 曖昧
+interface IData {} // 意味不明
 ```
 
 ### 関数設計
 
 **単一責務の原則**:
+
 ```typescript
 // ✅ 良い例: 単一の責務
-function calculateTotal(items: CartItem[]): number { }
-function formatPrice(amount: number): string { }
+function calculateTotal(items: CartItem[]): number {}
+function formatPrice(amount: number): string {}
 
 // ❌ 悪い例: 複数の責務
-function calculateAndFormatPrice(items: CartItem[]): string { }
+function calculateAndFormatPrice(items: CartItem[]): string {}
 ```
 
 **関数の長さ**:
+
 - 推奨: 20行以内
 - 許容: 50行以内
 - 100行以上: リファクタリングを推奨
@@ -269,6 +302,7 @@ function calculateAndFormatPrice(items: CartItem[]): string { }
 ### エラーハンドリング
 
 **適切なエラー処理**:
+
 ```typescript
 // ✅ 良い例
 try {
@@ -286,7 +320,7 @@ try {
 try {
   return await taskService.create(data);
 } catch (error) {
-  return null;  // エラー情報が失われる
+  return null; // エラー情報が失われる
 }
 ```
 
@@ -306,7 +340,7 @@ function validateEmail(email: string): void {
 }
 
 // ❌ 悪い例: 検証なし
-function validateEmail(email: string): void { }
+function validateEmail(email: string): void {}
 ```
 
 ### 機密情報管理
@@ -319,7 +353,7 @@ if (!apiKey) {
 }
 
 // ❌ 悪い例
-const apiKey = 'sk-1234567890abcdef';  // ハードコード禁止
+const apiKey = 'sk-1234567890abcdef'; // ハードコード禁止
 ```
 
 ## パフォーマンスチェックリスト
@@ -328,11 +362,11 @@ const apiKey = 'sk-1234567890abcdef';  // ハードコード禁止
 
 ```typescript
 // ✅ 良い例: O(1) アクセス
-const taskMap = new Map(tasks.map(t => [t.id, t]));
+const taskMap = new Map(tasks.map((t) => [t.id, t]));
 const task = taskMap.get(taskId);
 
 // ❌ 悪い例: O(n) 検索
-const task = tasks.find(t => t.id === taskId);
+const task = tasks.find((t) => t.id === taskId);
 ```
 
 ### ループの最適化

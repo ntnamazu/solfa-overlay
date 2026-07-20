@@ -12,14 +12,15 @@
 ```typescript
 // ✅ 良い例
 const skippedMeasures = builder.listSkippedMeasures();
-function computeDegree(note: Pitch, region: KeyRegion): SolfaDegree { }
+function computeDegree(note: Pitch, region: KeyRegion): SolfaDegree {}
 
 // ❌ 悪い例
 const data = build();
-function calc(n: any): any { }
+function calc(n: any): any {}
 ```
 
 **原則**:
+
 - 変数: camelCase、名詞または名詞句
 - 関数: camelCase、動詞で始める
 - 定数: UPPER_SNAKE_CASE
@@ -29,11 +30,11 @@ function calc(n: any): any { }
 
 ```typescript
 // クラス: PascalCase、名詞
-class SolfaEngine { }
-class ScoreModelBuilder { }
+class SolfaEngine {}
+class ScoreModelBuilder {}
 
 // インターフェース・型: PascalCase、I接頭辞なし
-interface KeyRegion { }
+interface KeyRegion {}
 type SyllableSystem = 'kodaly' | 'tonicSolfa';
 ```
 
@@ -58,6 +59,7 @@ type SyllableSystem = 'kodaly' | 'tonicSolfa';
 ### コメント規約
 
 **関数・クラスのドキュメント（TSDoc）**:
+
 ```typescript
 /**
  * 調文脈と記譜音高から階名の内部表現（度数＋変位）を計算する
@@ -67,10 +69,11 @@ type SyllableSystem = 'kodaly' | 'tonicSolfa';
  * @param basis - 短調の読み方（'la' | 'do'）
  * @returns 度数＋変位。音節体系に依存しない
  */
-function computeDegree(note: Pitch, region: KeyRegion, basis: MinorBasis): SolfaDegree { }
+function computeDegree(note: Pitch, region: KeyRegion, basis: MinorBasis): SolfaDegree {}
 ```
 
 **インラインコメント**:
+
 ```typescript
 // ✅ 良い例: コードから読み取れない制約・理由を書く
 // .omr の符頭 pitch は「中線=0・下向き正」（Audiveris仕様）
@@ -86,14 +89,19 @@ const staffStep = -omrPitch;
 ### エラーハンドリング
 
 **原則**:
+
 - 予期されるエラー（OMR失敗・照合不一致・ファイル破損）はドメインのエラークラスで表現し、UIで回復可能に扱う
 - 予期しないエラーは握りつぶさず上位に伝播させ、Main プロセスの集約ハンドラでログ＋ダイアログ表示する
 - 機能設計書「エラーハンドリング」の分類表と対応させる（部分失敗は全体を失敗にしない）
 
 **例**:
+
 ```typescript
 class OmrExecutionError extends Error {
-  constructor(message: string, public readonly logPath: string) {
+  constructor(
+    message: string,
+    public readonly logPath: string,
+  ) {
     super(message);
     this.name = 'OmrExecutionError';
   }
@@ -102,7 +110,10 @@ class OmrExecutionError extends Error {
 class ProjectFileError extends Error {
   // cause の種別は用語集「プロジェクトファイルエラー」の定義を正とする
   // （'version' はアプリより新しい schemaVersion の検出。ファイルを変更せずアプリ更新を案内する）
-  constructor(message: string, public readonly cause: 'zip' | 'schema' | 'version' | 'io') {
+  constructor(
+    message: string,
+    public readonly cause: 'zip' | 'schema' | 'version' | 'io',
+  ) {
     super(message);
     this.name = 'ProjectFileError';
   }
@@ -123,6 +134,7 @@ class ProjectFileError extends Error {
 ### ブランチ戦略
 
 **ブランチ種別**:
+
 - `main`: リリース可能な状態
 - `develop`: 開発の最新状態（デフォルトの作業ベース）
 - `feature/[機能名]`: 新機能開発（例: `feature/solfa-engine`）
@@ -130,6 +142,7 @@ class ProjectFileError extends Error {
 - `refactor/[対象]`: リファクタリング
 
 **フロー**:
+
 ```
 main
   └─ develop
@@ -141,6 +154,7 @@ main
 ### コミットメッセージ規約
 
 **フォーマット**（Conventional Commits）:
+
 ```
 <type>(<scope>): <subject>
 
@@ -152,6 +166,7 @@ main
 **Scope の例**: `solfa`, `score`, `annotations`, `render`, `storage`, `ui`, `omr`
 
 **例**:
+
 ```
 feat(solfa): La基準短調の度数計算を実装
 
@@ -164,36 +179,45 @@ feat(solfa): La基準短調の度数計算を実装
 ### プルリクエストプロセス
 
 **作成前のチェック**:
+
 - [ ] `npm run test`（ユニット・統合）がパス
 - [ ] `npm run lint` / `npm run typecheck` がパス
 - [ ] レイヤー境界違反がない（ESLintで検出）
 - [ ] 競合が解決されている
 
 **PRテンプレート**:
+
 ```markdown
 ## 概要
+
 [変更内容の簡潔な説明]
 
 ## 変更理由
+
 [なぜこの変更が必要か。対応するドキュメント・Issueへのリンク]
 
 ## 変更内容
+
 - [変更点1]
 - [変更点2]
 
 ## テスト
+
 - [ ] ユニットテスト追加
 - [ ] 統合テスト（該当する場合）
 - [ ] 手動テスト実施（確認手順を記載）
 
 ## セキュリティ確認
+
 - [ ] 楽譜由来データの外部送信・新規ネットワークアクセスを追加していない
 
 ## 関連Issue
+
 Closes #[Issue番号]
 ```
 
 **レビュープロセス**:
+
 1. セルフレビュー（diff全体を自分で読む）
 2. CI（テスト・lint・typecheck）のパス
 3. レビュアーアサイン
@@ -211,6 +235,7 @@ Closes #[Issue番号]
 **カバレッジ目標**: サービスレイヤーのコアロジック（solfa/score/annotations/render）90%以上
 
 **例**:
+
 ```typescript
 describe('SolfaEngine', () => {
   describe('computeDegree', () => {
@@ -252,6 +277,7 @@ describe('SolfaEngine', () => {
 ### モック・スタブの使用
 
 **原則**:
+
 - 外部依存（Audiveris子プロセス・ファイルシステム・IPC）はモック化する
 - `domain/` のロジックは実装をそのまま使う（純粋TSなのでモック不要のはず。モックが必要になったら設計を疑う）
 
@@ -265,25 +291,30 @@ describe('SolfaEngine', () => {
 ### レビューポイント
 
 **機能性**:
+
 - [ ] 要件（PRD/機能設計書）を満たしているか
 - [ ] エッジケース（skipped小節・重変位音・空ページ等）が考慮されているか
 - [ ] 部分失敗の方針（全体を失敗にしない）に沿っているか
 
 **可読性**:
+
 - [ ] 命名が用語集と一致しているか
 - [ ] 音楽理論上の前提がコメントで残されているか
 
 **保守性**:
+
 - [ ] レイヤー境界（domainの純粋性・rendererの隔離）を守っているか
 - [ ] 内部表現（度数＋変位）と表示（文字列化）の分離を壊していないか
 - [ ] 重複コードがないか
 - [ ] ファイルサイズが指針内か（300行以下推奨・500行超は分割を強く推奨。詳細は[リポジトリ構造定義書](repository-structure.md)「ファイルサイズの管理」）
 
 **パフォーマンス**:
+
 - [ ] 全ページ・全注釈を無条件に舐める処理を UI 操作経路に入れていないか
 - [ ] 再計算の範囲が影響 KeyRegion に限定されているか
 
 **セキュリティ**:
+
 - [ ] 楽譜由来データの外部送信・新規ネットワーク依存がないか（**最優先のブロッカー**）
 - [ ] 入力検証（プロジェクトファイル・PDF）が適切か
 - [ ] Electron ハードニング設定を変更していないか
@@ -291,16 +322,20 @@ describe('SolfaEngine', () => {
 ### レビューコメントの書き方
 
 **建設的なフィードバック**:
+
 ```markdown
 ## ✅ 良い例
+
 この照合を音符単位で行うと、1音の誤認識が小節をまたいで波及します。
 プロトタイプ同様、小節単位で数を突き合わせてから対にする方が安全ではないでしょうか？
 
 ## ❌ 悪い例
+
 この書き方は良くないです。
 ```
 
 **優先度の明示**:
+
 - `[必須]`: 修正必須（マージブロッカー）
 - `[推奨]`: 修正推奨
 - `[提案]`: 検討してほしい
@@ -310,11 +345,11 @@ describe('SolfaEngine', () => {
 
 ### 必要なツール
 
-| ツール | バージョン | インストール方法 |
-|--------|-----------|-----------------|
-| Node.js | v24.x (LTS) | nvm / 公式インストーラ |
-| npm | 11.x | Node.js に同梱 |
-| Git | 最新 | OS標準またはパッケージマネージャ |
+| ツール  | バージョン  | インストール方法                 |
+| ------- | ----------- | -------------------------------- |
+| Node.js | v24.x (LTS) | nvm / 公式インストーラ           |
+| npm     | 11.x        | Node.js に同梱                   |
+| Git     | 最新        | OS標準またはパッケージマネージャ |
 
 - Java は不要（Audiveris 用 JRE は `scripts/fetch-resources.ts` が配置する）
 

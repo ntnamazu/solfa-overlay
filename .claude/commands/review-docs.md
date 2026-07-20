@@ -24,6 +24,7 @@ claude
 doc-reviewerサブエージェントを起動してレビューを実行します:
 
 Task toolを使用してdoc-reviewerサブエージェントを起動してください:
+
 - subagent_type: "doc-reviewer"
 - description: "Document detailed review"
 - prompt: "[ドキュメントパス]を詳細にレビューしてください。\n\n以下の観点で評価してください:\n1. 完全性: 必要な項目が全て含まれているか\n2. 具体性: 曖昧な表現がないか\n3. 一貫性: 他のドキュメントと整合しているか\n4. 測定可能性: 成功指標が測定可能か(PRDの場合)\n\nレビューレポートを作成してください。"

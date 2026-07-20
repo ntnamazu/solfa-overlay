@@ -33,11 +33,13 @@ XML **文字列**を入力に取る（呼び出し側の編成レイヤーが将
 ### 1. xmlTree.ts（XML パース共通基盤）
 
 **責務**:
+
 - fast-xml-parser（`preserveOrder: true`）の出力を、子要素の文書順を保った
   `XmlElement { name, attrs, children, text }` ツリーへ変換する
 - `find / findAll / findText / attr` 等の最小限のヘルパー（Python ElementTree 相当の使い勝手）
 
 **実装の要点**:
+
 - `preserveOrder` が必須（MusicXML の `note` / `backup` / `forward` の出現順がオフセット計算に
   不可欠。既定モードは同名タグでグルーピングされ順序が失われる）
 - パース失敗（不正XML）は `ScoreParseError` に変換する
@@ -47,23 +49,33 @@ XML **文字列**を入力に取る（呼び出し側の編成レイヤーが将
 **責務**: score-partwise の MusicXML 文字列 → `ParsedMusicXml`
 
 ```typescript
-interface ParsedMusicXml { parts: MusicXmlPart[] }
-interface MusicXmlPart { id: string; name: string; measures: MusicXmlMeasure[] }
-interface MusicXmlMeasure {
-  index: number;                     // この MusicXML（movement）内の 0 始まり
-  key: MusicXmlKey | null;           // この小節で宣言された調号（宣言がなければ null）
-  notes: MusicXmlNote[];             // 発音音符のみ（休符除外）。譜面順
+interface ParsedMusicXml {
+  parts: MusicXmlPart[];
 }
-interface MusicXmlKey { fifths: number; mode: 'major' | 'minor' | null }
+interface MusicXmlPart {
+  id: string;
+  name: string;
+  measures: MusicXmlMeasure[];
+}
+interface MusicXmlMeasure {
+  index: number; // この MusicXML（movement）内の 0 始まり
+  key: MusicXmlKey | null; // この小節で宣言された調号（宣言がなければ null）
+  notes: MusicXmlNote[]; // 発音音符のみ（休符除外）。譜面順
+}
+interface MusicXmlKey {
+  fifths: number;
+  mode: 'major' | 'minor' | null;
+}
 interface MusicXmlNote {
-  pitch: Pitch;                      // shared/types/Pitch
-  isChordTone: boolean;              // <chord/> 付き（直前音と同時発音）
-  offset: number;                    // 小節内オフセット（divisions 基準）
-  staff: number | null;              // <staff>（多譜表パート用。合唱では通常 null）
+  pitch: Pitch; // shared/types/Pitch
+  isChordTone: boolean; // <chord/> 付き（直前音と同時発音）
+  offset: number; // 小節内オフセット（divisions 基準）
+  staff: number | null; // <staff>（多譜表パート用。合唱では通常 null）
 }
 ```
 
 **実装の要点**:
+
 - `part-list/score-part` から id→name を取る（`part-name` 欠落時は id をそのまま名前に）
 - divisions は `attributes/divisions` で更新され以降の小節へ持続する
 - オフセット計算: カーソル方式。`note` は duration 分進める（`<chord/>` は直前音と同オフセット・
@@ -78,25 +90,44 @@ interface MusicXmlNote {
 
 ```typescript
 // sheet XML（1ファイルに複数ページがあり得る）
-function parseSheetXml(xml: string): OmrSheetContent;   // { pages: OmrPageContent[] }
-interface OmrPageContent { systems: OmrSystem[] }
-interface OmrSystem { stacks: OmrStack[]; staves: OmrStaff[] }
-interface OmrStack { left: number; right: number }       // 小節の水平範囲（300dpi px）
-interface OmrStaff {
-  partId: string;                    // 'P' + part@id（= MusicXML の part id = logical-id）
-  staffId: string;
-  clefKind: string | null;           // システム内で最初に現れた clef の kind（Audiveris 表記）
-  heads: OmrHead[];                  // x 昇順
+function parseSheetXml(xml: string): OmrSheetContent; // { pages: OmrPageContent[] }
+interface OmrPageContent {
+  systems: OmrSystem[];
 }
-interface OmrHead { pitch: number; x: number; y: number; w: number; h: number }
+interface OmrSystem {
+  stacks: OmrStack[];
+  staves: OmrStaff[];
+}
+interface OmrStack {
+  left: number;
+  right: number;
+} // 小節の水平範囲（300dpi px）
+interface OmrStaff {
+  partId: string; // 'P' + part@id（= MusicXML の part id = logical-id）
+  staffId: string;
+  clefKind: string | null; // システム内で最初に現れた clef の kind（Audiveris 表記）
+  heads: OmrHead[]; // x 昇順
+}
+interface OmrHead {
+  pitch: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 // book.xml
 function parseBookXml(xml: string): BookPageRef[];
-interface BookPageRef { sheetNumber: number; pageIndexInSheet: number; movementStart: boolean }
-function groupMovements(pages: BookPageRef[]): BookPageRef[][];  // 先頭ページは暗黙に movement 開始
+interface BookPageRef {
+  sheetNumber: number;
+  pageIndexInSheet: number;
+  movementStart: boolean;
+}
+function groupMovements(pages: BookPageRef[]): BookPageRef[][]; // 先頭ページは暗黙に movement 開始
 ```
 
 **実装の要点**:
+
 - プロトタイプ実証済みのスキーマに準拠: `sheet > page > system > (stack | part > staff)`、
   inter 要素は system 配下を再帰走査して `clef`（staff, kind）と `head`（staff, pitch, bounds）を拾う
 - `bounds` を持たない head は無視（プロトタイプと同じ）
@@ -107,8 +138,10 @@ function groupMovements(pages: BookPageRef[]): BookPageRef[][];  // 先頭ペー
 ```typescript
 const CLEF_MIDDLE_LINE: Record<string, { stepIndex: number; octave: number }>;
 // TREBLE / G_CLEF → B4, TREBLE_DOWN_8 → B3, BASS / F_CLEF → D3, ALTO → C4, TENOR → A3
-function headStepOctave(headPitch: number, clefKind: string | null):
-  { step: PitchStep; octave: number } | null;   // 未知の clef は null（チェック不能）
+function headStepOctave(
+  headPitch: number,
+  clefKind: string | null,
+): { step: PitchStep; octave: number } | null; // 未知の clef は null（チェック不能）
 ```
 
 - Audiveris の符頭 pitch は「中線=0・下向き正」（音高とは逆方向）— 実装箇所にコメントで残す
@@ -119,24 +152,39 @@ function headStepOctave(headPitch: number, clefKind: string | null):
 
 ```typescript
 interface OmrArtifacts {
-  movements: { musicXml: ParsedMusicXml }[];  // movement ごとの MusicXML（曲順）
-  pages: OmrPageContent[];                    // 曲全体のページ順
+  movements: { musicXml: ParsedMusicXml }[]; // movement ごとの MusicXML（曲順）
+  pages: OmrPageContent[]; // 曲全体のページ順
 }
-interface BuildResult { score: ScoreModel; issues: BuildIssue[] }
+interface BuildResult {
+  score: ScoreModel;
+  issues: BuildIssue[];
+}
 type BuildIssue =
-  | { kind: 'measureCountMismatch'; partId; measureIndex; omrCount; xmlCount; pageIndex; systemIndex }
+  | {
+      kind: 'measureCountMismatch';
+      partId;
+      measureIndex;
+      omrCount;
+      xmlCount;
+      pageIndex;
+      systemIndex;
+    }
   | { kind: 'pitchCrossCheckMismatch'; noteId; partId; measureIndex; expectedStep; omrStep }
   | { kind: 'unknownClef'; pageIndex; systemIndex; staffIndex; partId; clefKind }
   | { kind: 'partNotFound'; partId; pageIndex; systemIndex }
   | { kind: 'measureOutOfRange'; partId; pageIndex; systemIndex; measureIndex };
 
 class ScoreModelBuilder {
-  build(artifacts: OmrArtifacts, structure: ResolvedStructure,
-        confirmation: ConfirmationState): BuildResult;
+  build(
+    artifacts: OmrArtifacts,
+    structure: ResolvedStructure,
+    confirmation: ConfirmationState,
+  ): BuildResult;
 }
 ```
 
 **照合アルゴリズム**（プロトタイプ `process_movement` の移植＋通し小節番号化）:
+
 1. movement ごとに movement 内小節カーソル=0 から開始。`ResolvedStructure.movements[].pageIndices`
    の順にページ→システムを走査
 2. システムごとに: 各譜表の有効 clef = 確認画面の corrected（あれば）→ なければ検出値。
@@ -150,6 +198,7 @@ class ScoreModelBuilder {
    引き継ぎ照合を安定させるため）
 
 **Measure の生成規則**:
+
 - 処理した「パート×小節」ごとに 1 つ生成（matched / skipped）。`ScoreModel.measures` は
   partId → 通し小節番号順に整列
 - `ScoreModel.systems` は SystemInfo（pageIndex / systemIndex / firstMeasureIndex / measureCount）
@@ -180,6 +229,7 @@ class ScoreParseError extends Error {
 ## テスト戦略
 
 ### ユニットテスト（tests/unit/domain/score/）
+
 - `xmlTree.test.ts`: 属性・文書順・テキスト・エンティティ・不正XMLのエラー化
 - `MusicXmlParser.test.ts`: 複数パート／和音／休符除外／alter／調号変更／divisions／
   backup・forward のオフセット／grace／part-name 欠落／不正XML
@@ -190,11 +240,13 @@ class ScoreParseError extends Error {
   （テノール G→G-8vb で不一致が解消するシナリオ）／複数 movement 通し番号／多譜表パート分割
 
 ### 統合テスト（tests/integration/pipeline/）
+
 - `synthetic-mini.test.ts`: 合成フィクスチャ（ファイル読込は node:fs = テスト側でOK）で
   「XML文字列 → パース → 照合 → ScoreModel」を通し、matched/skipped/issue 数と代表音符の
   座標・音高を固定する回帰テスト
 
 ### フィクスチャ（tests/fixtures/synthetic-mini/）
+
 - `score.musicxml`（2パート×4小節: 和音・休符・臨時記号・意図的な音符数不一致1小節を含む）
 - `sheet1.xml`（1ページ・2システム×2譜表・stack 各2）/ `book.xml`（1 sheet・1ページ）
 - README.md にフィクスチャの意図（どの小節が何を検証するか）を記載

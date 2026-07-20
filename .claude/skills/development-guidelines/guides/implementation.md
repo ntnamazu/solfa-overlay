@@ -5,6 +5,7 @@
 ### 型定義
 
 **組み込み型の使用**:
+
 ```typescript
 // ✅ 良い例: 組み込み型を使用
 function processItems(items: string[]): Record<string, number> {
@@ -20,6 +21,7 @@ function processItems(items: List[str]): Dict[str, int] { }
 ```
 
 **型注釈の原則**:
+
 ```typescript
 // ✅ 良い例: 明示的な型注釈
 function calculateTotal(prices: number[]): number {
@@ -27,12 +29,14 @@ function calculateTotal(prices: number[]): number {
 }
 
 // ❌ 悪い例: 型推論に頼りすぎる
-function calculateTotal(prices) {  // any型になる
+function calculateTotal(prices) {
+  // any型になる
   return prices.reduce((sum, price) => sum + price, 0);
 }
 ```
 
 **インターフェース vs 型エイリアス**:
+
 ```typescript
 // インターフェース: 拡張可能なオブジェクト型
 interface Task {
@@ -55,6 +59,7 @@ type Nullable<T> = T | null;
 ### 命名規則
 
 **変数・関数**:
+
 ```typescript
 // 変数: camelCase、名詞
 const userName = 'John';
@@ -62,9 +67,9 @@ const taskList = [];
 const isCompleted = true;
 
 // 関数: camelCase、動詞で始める
-function fetchUserData() { }
-function validateEmail(email: string) { }
-function calculateTotalPrice(items: Item[]) { }
+function fetchUserData() {}
+function validateEmail(email: string) {}
+function calculateTotalPrice(items: Item[]) {}
 
 // Boolean: is, has, should, canで始める
 const isValid = true;
@@ -74,20 +79,22 @@ const canDelete = false;
 ```
 
 **クラス・インターフェース**:
+
 ```typescript
 // クラス: PascalCase、名詞
-class TaskManager { }
-class UserAuthenticationService { }
+class TaskManager {}
+class UserAuthenticationService {}
 
 // インターフェース: PascalCase
-interface TaskRepository { }
-interface UserProfile { }
+interface TaskRepository {}
+interface UserProfile {}
 
 // 型エイリアス: PascalCase
 type TaskStatus = 'todo' | 'in_progress' | 'completed';
 ```
 
 **定数**:
+
 ```typescript
 // UPPER_SNAKE_CASE
 const MAX_RETRY_COUNT = 3;
@@ -103,6 +110,7 @@ const CONFIG = {
 ```
 
 **ファイル名**:
+
 ```typescript
 // クラスファイル: PascalCase
 // TaskService.ts
@@ -124,6 +132,7 @@ const CONFIG = {
 ### 関数設計
 
 **単一責務の原則**:
+
 ```typescript
 // ✅ 良い例: 単一の責務
 function calculateTotalPrice(items: CartItem[]): number {
@@ -142,11 +151,13 @@ function calculateAndFormatPrice(items: CartItem[]): string {
 ```
 
 **関数の長さ**:
+
 - 目標: 20行以内
 - 推奨: 50行以内
 - 100行以上: リファクタリングを検討
 
 **パラメータの数**:
+
 ```typescript
 // ✅ 良い例: オブジェクトでまとめる
 interface CreateTaskOptions {
@@ -167,7 +178,7 @@ function createTask(
   priority: string,
   dueDate: Date,
   tags: string[],
-  assignee: string
+  assignee: string,
 ): Task {
   // 実装
 }
@@ -176,13 +187,14 @@ function createTask(
 ### エラーハンドリング
 
 **カスタムエラークラス**:
+
 ```typescript
 // エラークラスの定義
 class ValidationError extends Error {
   constructor(
     message: string,
     public field: string,
-    public value: unknown
+    public value: unknown,
   ) {
     super(message);
     this.name = 'ValidationError';
@@ -192,7 +204,7 @@ class ValidationError extends Error {
 class NotFoundError extends Error {
   constructor(
     public resource: string,
-    public id: string
+    public id: string,
   ) {
     super(`${resource} not found: ${id}`);
     this.name = 'NotFoundError';
@@ -200,7 +212,10 @@ class NotFoundError extends Error {
 }
 
 class DatabaseError extends Error {
-  constructor(message: string, public cause?: Error) {
+  constructor(
+    message: string,
+    public cause?: Error,
+  ) {
     super(message);
     this.name = 'DatabaseError';
     this.cause = cause;
@@ -209,6 +224,7 @@ class DatabaseError extends Error {
 ```
 
 **エラーハンドリングパターン**:
+
 ```typescript
 // ✅ 良い例: 適切なエラーハンドリング
 async function getTask(id: string): Promise<Task> {
@@ -243,12 +259,13 @@ async function getTask(id: string): Promise<Task | null> {
 ```
 
 **エラーメッセージ**:
+
 ```typescript
 // ✅ 良い例: 具体的で解決策を示す
 throw new ValidationError(
   'タイトルは1-200文字で入力してください。現在の文字数: 250',
   'title',
-  title
+  title,
 );
 
 // ❌ 悪い例: 曖昧で役に立たない
@@ -258,6 +275,7 @@ throw new Error('Invalid input');
 ### 非同期処理
 
 **async/await の使用**:
+
 ```typescript
 // ✅ 良い例: async/await
 async function fetchUserTasks(userId: string): Promise<Task[]> {
@@ -273,10 +291,11 @@ async function fetchUserTasks(userId: string): Promise<Task[]> {
 
 // ❌ 悪い例: Promiseチェーン
 function fetchUserTasks(userId: string): Promise<Task[]> {
-  return userRepository.findById(userId)
-    .then(user => taskRepository.findByUserId(user.id))
-    .then(tasks => tasks)
-    .catch(error => {
+  return userRepository
+    .findById(userId)
+    .then((user) => taskRepository.findByUserId(user.id))
+    .then((tasks) => tasks)
+    .catch((error) => {
       logger.error('タスクの取得に失敗', error);
       throw error;
     });
@@ -284,10 +303,11 @@ function fetchUserTasks(userId: string): Promise<Task[]> {
 ```
 
 **並列処理**:
+
 ```typescript
 // ✅ 良い例: Promise.allで並列実行
 async function fetchMultipleUsers(ids: string[]): Promise<User[]> {
-  const promises = ids.map(id => userRepository.findById(id));
+  const promises = ids.map((id) => userRepository.findById(id));
   return Promise.all(promises);
 }
 
@@ -307,7 +327,8 @@ async function fetchMultipleUsers(ids: string[]): Promise<User[]> {
 ### ドキュメントコメント
 
 **TSDoc形式**:
-```typescript
+
+````typescript
 /**
  * タスクを作成する
  *
@@ -327,11 +348,12 @@ async function fetchMultipleUsers(ids: string[]): Promise<User[]> {
 async function createTask(data: CreateTaskData): Promise<Task> {
   // 実装
 }
-```
+````
 
 ### インラインコメント
 
 **良いコメント**:
+
 ```typescript
 // ✅ 理由を説明
 // キャッシュを無効化して最新データを取得
@@ -350,6 +372,7 @@ let maxEndingHere = arr[0];
 ```
 
 **悪いコメント**:
+
 ```typescript
 // ❌ コードの内容を繰り返すだけ
 // iを1増やす
@@ -410,11 +433,11 @@ const apiKey = 'sk-1234567890abcdef'; // 絶対にしない！
 
 ```typescript
 // ✅ 良い例: Mapで O(1) アクセス
-const userMap = new Map(users.map(u => [u.id, u]));
+const userMap = new Map(users.map((u) => [u.id, u]));
 const user = userMap.get(userId); // O(1)
 
 // ❌ 悪い例: 配列で O(n) 検索
-const user = users.find(u => u.id === userId); // O(n)
+const user = users.find((u) => u.id === userId); // O(n)
 ```
 
 ### ループの最適化
@@ -486,9 +509,7 @@ describe('TaskService', () => {
       const invalidData = { title: '' };
 
       // When/Then: 実行と検証
-      await expect(
-        service.create(invalidData)
-      ).rejects.toThrow(ValidationError);
+      await expect(service.create(invalidData)).rejects.toThrow(ValidationError);
     });
   });
 });
@@ -565,10 +586,7 @@ function validateOrder(order: Order): void {
 }
 
 function calculateTotal(order: Order): void {
-  order.total = order.items.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0
-  );
+  order.total = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 }
 
 // ❌ 悪い例: 長い関数
@@ -577,10 +595,7 @@ function processOrder(order: Order): void {
     throw new ValidationError('商品が選択されていません', 'items', order.items);
   }
 
-  order.total = order.items.reduce(
-    (sum, item) => sum + item.price * item.quantity,
-    0
-  );
+  order.total = order.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
 
   if (order.coupon) {
     order.total -= order.total * order.coupon.discountRate;
@@ -595,6 +610,7 @@ function processOrder(order: Order): void {
 実装完了前に確認:
 
 ### コード品質
+
 - [ ] 命名が明確で一貫している
 - [ ] 関数が単一の責務を持っている
 - [ ] マジックナンバーがない
@@ -602,26 +618,31 @@ function processOrder(order: Order): void {
 - [ ] エラーハンドリングが実装されている
 
 ### セキュリティ
+
 - [ ] 入力検証が実装されている
 - [ ] 機密情報がハードコードされていない
 - [ ] SQLインジェクション対策がされている
 
 ### パフォーマンス
+
 - [ ] 適切なデータ構造を使用している
 - [ ] 不要な計算を避けている
 - [ ] ループが最適化されている
 
 ### テスト
+
 - [ ] ユニットテストが書かれている
 - [ ] テストがパスする
 - [ ] エッジケースがカバーされている
 
 ### ドキュメント
+
 - [ ] 関数・クラスにTSDocコメントがある
 - [ ] 複雑なロジックにコメントがある
 - [ ] TODOやFIXMEが記載されている(該当する場合)
 
 ### ツール
+
 - [ ] Lintエラーがない
 - [ ] 型チェックがパスする
 - [ ] フォーマットが統一されている

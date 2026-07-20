@@ -7,6 +7,7 @@
 各ディレクトリは単一の明確な役割を持つべきです。
 
 **悪い例**:
+
 ```
 src/
 ├── stuff/           # 曖昧
@@ -15,6 +16,7 @@ src/
 ```
 
 **良い例**:
+
 ```
 src/
 ├── commands/        # CLIコマンド実装
@@ -42,6 +44,7 @@ src/
 関連する技術要素ごとにディレクトリを分割します:
 
 **基本構造**:
+
 ```
 src/
 ├── commands/        # CLIコマンド
@@ -51,6 +54,7 @@ src/
 ```
 
 **レイヤー構造との対応**:
+
 ```
 CLI/UIレイヤー      → commands/, cli/
 サービスレイヤー    → services/
@@ -87,6 +91,7 @@ src/
 ### テストディレクトリの配置
 
 **推奨構造**:
+
 ```
 project/
 ├── src/
@@ -101,6 +106,7 @@ project/
 ```
 
 **理由**:
+
 - テストコードが本番コードと分離
 - ビルド時にテストを除外しやすい
 - テストタイプごとに整理可能
@@ -110,6 +116,7 @@ project/
 ### ディレクトリ名の原則
 
 **1. 複数形を使う (レイヤーディレクトリ)**
+
 ```
 ✅ services/
 ✅ repositories/
@@ -123,6 +130,7 @@ project/
 理由: 複数のファイルを格納するため
 
 **2. kebab-caseを使う**
+
 ```
 ✅ task-management/
 ✅ user-authentication/
@@ -134,6 +142,7 @@ project/
 理由: URL、ファイルシステムとの互換性
 
 **3. 具体的な名前を使う**
+
 ```
 ✅ validators/       # 入力検証
 ✅ formatters/       # データ整形
@@ -147,47 +156,51 @@ project/
 ### ファイル名の原則
 
 **1. クラスファイル: PascalCase + 役割接尾辞**
+
 ```typescript
 // サービスクラス
-TaskService.ts
-UserAuthenticationService.ts
+TaskService.ts;
+UserAuthenticationService.ts;
 
 // リポジトリクラス
-TaskRepository.ts
-UserRepository.ts
+TaskRepository.ts;
+UserRepository.ts;
 
 // コントローラークラス
-TaskController.ts
+TaskController.ts;
 ```
 
 **2. 関数ファイル: camelCase + 動詞で始める**
+
 ```typescript
 // ユーティリティ関数
-formatDate.ts
-validateEmail.ts
-parseCommandArguments.ts
+formatDate.ts;
+validateEmail.ts;
+parseCommandArguments.ts;
 ```
 
 **3. 型定義ファイル: PascalCase または kebab-case**
+
 ```typescript
 // インターフェース定義
-Task.ts
-UserProfile.ts
+Task.ts;
+UserProfile.ts;
 
 // 型定義集
-task-types.d.ts
-api-types.d.ts
+task - types.d.ts;
+api - types.d.ts;
 ```
 
 **4. 定数ファイル: UPPER_SNAKE_CASE または kebab-case**
+
 ```typescript
 // 定数定義
-API_ENDPOINTS.ts
-ERROR_MESSAGES.ts
+API_ENDPOINTS.ts;
+ERROR_MESSAGES.ts;
 
 // または
-api-endpoints.ts
-error-messages.ts
+api - endpoints.ts;
+error - messages.ts;
 ```
 
 ## 依存関係の管理
@@ -205,12 +218,13 @@ class TaskCLI {
 
 // ❌ 悪い例: 下位レイヤーから上位レイヤーへの依存
 // services/TaskService.ts
-import { TaskCLI } from '../cli/TaskCLI';  // 禁止！
+import { TaskCLI } from '../cli/TaskCLI'; // 禁止！
 ```
 
 ### 循環依存の回避
 
 **問題のあるコード**:
+
 ```typescript
 // services/TaskService.ts
 import { UserService } from './UserService';
@@ -220,7 +234,7 @@ export class TaskService {
 }
 
 // services/UserService.ts
-import { TaskService } from './TaskService';  // 循環依存！
+import { TaskService } from './TaskService'; // 循環依存！
 
 export class UserService {
   constructor(private taskService: TaskService) {}
@@ -228,10 +242,15 @@ export class UserService {
 ```
 
 **解決策1: 共通の型定義を抽出**
+
 ```typescript
 // types/Service.ts
-export interface ITaskService { /* ... */ }
-export interface IUserService { /* ... */ }
+export interface ITaskService {
+  /* ... */
+}
+export interface IUserService {
+  /* ... */
+}
 
 // services/TaskService.ts
 import type { IUserService } from '../types/Service';
@@ -249,6 +268,7 @@ export class UserService {
 ```
 
 **解決策2: 依存関係を見直す**
+
 ```typescript
 // 共通の機能を別サービスに抽出
 // services/NotificationService.ts
@@ -278,6 +298,7 @@ export class UserService {
 ### 推奨構造
 
 **標準パターン**:
+
 ```
 src/
 ├── commands/
@@ -297,6 +318,7 @@ src/
 ```
 
 **理由**:
+
 - レイヤーごとに責務が明確
 - 後からのリファクタリングが不要
 - チーム開発で統一しやすい
@@ -304,12 +326,14 @@ src/
 ### モジュール分離のタイミング
 
 **分離を検討する兆候**:
+
 1. ディレクトリ内のファイル数が10個以上
 2. 関連する機能がまとまっている
 3. 独立してテスト可能
 4. 他の機能への依存が少ない
 
 **分離の手順**:
+
 ```typescript
 // Before: 全てservices/に配置
 services/
@@ -335,6 +359,7 @@ modules/
 ### 共有コードの配置
 
 **shared/ または common/ ディレクトリ**
+
 ```
 src/
 ├── shared/
@@ -347,6 +372,7 @@ src/
 ```
 
 **ルール**:
+
 - 本当に複数のレイヤーで使われるもののみ
 - 単一レイヤーでしか使わないものは含めない
 
@@ -371,11 +397,13 @@ scripts/
 ### ドキュメントの種類と配置先
 
 **プロジェクトルート**:
+
 - `README.md`: プロジェクト概要
 - `CONTRIBUTING.md`: 貢献ガイド
 - `LICENSE`: ライセンス
 
 **docs/ ディレクトリ**:
+
 - `product-requirements.md`: PRD
 - `functional-design.md`: 機能設計書
 - `architecture.md`: アーキテクチャ設計書
@@ -384,6 +412,7 @@ scripts/
 - `glossary.md`: 用語集
 
 **ソースコード内**:
+
 - TSDoc/JSDocコメント: 関数・クラスの説明
 
 ## チェックリスト

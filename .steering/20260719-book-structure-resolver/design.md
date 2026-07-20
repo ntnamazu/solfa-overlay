@@ -30,6 +30,7 @@ flowchart LR
 ### 1. MusicXmlParser（拡張）
 
 **責務**（追加分）:
+
 - `<print new-page="yes">` / `<print new-system="yes">` から「ページ → 段 → 小節数」のレイアウトを抽出する
 
 **インターフェース**:
@@ -54,6 +55,7 @@ export interface ParsedMusicXml {
 ```
 
 **実装の要点**:
+
 - レイアウトは**小節数が最大のパート**から導出する（ties は最初のパート）。Audiveris 出力では
   パートによって最終小節が 1 つ欠ける実例がある（divisi の P7 は 328、他は 329）ため、
   常に第1パートを使うと最終段の小節数を取り逃がす
@@ -65,6 +67,7 @@ export interface ParsedMusicXml {
 ### 2. BookStructureResolver（新規 `src/domain/score/BookStructureResolver.ts`）
 
 **責務**:
+
 - OMR の物理構造（book.xml のページ／movement 分割、sheet XML の段・stack）と MusicXML の段レイアウトを
   突き合わせて構造上の問題を検出する
 - 確定構造 `ResolvedStructure`（段ごとの通し小節番号アンカー）を組み立てる
@@ -75,12 +78,28 @@ export interface ParsedMusicXml {
 export type StructureIssue =
   | { kind: 'movementCountMismatch'; omrMovementCount: number; musicXmlCount: number }
   | { kind: 'pageCountMismatch'; movementIndex: number; omrPageCount: number; xmlPageCount: number }
-  | { kind: 'systemCountMismatch'; movementIndex: number; pageIndex: number;
-      omrSystemCount: number; xmlSystemCount: number }
-  | { kind: 'systemMeasureCountMismatch'; movementIndex: number; pageIndex: number; systemIndex: number;
-      omrStackCount: number; xmlMeasureCount: number }
-  | { kind: 'fragmentedSystem'; movementIndex: number; pageIndex: number;
-      systemIndices: number[]; staffCounts: number[] };
+  | {
+      kind: 'systemCountMismatch';
+      movementIndex: number;
+      pageIndex: number;
+      omrSystemCount: number;
+      xmlSystemCount: number;
+    }
+  | {
+      kind: 'systemMeasureCountMismatch';
+      movementIndex: number;
+      pageIndex: number;
+      systemIndex: number;
+      omrStackCount: number;
+      xmlMeasureCount: number;
+    }
+  | {
+      kind: 'fragmentedSystem';
+      movementIndex: number;
+      pageIndex: number;
+      systemIndices: number[];
+      staffCounts: number[];
+    };
 
 export type StructureDecision =
   /** 段の小節数をユーザー判断で上書きする */
@@ -149,6 +168,7 @@ export interface ResolvedMovement {
 ### 4. ScoreModelBuilder（変更）
 
 **変更点**:
+
 - ページ走査（`for pageIndex of movement.pageIndices` → `for system of page.systems`）をやめ、
   **`movement.systems`（確定アンカー）を走査**する
 - `movementCursor += system.stacks.length` の累積を撤廃する
@@ -159,6 +179,7 @@ export interface ResolvedMovement {
 - MusicXML のローカル小節番号は `globalMeasureIndex - movementFirstMeasureIndex` で引く
 
 **変更しない点**:
+
 - `matchStack`（列対付け）・音高クロスチェック・skipped 隔離の方針は一切触らない。
   Phase 1 で実データ検証済みのため、退行させない
 
@@ -192,13 +213,13 @@ export interface ResolvedMovement {
 
 ### エラーハンドリングパターン
 
-| 状況 | 扱い |
-| --- | --- |
-| MusicXML の段レイアウトが取れない | `stacks.length` にフォールバックし、issue も出さない（`<print>` なしは正常） |
-| ページ数・段数が食い違う | `pageCountMismatch` / `systemCountMismatch` を報告し、対応がつく範囲だけアンカーする |
-| 段あたり小節数が食い違う | `systemMeasureCountMismatch` を報告。小節数は XML 側を採用（余剰 stack は `measureOutOfRange`） |
-| `.mxl` が movement 数より少ない | `movementCountMismatch` を報告し、末尾 movement に寄せる（現行踏襲） |
-| `ResolvedStructure` が存在しないページ／MusicXML を指す | 既存どおり `throw new Error`（呼び出し側の契約違反） |
+| 状況                                                    | 扱い                                                                                            |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| MusicXML の段レイアウトが取れない                       | `stacks.length` にフォールバックし、issue も出さない（`<print>` なしは正常）                    |
+| ページ数・段数が食い違う                                | `pageCountMismatch` / `systemCountMismatch` を報告し、対応がつく範囲だけアンカーする            |
+| 段あたり小節数が食い違う                                | `systemMeasureCountMismatch` を報告。小節数は XML 側を採用（余剰 stack は `measureOutOfRange`） |
+| `.mxl` が movement 数より少ない                         | `movementCountMismatch` を報告し、末尾 movement に寄せる（現行踏襲）                            |
+| `ResolvedStructure` が存在しないページ／MusicXML を指す | 既存どおり `throw new Error`（呼び出し側の契約違反）                                            |
 
 ## テスト戦略
 

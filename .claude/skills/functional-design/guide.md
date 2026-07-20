@@ -7,6 +7,7 @@
 機能設計書は、PRDで定義された「何を作るか」を「どう実現するか」に落とし込むドキュメントです。
 
 **主な内容**:
+
 - システム構成図
 - データモデル
 - コンポーネント設計
@@ -34,6 +35,7 @@ PRDの内容に基づいて機能設計書を作成してください。
 システム構成図はMermaid記法で記述します。
 
 **基本的な3層アーキテクチャの例**:
+
 ```mermaid
 graph TB
     User[ユーザー]
@@ -47,6 +49,7 @@ graph TB
 ```
 
 **より詳細な例**:
+
 ```mermaid
 graph TB
     User[ユーザー]
@@ -72,17 +75,18 @@ graph TB
 データモデルはTypeScriptのインターフェースで定義します。
 
 **基本的なTask型の例**:
+
 ```typescript
 interface Task {
-  id: string;                    // UUID v4
-  title: string;                 // 1-200文字
-  description?: string;          // オプション、Markdown形式
-  status: TaskStatus;            // 'todo' | 'in_progress' | 'completed'
-  priority: TaskPriority;        // 'high' | 'medium' | 'low'
-  estimatedPriority?: TaskPriority;  // 自動推定された優先度
-  dueDate?: Date;                // 期限
-  createdAt: Date;               // 作成日時
-  updatedAt: Date;               // 更新日時
+  id: string; // UUID v4
+  title: string; // 1-200文字
+  description?: string; // オプション、Markdown形式
+  status: TaskStatus; // 'todo' | 'in_progress' | 'completed'
+  priority: TaskPriority; // 'high' | 'medium' | 'low'
+  estimatedPriority?: TaskPriority; // 自動推定された優先度
+  dueDate?: Date; // 期限
+  createdAt: Date; // 作成日時
+  updatedAt: Date; // 更新日時
   statusHistory?: StatusChange[]; // ステータス変更履歴
 }
 
@@ -97,6 +101,7 @@ interface StatusChange {
 ```
 
 **重要なポイント**:
+
 - 各フィールドにコメントで説明を追加
 - 制約（文字数、形式など）を明記
 - オプションフィールドには`?`を付ける
@@ -197,6 +202,7 @@ class FileStorage {
 **計算ロジック**:
 
 ##### ステップ1: 期限スコア計算（0-100点）
+
 ```
 - 期限超過: 100点（最高）
 - 期限まで0-3日: 90点
@@ -207,6 +213,7 @@ class FileStorage {
 ```
 
 **計算式**:
+
 ```typescript
 function calculateDeadlineScore(dueDate?: Date): number {
   if (!dueDate) return 20;
@@ -214,7 +221,7 @@ function calculateDeadlineScore(dueDate?: Date): number {
   const now = new Date();
   const daysRemaining = Math.floor((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-  if (daysRemaining < 0) return 100;  // 期限超過
+  if (daysRemaining < 0) return 100; // 期限超過
   if (daysRemaining <= 3) return 90;
   if (daysRemaining <= 7) return 70;
   if (daysRemaining <= 14) return 50;
@@ -223,6 +230,7 @@ function calculateDeadlineScore(dueDate?: Date): number {
 ```
 
 ##### ステップ2: 経過時間スコア計算（0-100点）
+
 ```
 - 作成から30日以上: 100点（最高）
 - 作成から21-30日: 80点
@@ -232,6 +240,7 @@ function calculateDeadlineScore(dueDate?: Date): number {
 ```
 
 **計算式**:
+
 ```typescript
 function calculateAgeScore(createdAt: Date): number {
   const now = new Date();
@@ -246,6 +255,7 @@ function calculateAgeScore(createdAt: Date): number {
 ```
 
 ##### ステップ3: ステータススコア計算（0-100点）
+
 ```
 - 進行中 (in_progress): 100点（最高優先）
 - 未着手 (todo): 50点
@@ -253,35 +263,39 @@ function calculateAgeScore(createdAt: Date): number {
 ```
 
 **計算式**:
+
 ```typescript
 function calculateStatusScore(status: TaskStatus): number {
   if (status === 'in_progress') return 100;
   if (status === 'todo') return 50;
-  return 0;  // completed
+  return 0; // completed
 }
 ```
 
 ##### ステップ4: 総合スコア計算
 
 **加重平均**:
+
 ```
 総合スコア = (期限スコア × 50%) + (経過時間スコア × 20%) + (ステータススコア × 30%)
 ```
 
 **計算式**:
+
 ```typescript
 function calculateTotalScore(task: Task): number {
   const deadlineScore = calculateDeadlineScore(task.dueDate);
   const ageScore = calculateAgeScore(task.createdAt);
   const statusScore = calculateStatusScore(task.status);
 
-  return (deadlineScore * 0.5) + (ageScore * 0.2) + (statusScore * 0.3);
+  return deadlineScore * 0.5 + ageScore * 0.2 + statusScore * 0.3;
 }
 ```
 
 ##### ステップ5: 優先度分類
 
 **閾値による分類**:
+
 ```
 - 70点以上: high（高優先度）
 - 40-70点: medium（中優先度）
@@ -289,6 +303,7 @@ function calculateTotalScore(task: Task): number {
 ```
 
 **計算式**:
+
 ```typescript
 function estimatePriority(task: Task): TaskPriority {
   const score = calculateTotalScore(task);
@@ -300,6 +315,7 @@ function estimatePriority(task: Task): TaskPriority {
 ```
 
 **完全な実装例**:
+
 ```typescript
 class PriorityEstimator {
   estimate(task: Task): TaskPriority {
@@ -307,7 +323,7 @@ class PriorityEstimator {
     const ageScore = this.calculateAgeScore(task.createdAt);
     const statusScore = this.calculateStatusScore(task.status);
 
-    const totalScore = (deadlineScore * 0.5) + (ageScore * 0.2) + (statusScore * 0.3);
+    const totalScore = deadlineScore * 0.5 + ageScore * 0.2 + statusScore * 0.3;
 
     if (totalScore >= 70) return 'high';
     if (totalScore >= 40) return 'medium';
@@ -351,6 +367,7 @@ class PriorityEstimator {
 主要なユースケースをシーケンス図で表現します。
 
 **タスク追加のフロー**:
+
 ```mermaid
 sequenceDiagram
     participant User
@@ -389,11 +406,13 @@ CLIツールの場合、テーブル表示やカラーコーディングを定�
 #### カラーコーディング
 
 **ステータスの色分け**:
+
 - 完了 (completed): 緑
 - 進行中 (in_progress): 黄
 - 未着手 (todo): 白
 
 **優先度の色分け**:
+
 - 高 (high): 赤
 - 中 (medium): 黄
 - 低 (low): 青
@@ -403,6 +422,7 @@ CLIツールの場合、テーブル表示やカラーコーディングを定�
 データの保存形式を定義します。
 
 **例: CLIツールのデータ保存**:
+
 ```
 .devtask/
 ├── tasks.json      # タスクデータ
@@ -410,6 +430,7 @@ CLIツールの場合、テーブル表示やカラーコーディングを定�
 ```
 
 **tasks.json の例**:
+
 ```json
 {
   "tasks": [
@@ -432,11 +453,11 @@ CLIツールの場合、テーブル表示やカラーコーディングを定�
 
 エラーの種類と処理方法を定義します。
 
-| エラー種別 | 処理 | ユーザーへの表示 |
-|-----------|------|-----------------|
-| 入力検証エラー | 処理を中断、エラーメッセージ表示 | "タイトルは1-200文字で入力してください" |
-| ファイル読み込みエラー | 空の初期データで継続 | "データファイルが見つかりません。新規作成します" |
-| タスクが見つからない | 処理を中断、エラーメッセージ表示 | "タスクが見つかりません (ID: xxx)" |
+| エラー種別             | 処理                             | ユーザーへの表示                                 |
+| ---------------------- | -------------------------------- | ------------------------------------------------ |
+| 入力検証エラー         | 処理を中断、エラーメッセージ表示 | "タイトルは1-200文字で入力してください"          |
+| ファイル読み込みエラー | 空の初期データで継続             | "データファイルが見つかりません。新規作成します" |
+| タスクが見つからない   | 処理を中断、エラーメッセージ表示 | "タスクが見つかりません (ID: xxx)"               |
 
 ## 機能設計書のレビュー
 

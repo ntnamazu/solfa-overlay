@@ -5,3 +5,5 @@ coverage/
 resources/
 tests/fixtures/
 package-lock.json
+# 作業用の一時ディレクトリ（プロトタイプ成果物・計測スクリプト置き場）
+tmp/

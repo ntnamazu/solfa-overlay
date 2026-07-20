@@ -11,7 +11,15 @@ const layerBoundaries = [
     files: ['src/domain/**/*.ts'],
     patterns: [
       {
-        group: ['electron', 'electron/*', 'node:*', '**/main/**', '**/renderer/**', '**/preload/**', '**/storage/**'],
+        group: [
+          'electron',
+          'electron/*',
+          'node:*',
+          '**/main/**',
+          '**/renderer/**',
+          '**/preload/**',
+          '**/storage/**',
+        ],
         message: 'domain は純粋TSを維持する（shared 以外へ依存しない）',
       },
     ],
@@ -56,7 +64,16 @@ const layerBoundaries = [
     files: ['src/shared/**/*.ts'],
     patterns: [
       {
-        group: ['electron', 'electron/*', 'node:*', '**/main/**', '**/renderer/**', '**/preload/**', '**/domain/**', '**/storage/**'],
+        group: [
+          'electron',
+          'electron/*',
+          'node:*',
+          '**/main/**',
+          '**/renderer/**',
+          '**/preload/**',
+          '**/domain/**',
+          '**/storage/**',
+        ],
         message: 'shared はどのレイヤーにも依存しない',
       },
     ],

@@ -28,9 +28,11 @@ src/
 ### 1. プロジェクト基盤（設定ファイル群）
 
 **責務**:
+
 - TypeScript strict / ESLint / Prettier / Vitest / electron-vite / CI の一貫した設定
 
 **実装の要点**:
+
 - tsconfig はベース `tsconfig.json`（strict, noEmit, 共通オプション）+ `tsconfig.node.json`（main/preload/domain/shared/storage 用）+ `tsconfig.web.json`（renderer 用）の3枚構成（electron-vite の慣例に準拠）
 - ESLint はフラット設定（`eslint.config.mjs`）。レイヤー境界は `no-restricted-imports` をレイヤーごとの files パターンで定義:
   - `src/domain/**`: `electron`, `node:*`, `../main/*`, `../renderer/*`, `../preload/*`, `../storage/*` を禁止
@@ -43,9 +45,11 @@ src/
 ### 2. Electron 最小シェル
 
 **責務**:
+
 - アプリの起動・ウィンドウ生成・Renderer の読み込みだけを行う骨格
 
 **実装の要点**:
+
 - `src/main/index.ts`: BrowserWindow 生成。`webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: true, preload }` を明示。`shell.openExternal` は使わない
 - `src/preload/index.ts` + `api.ts`: `contextBridge.exposeInMainWorld('solfaOverlay', api)`。公開APIは `getAppVersion(): Promise<string>` のみ（型付きIPCの配線パターンを確立するのが目的）
 - IPCチャネル名は `src/shared/ipc/channels.ts` に定義（`app:getVersion`）
@@ -55,18 +59,22 @@ src/
 ### 3. shared 型定義
 
 **責務**:
+
 - 機能設計書「データモデル定義」の TypeScript 化（今回は SolfaEngine が必要とする範囲）
 
 **実装の要点**:
+
 - 機能設計書のエンティティ定義を**そのまま**転記する（独自変更しない）: `Pitch`, `SolfaDegree`, `KeyRegion`, `ScorePosition`, `ProjectSettings`
 - `DEFAULT_SETTINGS`: syllableSystem='kodaly', minorBasis='la', diatonicColor=濃赤(#8b0000), chromaticColor=紫(#6a0dad), fontFamily/fontSizePt は仮値（フォント選定は F-4 実装時）
 
 ### 4. SolfaEngine
 
 **責務**:
+
 - 調文脈と記譜音高から階名の内部表現（度数＋変位）を計算し、設定に応じて文字列化する
 
 **実装の要点**（機能設計書「アルゴリズム設計 > 階名計算」と1:1対応）:
+
 - `resolveDo(region, basis)`: major または do基準 → 主音。minor × la基準 → 平行長調の主音（主音の短3度上 = レター2つ上 + 半音3つ上として計算）
 - `letterDistance(doStep, noteStep)`: `((stepIndex(note) - stepIndex(do) + 7) % 7) + 1`
 - `expectedAlterInDoMajor(doPitch, degree)`: NATURAL_SEMITONES + MAJOR_SCALE_OFFSETS + signedDiff12 による期待変位

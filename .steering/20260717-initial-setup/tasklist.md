@@ -7,18 +7,22 @@
 **このファイルの全タスクが完了するまで作業を継続すること**
 
 ### 必須ルール
+
 - **全てのタスクを`[x]`にすること**
 - 「時間の都合により別タスクとして実施予定」は禁止
 - 「実装が複雑すぎるため後回し」は禁止
 - 未完了タスク（`[ ]`）を残したまま作業を終了しない
 
 ### タスクスキップが許可される唯一のケース
+
 以下の技術的理由に該当する場合のみスキップ可能:
+
 - 実装方針の変更により、機能自体が不要になった
 - アーキテクチャ変更により、別の実装方法に置き換わった
 - 依存関係の変更により、タスクが実行不可能になった
 
 スキップ時は必ず理由を明記:
+
 ```markdown
 - [x] ~~タスク名~~（実装方針変更により不要: 具体的な技術的理由）
 ```
@@ -37,7 +41,7 @@
 - [x] eslint.config.mjs を作成（レイヤー境界は @typescript-eslint/no-restricted-imports（renderer→preload は allowTypeImports）+ import/no-cycle）
 - [x] .prettierrc / .prettierignore を作成（2スペース・100文字）
 - [x] vitest.config.ts を作成（tests/unit・integration 対象、カバレッジ閾値90%）
-- [x] .gitignore を更新（dist, out, .steering/, resources/audiveris, resources/jre, *.solfaproj*, logs 等）
+- [x] .gitignore を更新（dist, out, .steering/, resources/audiveris, resources/jre, _.solfaproj_, logs 等）
 
 ## フェーズ2: shared 型定義・定数
 
@@ -95,29 +99,34 @@
 ## 実装後の振り返り
 
 ### 実装完了日
+
 2026-07-17
 
 ### 計画と実績の差分
 
 **計画と異なった点**:
+
 - 依存バージョン: design.md 想定（vitest ^3 / electron-vite ^4 / vite 8可）に対し、実際は vitest 4 / electron-vite 5 / vite ^7 で確定。electron-vite 5 の peerDependencies が vite ^7 までのため vite 8 は採用不可だった
 - TypeScript は `npm install typescript` で 6.x が入ったため、architecture.md（5.x が正）に合わせて ^5.9 へ明示的にダウングレードした
 - package.json の `"type": "module"` は削除した（sandbox 有効の preload は ESM を読み込めず、CJS 出力に統一するのが最も単純なため）
 - カバレッジ90%閾値に対し、到達不能な防御ガード（mod 7 の範囲外等）2箇所がブランチカバレッジを下げたため、`/* v8 ignore start/stop */` で除外し実質100%とした（`v8 ignore next N` 形式は vitest 4 で効かなかった）
 
 **新たに必要になったタスク**:
+
 - `src/renderer/global.d.ts` の作成（`window.solfaOverlay` の型宣言。preload の型を `import type` で参照する設計の実装上の必須ピース）
 - @types/node の追加（Main プロセスの `path` / `process` 参照に必要）
 
 ### 学んだこと
 
 **技術的な学び**:
+
 - オブジェクトリテラルの負の数値キーは `{ -1: ... }` と書けず `{ [-1]: ... }`（computed key）が必要（syllableTables で遭遇）
 - devcontainer のファイアウォールは GitHub の IP レンジを許可済みのため、Electron バイナリ（GitHub Releases 配信）のダウンロードはホワイトリスト追加なしで成功した
 - `@typescript-eslint/no-restricted-imports` の `allowTypeImports: true` で「renderer → preload は import type のみ許可」という境界を機械的に表現できる
 - 機能設計書の検算規定（expectedAlterInDoMajor は do 長調の調号と一致する）は、調号の定義（♯♭の追加順）からテスト期待値を導出できるため、手書きの期待値表なしで24調を網羅できた
 
 **プロセス上の改善点**:
+
 - 永続ドキュメントが詳細（アルゴリズムの擬似コード・検算規定・エラー分類まで定義済み）だったため、実装は「転記＋テスト」に近く、判断に迷う箇所がほぼなかった
 - ユーザー確認（スコープ・UIスタック）を計画段階で済ませたため、実装中の手戻りがゼロだった
 
@@ -133,6 +142,7 @@ devcontainer での `npm run dev` 起動失敗を解決した。原因は2段階
    → `--ozone-platform=wayland`（WSLg ネイティブの Wayland ソケット使用）で即解決。`scripts/dev.mjs` が `WAYLAND_DISPLAY` 設定時のみ `-- --ozone-platform=wayland` を付与（electron-vite の `--` 以降は ELECTRON_CLI_ARGS として Electron に渡る）
 
 **不採用だった案（検証済み・重要な知見）**:
+
 - `ELECTRON_DISABLE_SANDBOX` を devcontainer.json（containerEnv / remoteEnv）や Dockerfile ENV で設定
   → いずれも PID 1 には届くが **VS Code のターミナル（zsh）へ伝播しない**（DEVCONTAINER=true は届くのに、この変数だけ欠落。原因未特定）
 - `app.commandLine.appendSwitch('no-sandbox')` / `appendSwitch('ozone-platform', 'wayland')`
@@ -160,6 +170,7 @@ devcontainer での `npm run dev` 起動失敗を解決した。原因は2段階
 未対応（低優先のクリーンアップ系・次回以降の候補）: MAJOR_SCALE_OFFSETS の導出化、DoPitch の Pick 化、SolfaEngine クラスの整理、v8-ignore 付き到達不能ガード、テストフィクスチャ共有化、setWindowOpenHandler/will-navigate ガード、コンテナ判定の共通化（Podman 対応）、firewall の wikipedia.org 要否確認
 
 ### 次回への改善提案
+
 - 次の作業単位の候補: (1) MusicXML パーサ + ScoreModelBuilder（フィクスチャ整備込み）、(2) ProjectStore + Zod スキーマ、(3) OmrRunner。(1) が SolfaEngine の成果を最短で繋げられる
 - 実機（GUI環境）での `npm run dev` 起動確認を次回作業の冒頭に行うこと。dev モードで CSP が @vitejs/plugin-react の HMR 用インラインスクリプトをブロックする可能性があり、その場合は「dev のみ緩和・本番は default-src 'self' 維持」の対応を検討する
 - 依存バージョンは設計時に npm レジストリの最新を確認してから design.md に書くと差分が減る

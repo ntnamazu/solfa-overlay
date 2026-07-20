@@ -10,14 +10,14 @@ Electron + TypeScript + React。詳細・選定理由は [docs/architecture.md](
 
 ## ドキュメント
 
-| ドキュメント | 内容 |
-|------------|------|
-| [プロダクト要求定義書](docs/product-requirements.md) | 何を作るか・成功指標 |
-| [機能設計書](docs/functional-design.md) | データモデル・コンポーネント・アルゴリズム |
-| [アーキテクチャ設計書](docs/architecture.md) | 技術スタック（正）・レイヤー構成・永続化戦略 |
-| [リポジトリ構造定義書](docs/repository-structure.md) | ディレクトリ構造・命名規則・依存ルール |
-| [開発ガイドライン](docs/development-guidelines.md) | コーディング規約・Git運用・テスト戦略 |
-| [用語集](docs/glossary.md) | ドメイン用語と英語表記の対応 |
+| ドキュメント                                         | 内容                                         |
+| ---------------------------------------------------- | -------------------------------------------- |
+| [プロダクト要求定義書](docs/product-requirements.md) | 何を作るか・成功指標                         |
+| [機能設計書](docs/functional-design.md)              | データモデル・コンポーネント・アルゴリズム   |
+| [アーキテクチャ設計書](docs/architecture.md)         | 技術スタック（正）・レイヤー構成・永続化戦略 |
+| [リポジトリ構造定義書](docs/repository-structure.md) | ディレクトリ構造・命名規則・依存ルール       |
+| [開発ガイドライン](docs/development-guidelines.md)   | コーディング規約・Git運用・テスト戦略        |
+| [用語集](docs/glossary.md)                           | ドメイン用語と英語表記の対応                 |
 
 ## 開発環境セットアップ
 

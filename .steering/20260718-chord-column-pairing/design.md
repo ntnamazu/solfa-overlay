@@ -56,13 +56,13 @@ stackHeads（x 昇順） × xmlNotes（文書順） を添字 zip
 
 ## 変更ファイル
 
-| ファイル | 変更 |
-| --- | --- |
-| `src/domain/score/clefTable.ts` | `diatonicIndex(step, octave)` を export（LETTERS を再利用） |
-| `src/domain/score/ScoreModelBuilder.ts` | `matchStack` を列対付けに書き換え。stack 内包判定の丸めを `Math.trunc` に統一（レビュー指摘3） |
-| `tests/unit/domain/score/clefTable.test.ts` | `diatonicIndex` のテスト追加 |
-| `tests/unit/domain/score/ScoreModelBuilder.test.ts` | note ヘルパーに offset 追加・新シナリオ4件 |
-| `docs/functional-design.md` | 小節照合 3. の記述を列対付けに更新 |
+| ファイル                                            | 変更                                                                                           |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `src/domain/score/clefTable.ts`                     | `diatonicIndex(step, octave)` を export（LETTERS を再利用）                                    |
+| `src/domain/score/ScoreModelBuilder.ts`             | `matchStack` を列対付けに書き換え。stack 内包判定の丸めを `Math.trunc` に統一（レビュー指摘3） |
+| `tests/unit/domain/score/clefTable.test.ts`         | `diatonicIndex` のテスト追加                                                                   |
+| `tests/unit/domain/score/ScoreModelBuilder.test.ts` | note ヘルパーに offset 追加・新シナリオ4件                                                     |
+| `docs/functional-design.md`                         | 小節照合 3. の記述を列対付けに更新                                                             |
 
 ## テスト設計（新シナリオ）
 
