@@ -1,4 +1,5 @@
 import { strToU8 } from 'fflate';
+import { PDFDocument } from 'pdf-lib';
 import { readFileSync } from 'node:fs';
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -49,10 +50,24 @@ let pdfPath: string;
 let runner: FakeRunner;
 let session: ProjectSession;
 
+/**
+ * Victoria の元PDF の代わり（実物は数十MBのためリポジトリに置いていない）
+ *
+ * 実測どおり **3 ページ・A4**。Audiveris は 4 ページを検出するため、
+ * ページ対応（4 Audiveris ページ → 3 PDF ページ）がここで実際に効く
+ */
+async function makeSourcePdf(): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  for (let i = 0; i < 3; i += 1) {
+    document.addPage([595.28, 841.89]);
+  }
+  return document.save();
+}
+
 beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'solfa-session-'));
   pdfPath = join(directory, 'score.pdf');
-  await writeFile(pdfPath, new Uint8Array([0x25, 0x50, 0x44, 0x46])); // "%PDF"
+  await writeFile(pdfPath, await makeSourcePdf());
   runner = new FakeRunner();
   session = new ProjectSession({ runner });
 });
@@ -322,10 +337,10 @@ describe('ProjectSession', () => {
       const saved = await session.save();
       expect(saved.id).toBe(first.project.id);
 
-      // 同梱された元PDF が差し替わっていないこと（"%PDF" の 4 バイトのまま）
+      // 同梱された元PDF が差し替わっていないこと（取り込んだ 3 ページの PDF のまま）
       const archive = await new ProjectStore().load(path);
       expect(archive.project.id).toBe(first.project.id);
-      expect(archive.sourcePdf).toEqual(new Uint8Array([0x25, 0x50, 0x44, 0x46]));
+      expect(archive.sourcePdf).toEqual(new Uint8Array(readFileSync(pdfPath)));
     });
 
     it('承認しても検出済みの問題は消えない（「問題なし」と偽らない）', async () => {
@@ -437,9 +452,115 @@ describe('ProjectSession', () => {
       ['setClefCorrections', () => session.setClefCorrections(new Map())],
       ['setKeyRegionDecisions', () => session.setKeyRegionDecisions([])],
       ['completeConfirmation', () => session.completeConfirmation()],
+      ['exportPdf', () => session.exportPdf('/tmp/x.pdf')],
     ])('%s はプロジェクト未オープンを明示的に拒否する', async (_name, run) => {
       // 同期で throw する操作と Promise を返す操作が混在するため、両方を同じ形で受ける
       await expect((async () => run())()).rejects.toThrow(/開かれていません/);
+    });
+  });
+
+  describe('ページ対応と注釈生成', () => {
+    it('Audiveris の 4 ページを元PDF の 3 ページへ対応づける（発見1 の回帰）', async () => {
+      const snapshot = await session.importPdf(pdfPath, () => {});
+
+      // sheet#1 が 2 ページに分かれるため、page 0 と page 1 が同じ PDF ページを指す
+      expect(snapshot.project.pages.map((page) => page.pageIndex)).toEqual([0, 1, 2, 3]);
+      expect(snapshot.project.pages.map((page) => page.sourcePageIndex)).toEqual([0, 0, 1, 2]);
+      expect(snapshot.pageIssues).toEqual([]);
+    });
+
+    it('ページ寸法に元PDF の実寸と .omr の画像寸法が入る', async () => {
+      const snapshot = await session.importPdf(pdfPath, () => {});
+      const page = snapshot.project.pages[0];
+
+      expect(page?.widthPt).toBeCloseTo(595.28, 2);
+      expect(page?.omrImageWidthPx).toBe(2480);
+      expect(page?.interlinePx).toBe(17);
+    });
+
+    it('解析すると階名を持つ音符ぶんの注釈が生成される', async () => {
+      const snapshot = await session.importPdf(pdfPath, () => {});
+      const notesWithSolfa =
+        snapshot.project.score?.measures
+          .flatMap((measure) => measure.notes)
+          .filter((note) => note.solfa !== null).length ?? 0;
+
+      expect(notesWithSolfa).toBeGreaterThan(0);
+      expect(snapshot.project.annotations).toHaveLength(notesWithSolfa);
+      expect(snapshot.project.annotations.every((a) => a.layer === 'solfa')).toBe(true);
+    });
+
+    it('訂正で解析し直しても注釈の id が変わらない（手動修正の引き継ぎの前提）', async () => {
+      const first = await session.importPdf(pdfPath, () => {});
+      const before = first.project.annotations.map((annotation) => annotation.id).sort();
+
+      // 音部記号を訂正して解析をやり直す
+      const item = first.project.confirmation.items[0];
+      const after = session.setClefCorrections(new Map([[item?.id ?? '', 'TREBLE']]));
+
+      // id は音符 id から決まるため、訂正しても同じ音符には同じ id が付く。
+      // ここが崩れると `deleted` と手動上書きの引き継ぎが成立しない
+      expect(after.project.annotations.map((a) => a.id).sort()).toEqual(before);
+    });
+
+    it('音節体系を変えても注釈は再生成され、件数が保たれる', async () => {
+      const first = await session.importPdf(pdfPath, () => {});
+      const changed = session.setSettings({
+        ...first.project.settings,
+        syllableSystem: 'tonicSolfa',
+      });
+
+      expect(changed.project.annotations).toHaveLength(first.project.annotations.length);
+    });
+
+    it('元PDF が読めなくてもプロジェクトは開ける（issue として報告する）', async () => {
+      await writeFile(pdfPath, strToU8('not a pdf'));
+      const snapshot = await session.importPdf(pdfPath, () => {});
+
+      expect(snapshot.project.pages).toEqual([]);
+      expect(snapshot.pageIssues.map((issue) => issue.kind)).toEqual(['sourcePdfUnreadable']);
+      // 注釈自体は作られる（衝突回避なしで置かれ、その旨も報告される）
+      expect(snapshot.project.annotations.length).toBeGreaterThan(0);
+      expect(snapshot.annotationIssues.some((i) => i.kind === 'missingPageGeometry')).toBe(true);
+    });
+  });
+
+  describe('exportPdf', () => {
+    it('承認前は拒否する（F-2 のゲート）', async () => {
+      await session.importPdf(pdfPath, () => {});
+
+      await expect(session.exportPdf(join(directory, 'out.pdf'))).rejects.toThrow(/確認が完了/);
+    });
+
+    it('承認後は注釈付きPDFを書き出す', async () => {
+      await session.importPdf(pdfPath, () => {});
+      session.completeConfirmation();
+      const outPath = join(directory, 'out.pdf');
+      const result = await session.exportPdf(outPath);
+
+      expect(result.outPath).toBe(outPath);
+      expect(result.drawnCount).toBeGreaterThan(0);
+      // 出力PDFのページ数は元PDFと同じ
+      const written = await PDFDocument.load(new Uint8Array(readFileSync(outPath)));
+      expect(written.getPageCount()).toBe(3);
+    });
+
+    it('配置を解決できなかった注釈の数を返す', async () => {
+      await session.importPdf(pdfPath, () => {});
+      session.completeConfirmation();
+      const result = await session.exportPdf(join(directory, 'out.pdf'));
+
+      expect(result.unresolvedPlacements).toBeGreaterThanOrEqual(0);
+      expect(Number.isInteger(result.unresolvedPlacements)).toBe(true);
+    });
+
+    it('訂正を入れて承認が外れたら再び拒否する', async () => {
+      const snapshot = await session.importPdf(pdfPath, () => {});
+      session.completeConfirmation();
+      const item = snapshot.project.confirmation.items[0];
+      session.setClefCorrections(new Map([[item?.id ?? '', 'TREBLE']]));
+
+      await expect(session.exportPdf(join(directory, 'out.pdf'))).rejects.toThrow(/確認が完了/);
     });
   });
 

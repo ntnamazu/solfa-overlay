@@ -1,4 +1,9 @@
-import type { ClefCorrections, IpcResult, ProjectSnapshot } from '../shared/ipc/contract';
+import type {
+  ClefCorrections,
+  ExportSummary,
+  IpcResult,
+  ProjectSnapshot,
+} from '../shared/ipc/contract';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress } from '../shared/types/OmrProgress';
 import type { Project } from '../shared/types/Project';
@@ -18,6 +23,8 @@ export interface SolfaOverlayApi {
   chooseSourcePdf(): Promise<string | null>;
   chooseProjectFile(): Promise<string | null>;
   chooseSavePath(): Promise<string | null>;
+  /** 注釈付きPDFの出力先を選ぶ。キャンセルされたら null */
+  chooseExportPdfPath(): Promise<string | null>;
 
   importPdf(pdfPath: string): Promise<IpcResult<ProjectSnapshot>>;
   openProject(path: string): Promise<IpcResult<ProjectSnapshot>>;
@@ -30,6 +37,8 @@ export interface SolfaOverlayApi {
   setKeyRegionDecisions(decisions: KeyRegionDecision[]): Promise<IpcResult<ProjectSnapshot>>;
   setSettings(settings: ProjectSettings): Promise<IpcResult<ProjectSnapshot>>;
   completeConfirmation(): Promise<IpcResult<ProjectSnapshot>>;
+  /** 注釈付きPDFを書き出す（承認前は失敗する） */
+  exportPdf(outPath: string): Promise<IpcResult<ExportSummary>>;
 
   /**
    * OMR の進捗を購読する

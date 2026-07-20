@@ -150,12 +150,21 @@ const projectSettingsSchema = z.object({
   fontSizePt: z.number(),
 });
 
+/**
+ * ページ寸法
+ *
+ * Phase 5 で `sourcePageIndex` / `interlinePx` を追加したが **`SCHEMA_VERSION` は 1 のまま**。
+ * `PageInfo` は Phase 5 で初めて値が入るフィールドで、それ以前に保存され得る `.solfaproj` の
+ * `pages` は必ず空配列である。要素の形が変わっても既存ファイルの読み込みは壊れない
+ */
 const pageInfoSchema = z.object({
   pageIndex: z.number().int(),
+  sourcePageIndex: z.number().int(),
   widthPt: z.number(),
   heightPt: z.number(),
   omrImageWidthPx: z.number(),
   omrImageHeightPx: z.number(),
+  interlinePx: z.number(),
 });
 
 export const projectSchema = z.object({

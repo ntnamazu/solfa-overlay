@@ -158,3 +158,41 @@ export type KeyRegionIssue =
       kind: 'unmatchedKeyDecision';
       measureIndex: number;
     };
+
+/**
+ * ページ寸法を確定できなかったページの報告（`buildPageInfos` の結果）
+ *
+ * 該当ページの注釈は衝突回避なしで置かれ、PDF へも描けない。Editor が原因を示す
+ */
+export type PageInfoIssue =
+  /** book.xml が指す元PDFページが存在しない（PDF のページ数との食い違い） */
+  | { kind: 'sourcePageMissing'; pageIndex: number; sourcePageNumber: number }
+  /** `.omr` に画像寸法・譜線間隔がない、または値が不正 */
+  | { kind: 'sheetGeometryMissing'; pageIndex: number }
+  /**
+   * 元PDF を PDF として読めない
+   *
+   * 出力はできなくなるが、**プロジェクトを開くこと自体は妨げない**。確認画面で積み上げた
+   * ユーザーの判断はプロジェクトファイルに残っており、それを見られなくする理由がない
+   */
+  | { kind: 'sourcePdfUnreadable'; message: string };
+
+/** 注釈の生成で検出した問題（`AnnotationManager.regenerate` の結果） */
+export type AnnotationIssue =
+  /** 候補位置がすべて塞がっており基本位置へ置いた。人手での調整が要る */
+  | { kind: 'placementUnresolved'; annotationId: string; pageIndex: number }
+  /** ページ寸法や記号情報が無く、衝突回避なしで置いた */
+  | { kind: 'missingPageGeometry'; pageIndex: number }
+  /** 対応する音符が見つからない自動注釈（機能設計書「孤立注釈」） */
+  | { kind: 'orphanAnnotation'; annotationId: string };
+
+/** PDF 合成で検出した問題（`OverlayRenderer.render` の結果） */
+export type RenderIssue =
+  /** ページ寸法が確定しておらず、描く位置を決められなかった */
+  | { kind: 'pageInfoMissing'; pageIndex: number; count: number }
+  /** 標準フォントで描けない文字を置換した（`do♭` などが実データに現れる） */
+  | { kind: 'characterSubstituted'; from: string; to: string; count: number }
+  /** 設定の色を解釈できず既定色を使った */
+  | { kind: 'invalidColor'; value: string }
+  /** 描く文字が決まらなかった（対応する音符が消えた孤立注釈） */
+  | { kind: 'missingText'; annotationId: string };

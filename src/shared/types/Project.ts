@@ -8,18 +8,28 @@ import type { StructureDecision } from './StructureDecision';
 /**
  * ページごとの寸法（.omr のピクセル座標 → PDF ポイント座標の線形変換に使う）
  *
- * 実値の取得には PDF のページ寸法（pdf-lib / PDF.js）と .omr の画像寸法が必要なため、
- * populate は オーバーレイ描画を実装する Phase 5 で行う。現時点では空配列を永続化する
+ * `domain/render/pageInfo.ts` の `buildPageInfos` が、元PDF と `.omr` の両方を見て組み立てる。
  */
 export interface PageInfo {
-  /** 0始まり */
+  /** Audiveris のページ添字（= `PageAnchor.pageIndex`）。0始まり */
   pageIndex: number;
-  /** PDFポイント */
+  /**
+   * 元PDF のページ添字。0始まり
+   *
+   * **`pageIndex` とは一致しない。** Audiveris は 1 つの sheet（＝元PDFの1ページ）の中で
+   * movement 境界を検出すると page を分割するため、1 つの元PDFページに複数の Audiveris
+   * ページが対応し得る（Victoria フィクスチャは 3 sheet に対し 4 page で、sheet#1 が
+   * page 0 と page 1 を含む）。この対応を取り違えると注釈が丸ごと別ページへ描かれる
+   */
+  sourcePageIndex: number;
+  /** 元PDFページの寸法（PDFポイント）。ページ回転 90/270 は適用済み */
   widthPt: number;
   heightPt: number;
-  /** .omr の座標基準（300dpi画像） */
+  /** .omr の座標基準（sheet 単位の画像。同一 sheet の全ページが共有する） */
   omrImageWidthPx: number;
   omrImageHeightPx: number;
+  /** 譜線間隔（px）。注釈の配置オフセットの基準 */
+  interlinePx: number;
 }
 
 /**

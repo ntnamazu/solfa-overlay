@@ -1,11 +1,17 @@
 import type { ReactElement } from 'react';
 import { useCallback, useEffect, useState } from 'react';
-import type { ClefCorrections, IpcResult, ProjectSnapshot } from '../shared/ipc/contract';
+import type {
+  ClefCorrections,
+  ExportSummary,
+  IpcResult,
+  ProjectSnapshot,
+} from '../shared/ipc/contract';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress as OmrProgressData } from '../shared/types/OmrProgress';
 import type { StructureDecision } from '../shared/types/StructureDecision';
 import { getApi } from './api';
 import { ClefKeyConfirm } from './screens/ClefKeyConfirm/ClefKeyConfirm';
+import { Editor } from './screens/Editor/Editor';
 import { Home } from './screens/Home/Home';
 import { OmrProgress } from './screens/OmrProgress/OmrProgress';
 import { StructureConfirm } from './screens/StructureConfirm/StructureConfirm';
@@ -17,10 +23,11 @@ import { StructureConfirm } from './screens/StructureConfirm/StructureConfirm';
  * 解析結果（スナップショット）は常に Main が返した最新のものを保持し、
  * Renderer 側で組み立て直さない（同じ状態を 2 箇所で持つと必ず食い違う）。
  *
- * Editor / Export 画面は Phase 5 の担当。本フェーズは確認フローの完了までを繋ぐ
+ * Export は独立した画面にせず Editor 内に置く。実体が「保存先を選ぶ → 書き出す →
+ * 結果を見る」という一過性の操作でしかなく、画面にすると Editor と同じ内容を二重に描くため
  */
 
-export type Screen = 'home' | 'omr' | 'structure' | 'clefKey';
+export type Screen = 'home' | 'omr' | 'structure' | 'clefKey' | 'editor';
 
 export function App() {
   const api = getApi();
@@ -30,6 +37,7 @@ export function App() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [exportSummary, setExportSummary] = useState<ExportSummary | null>(null);
 
   useEffect(() => {
     if (api === null) {
@@ -63,6 +71,7 @@ export function App() {
     }
     setBusy(true);
     setProgress(null);
+    setExportSummary(null); // 別プロジェクトの出力結果を持ち越さない
     setScreen('omr');
     const result = await api.importPdf(pdfPath);
     setBusy(false);
@@ -82,6 +91,7 @@ export function App() {
       return;
     }
     setBusy(true);
+    setExportSummary(null); // 別プロジェクトの出力結果を持ち越さない
     const result = await api.openProject(path);
     setBusy(false);
     accept(result, 'structure');
@@ -164,11 +174,35 @@ export function App() {
       if (!saved.ok) {
         setErrorMessage(saved.error.message);
       }
+      // 保存に失敗しても承認そのものは済んでいるため Editor へ進める
+      // （失敗の理由は画面上に出したまま残す）
+      setScreen('editor');
     } else {
       accept(result);
     }
     setBusy(false);
   }, [api, accept]);
+
+  const exportPdf = useCallback(async () => {
+    if (api === null) {
+      return;
+    }
+    const outPath = await api.chooseExportPdfPath();
+    if (outPath === null) {
+      return; // ダイアログのキャンセルはエラーではない
+    }
+    setBusy(true);
+    const result = await api.exportPdf(outPath);
+    setBusy(false);
+    if (result.ok) {
+      setErrorMessage(null);
+      setExportSummary(result.value);
+    } else {
+      // 出力に失敗したら前回の成功結果を残さない（古い成功表示が誤解を生む）
+      setExportSummary(null);
+      setErrorMessage(result.error.message);
+    }
+  }, [api]);
 
   /**
    * 画面本体にエラー通知を添える
@@ -212,6 +246,24 @@ export function App() {
         onCorrectClef={(corrections) => void correctClef(corrections)}
         onDecideKeyRegions={(decisions) => void decideKeyRegions(decisions)}
         onApprove={() => void approve()}
+        busy={busy}
+      />,
+    );
+  }
+
+  if (screen === 'editor' && snapshot !== null) {
+    return withError(
+      <Editor
+        project={snapshot.project}
+        preview={snapshot.preview}
+        pageIssues={snapshot.pageIssues}
+        annotationIssues={snapshot.annotationIssues}
+        unmatchedCorrections={snapshot.unmatchedCorrections}
+        exportSummary={exportSummary}
+        onExportPdf={() => void exportPdf()}
+        onBackToConfirm={() => {
+          setScreen('clefKey');
+        }}
         busy={busy}
       />,
     );

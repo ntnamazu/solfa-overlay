@@ -1,6 +1,9 @@
+import { regenerateAnnotations } from '../domain/annotations/AnnotationManager';
+import { renderOverlay } from '../domain/render/OverlayRenderer';
+import { buildPageInfos } from '../domain/render/pageInfo';
 import { BookStructureResolver } from '../domain/score/BookStructureResolver';
 import type { StructureIssue } from '../domain/score/BookStructureResolver';
-import type { BookPageRef } from '../domain/score/OmrSheetParser';
+import type { BookPageRef, PageGeometry } from '../domain/score/OmrSheetParser';
 import { parseBookXml } from '../domain/score/OmrSheetParser';
 import { ScoreModelBuilder } from '../domain/score/ScoreModelBuilder';
 import type { BuildIssue, OmrArtifacts } from '../domain/score/ScoreModelBuilder';
@@ -8,15 +11,20 @@ import { buildConfirmationItems, mergeCorrections } from '../domain/score/confir
 import { KeyRegionBuilder } from '../domain/solfa/KeyRegionBuilder';
 import type { KeyRegionIssue } from '../domain/solfa/KeyRegionBuilder';
 import { SolfaEngine, applyDegrees } from '../domain/solfa/SolfaEngine';
+import type { SolfaPreviewRow } from '../shared/ipc/contract';
+import type { AnnotationIssue, PageInfoIssue, RenderIssue } from '../shared/types/Issues';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress } from '../shared/types/OmrProgress';
 import type { OmrRawArtifacts } from '../shared/types/OmrRawArtifacts';
 import type { Project } from '../shared/types/Project';
 import type { ProjectSettings } from '../shared/types/ProjectSettings';
+import type { ScoreModel } from '../shared/types/ScoreModel';
 import type { StructureDecision } from '../shared/types/StructureDecision';
 import { ProjectStore } from '../storage/ProjectStore';
+import { writeExportPdf } from '../storage/writeExportPdf';
+import { ConfirmationRequiredError } from './errors';
 import { OmrRunner } from './omr/OmrRunner';
-import { assembleArtifacts, unzipEntries } from './omr/omrArchive';
+import { assembleArtifacts, assemblePageGeometry, unzipEntries } from './omr/omrArchive';
 
 /**
  * 解析パイプラインの編成レイヤー（アーキテクチャ設計書「レイヤー構成」）
@@ -40,6 +48,12 @@ export interface SessionSnapshot {
   buildIssues: BuildIssue[];
   /** 調文脈で見つかった問題（調号の食い違いなど） */
   keyRegionIssues: KeyRegionIssue[];
+  /** ページ寸法を確定できなかったページ（該当ページは注釈を描けない） */
+  pageIssues: PageInfoIssue[];
+  /** 注釈生成で見つかった問題（配置不能・孤立注釈など） */
+  annotationIssues: AnnotationIssue[];
+  /** Editor の階名プレビュー（先頭の一定小節まで） */
+  preview: SolfaPreviewRow[];
   /**
    * 対象が見つからず適用されなかった訂正
    *
@@ -58,6 +72,18 @@ interface LoadedOmr {
   raw: OmrRawArtifacts;
   artifacts: OmrArtifacts;
   bookPages: BookPageRef[];
+  /** 注釈の配置に使う記号の矩形。`artifacts.pages` と同じ順・同じ長さ */
+  geometry: PageGeometry[];
+}
+
+/** PDF 出力の結果（Editor へ返す要約） */
+export interface ExportResult {
+  outPath: string;
+  /** 実際に描いた注釈の数 */
+  drawnCount: number;
+  /** 配置を解決できなかった注釈の数（人手調整の目安） */
+  unresolvedPlacements: number;
+  renderIssues: RenderIssue[];
 }
 
 /**
@@ -93,8 +119,14 @@ export class ProjectSession {
    * 承認（`completeConfirmation`）は解析を流し直さないが、スナップショットは返す。
    * ここに残しておかないと空配列を返すことになり、UI が「問題なし」と誤って表示する
    */
-  private lastIssues: Pick<SessionSnapshot, 'structureIssues' | 'buildIssues' | 'keyRegionIssues'> =
-    { structureIssues: [], buildIssues: [], keyRegionIssues: [] };
+  private lastIssues: Pick<
+    SessionSnapshot,
+    'structureIssues' | 'buildIssues' | 'keyRegionIssues' | 'annotationIssues'
+  > = { structureIssues: [], buildIssues: [], keyRegionIssues: [], annotationIssues: [] };
+  /** ページ寸法の確定で出た問題（解析のたびには変わらないため別に保持する） */
+  private pageIssues: PageInfoIssue[] = [];
+  /** Editor の階名プレビュー（承認時にも同じ内容を返せるよう保持する） */
+  private preview: SolfaPreviewRow[] = [];
   private pendingSave: ReturnType<typeof setTimeout> | null = null;
   /**
    * 進行中の保存（直列化用）
@@ -130,10 +162,11 @@ export class ProjectSession {
   ): Promise<SessionSnapshot> {
     const sourcePdf = await this.store.readSourcePdf(pdfPath);
     const { artifacts, raw } = await this.runner.run(pdfPath, onProgress);
-    // 状態を触る前に、失敗し得る処理（book.xml の取り出し）を全て終わらせる
-    const omr: LoadedOmr = { raw, artifacts, bookPages: readBookPages(raw) };
+    // 状態を触る前に、失敗し得る処理（book.xml の取り出し・ページ寸法の確定）を全て終わらせる
+    const omr = loadOmr(raw, artifacts);
+    const { project, pageIssues } = await this.withPageInfos(this.store.create(), omr, sourcePdf);
 
-    this.adopt({ project: this.store.create(), omr, sourcePdf, path: null });
+    this.adopt({ project, omr, sourcePdf, path: null, pageIssues });
     return this.analyze();
   }
 
@@ -154,14 +187,31 @@ export class ProjectSession {
     // 先に組み立て切ってから差し替える。途中で throw すると
     // 「新しい PDF ＋ 古いプロジェクト」という混ざった状態が残り、
     // 次の保存で元のファイルへ別のプロジェクトの PDF を書き込んでしまう
-    const omr: LoadedOmr = {
-      raw: archive.omr,
-      artifacts: assembleArtifacts(archive.omr),
-      bookPages: readBookPages(archive.omr),
-    };
+    const omr = loadOmr(archive.omr, assembleArtifacts(archive.omr));
+    // 保存済みの `pages` をそのまま使わず組み立て直す。`score` / `keyRegions` と同じく
+    // 解析結果のキャッシュであり、認識ロジックを改善した後は最新の値を使いたいため
+    const { project, pageIssues } = await this.withPageInfos(
+      archive.project,
+      omr,
+      archive.sourcePdf,
+    );
 
-    this.adopt({ project: archive.project, omr, sourcePdf: archive.sourcePdf, path });
+    this.adopt({ project, omr, sourcePdf: archive.sourcePdf, path, pageIssues });
     return this.analyze();
+  }
+
+  /**
+   * 元PDF と `.omr` からページ寸法を確定し、プロジェクトへ載せる
+   *
+   * セッションの状態は触らない（`adopt` が全フィールドを一度に差し替える約束のため）
+   */
+  private async withPageInfos(
+    project: Project,
+    omr: LoadedOmr,
+    sourcePdf: Uint8Array,
+  ): Promise<{ project: Project; pageIssues: PageInfoIssue[] }> {
+    const { pages, issues } = await buildPageInfos(sourcePdf, omr.geometry, omr.bookPages);
+    return { project: { ...project, pages }, pageIssues: issues };
   }
 
   /**
@@ -174,12 +224,14 @@ export class ProjectSession {
     omr: LoadedOmr;
     sourcePdf: Uint8Array;
     path: string | null;
+    pageIssues: PageInfoIssue[];
   }): void {
     this.cancelPendingSave(); // 前のプロジェクト向けの保存予約を持ち越さない
     this.project = state.project;
     this.omr = state.omr;
     this.sourcePdf = state.sourcePdf;
     this.path = state.path;
+    this.pageIssues = state.pageIssues;
     this.unmatched = [];
   }
 
@@ -303,11 +355,7 @@ export class ProjectSession {
     this.scheduleAutoSave();
     // 承認は解析結果を変えないが、問題点まで消えるわけではない。
     // 空配列を返すと確認画面が「問題は見つかりませんでした」と偽って表示する
-    return this.snapshot(
-      this.lastIssues.structureIssues,
-      this.lastIssues.buildIssues,
-      this.lastIssues.keyRegionIssues,
-    );
+    return this.snapshot(this.lastIssues);
   }
 
   /**
@@ -413,30 +461,75 @@ export class ProjectSession {
       keyRegions,
       project.settings.minorBasis,
     );
+    const score = applyDegrees(built.score, degrees);
+
+    // 注釈は階名が確定してからでないと作れない。既存の注釈を渡すことで、
+    // 訂正で解析をやり直しても手動注釈と削除の記録が生き残る
+    const { annotations, issues: annotationIssues } = regenerateAnnotations({
+      score,
+      geometry: omr.geometry,
+      pages: project.pages,
+      settings: project.settings,
+      existing: project.annotations,
+    });
 
     this.project = {
       ...project,
-      score: applyDegrees(built.score, degrees),
+      score,
       confirmation: { ...project.confirmation, items },
       keyRegions,
+      annotations,
     };
-    this.lastIssues = { structureIssues, buildIssues: built.issues, keyRegionIssues };
-    return this.snapshot(structureIssues, built.issues, keyRegionIssues);
+    this.lastIssues = {
+      structureIssues,
+      buildIssues: built.issues,
+      keyRegionIssues,
+      annotationIssues,
+    };
+    this.preview = buildPreview(score, project.settings, this.engine);
+    return this.snapshot(this.lastIssues);
   }
 
   private snapshot(
-    structureIssues: StructureIssue[],
-    buildIssues: BuildIssue[],
-    keyRegionIssues: KeyRegionIssue[],
+    issues: Pick<
+      SessionSnapshot,
+      'structureIssues' | 'buildIssues' | 'keyRegionIssues' | 'annotationIssues'
+    >,
   ): SessionSnapshot {
     const { project } = this.require();
     return {
       project,
       filePath: this.path,
-      structureIssues,
-      buildIssues,
-      keyRegionIssues,
+      ...issues,
+      pageIssues: this.pageIssues,
+      preview: this.preview,
       unmatchedCorrections: this.unmatched,
+    };
+  }
+
+  /**
+   * 注釈付きPDFを書き出す（F-4）
+   *
+   * @throws Error 承認前に呼ばれた場合（F-2 のゲート）
+   * @throws ProjectFileError 書き出しに失敗した場合
+   */
+  async exportPdf(outPath: string): Promise<ExportResult> {
+    const { project, sourcePdf } = this.require();
+    if (project.confirmation.completedAt === null) {
+      // 承認していない解析結果を印刷用に出すと、誤った階名を正しいものとして配ってしまう
+      throw new ConfirmationRequiredError(
+        '音部記号・調の確認が完了していません。確認画面で承認してください。',
+      );
+    }
+    const rendered = await renderOverlay({ sourcePdf, project });
+    await writeExportPdf(outPath, rendered.bytes);
+    return {
+      outPath,
+      drawnCount: rendered.drawnCount,
+      unresolvedPlacements: this.lastIssues.annotationIssues.filter(
+        (issue) => issue.kind === 'placementUnresolved',
+      ).length,
+      renderIssues: rendered.issues,
     };
   }
 
@@ -447,6 +540,54 @@ export class ProjectSession {
     }
     return { project: this.project, omr: this.omr, sourcePdf: this.sourcePdf };
   }
+}
+
+/**
+ * Editor のプレビューに出す小節数の上限
+ *
+ * divisi は 3,500 音符あり、全部を IPC で送って描くと画面が使い物にならない
+ * （アーキテクチャ設計書「Editor のレンダリングはページ単位の遅延描画とする」）。
+ * Phase 5 の Editor はテキスト表示のため、まず件数で頭打ちにする
+ */
+const PREVIEW_MEASURE_LIMIT = 24;
+
+/**
+ * 階名プレビューを組み立てる
+ *
+ * 度数＋変位から表示文字列を導くのは domain の仕事で、Renderer は domain を
+ * import できない（ESLint で強制）。ここで文字列まで確定させて送る
+ */
+function buildPreview(
+  score: ScoreModel,
+  settings: ProjectSettings,
+  engine: SolfaEngine,
+): SolfaPreviewRow[] {
+  const partNames = new Map(score.parts.map((part) => [part.id, part.name]));
+  return score.measures
+    .filter((measure) => measure.index < PREVIEW_MEASURE_LIMIT && measure.notes.length > 0)
+    .sort((a, b) => a.index - b.index || (a.partId < b.partId ? -1 : 1))
+    .map((measure) => ({
+      partId: measure.partId,
+      partName: partNames.get(measure.partId) ?? measure.partId,
+      measureIndex: measure.index,
+      syllables: measure.notes.map((note) =>
+        note.solfa === null ? '?' : engine.toSyllable(note.solfa, settings),
+      ),
+    }));
+}
+
+/**
+ * OMR 成果物から解析に使う構造を組み立てる
+ *
+ * `artifacts.pages` と `geometry` は同じシート順で作られる（`omrArchive` が保証する）
+ */
+function loadOmr(raw: OmrRawArtifacts, artifacts: OmrArtifacts): LoadedOmr {
+  return {
+    raw,
+    artifacts,
+    bookPages: readBookPages(raw),
+    geometry: assemblePageGeometry(raw.omr),
+  };
 }
 
 /** `.omr` から book.xml を取り出してページ参照を得る */

@@ -1,7 +1,7 @@
 import { strFromU8 } from 'fflate';
 import { parseMusicXml } from '../../domain/score/MusicXmlParser';
-import type { OmrPageContent } from '../../domain/score/OmrSheetParser';
-import { parseSheetXml } from '../../domain/score/OmrSheetParser';
+import type { OmrPageContent, PageGeometry } from '../../domain/score/OmrSheetParser';
+import { parseSheetGeometry, parseSheetXml } from '../../domain/score/OmrSheetParser';
 import type { OmrArtifacts } from '../../domain/score/ScoreModelBuilder';
 import { find, parseXml } from '../../domain/score/xmlTree';
 import { ZipError, unzipEntries as unzipSafely } from '../../storage/zipArchive';
@@ -90,24 +90,63 @@ export function assembleArtifacts(input: {
   omr: Uint8Array;
   movements: Uint8Array[];
 }): OmrArtifacts {
-  const omrEntries = unzipEntries(input.omr);
+  const pages: OmrPageContent[] = [];
+  for (const xml of sheetXmlsInOrder(input.omr)) {
+    pages.push(...parseSheetXml(xml).pages);
+  }
+  const movements = input.movements.map((mxl) => ({
+    musicXml: parseMusicXml(extractMusicXml(mxl)),
+  }));
+  return { movements, pages };
+}
+
+/**
+ * `.omr` からページごとの描画幾何（記号の矩形・画像寸法）を組み立てる
+ *
+ * `assembleArtifacts(...).pages` と**同じ順・同じ長さ**の配列を返す。両者は
+ * `sheetXmlsInOrder` という同一のシート列挙を通るため、片方だけシート順が変わって
+ * 注釈が別ページへ描かれるという事故が起きない（この不変条件はテストでも固定する）。
+ *
+ * `image` は sheet 単位の情報であり、同一 sheet の全ページが同じ値を共有する
+ *
+ * @throws OmrArchiveError zip 展開失敗・シート XML 欠落
+ * @throws ScoreParseError XML が整形式でない場合（domain パーサ由来）
+ */
+export function assemblePageGeometry(omr: Uint8Array): PageGeometry[] {
+  const geometry: PageGeometry[] = [];
+  for (const xml of sheetXmlsInOrder(omr)) {
+    const sheet = parseSheetGeometry(xml);
+    for (const page of sheet.pages) {
+      geometry.push({ image: sheet.image, symbols: page.symbols });
+    }
+  }
+  return geometry;
+}
+
+/**
+ * `.omr` のシート XML を シート番号の昇順で列挙する
+ *
+ * `assembleArtifacts` と `assemblePageGeometry` の**唯一のシート順の定義**。
+ * 片方だけを変えるとページ対応がずれるため、意図的に 1 か所へ寄せてある
+ *
+ * @throws OmrArchiveError zip 展開失敗・シート XML 欠落
+ */
+function sheetXmlsInOrder(omr: Uint8Array): string[] {
+  const omrEntries = unzipEntries(omr);
   const sheetNames = [...omrEntries.keys()]
     .filter((name) => SHEET_XML_ENTRY.test(name))
     .sort((a, b) => sheetNumberOf(a) - sheetNumberOf(b));
   if (sheetNames.length === 0) {
     throw new OmrArchiveError('.omr にシート XML（sheet#N/sheet#N.xml）が見つかりません');
   }
-  const pages: OmrPageContent[] = [];
+  const xmls: string[] = [];
   for (const name of sheetNames) {
     const data = omrEntries.get(name);
     /* v8 ignore next -- name は omrEntries のキー由来のため必ず存在する */
     if (data === undefined) continue;
-    pages.push(...parseSheetXml(decodeXml(data)).pages);
+    xmls.push(decodeXml(data));
   }
-  const movements = input.movements.map((mxl) => ({
-    musicXml: parseMusicXml(extractMusicXml(mxl)),
-  }));
-  return { movements, pages };
+  return xmls;
 }
 
 /** `sheet#N/sheet#N.xml` からシート番号 N を取り出す（SHEET_XML_ENTRY 一致済み前提） */

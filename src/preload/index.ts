@@ -23,6 +23,7 @@ const api: SolfaOverlayApi = {
   chooseSourcePdf: () => invoke(IPC_CHANNELS.dialogOpenPdf),
   chooseProjectFile: () => invoke(IPC_CHANNELS.dialogOpenProject),
   chooseSavePath: () => invoke(IPC_CHANNELS.dialogSaveProject),
+  chooseExportPdfPath: () => invoke(IPC_CHANNELS.dialogSaveExportPdf),
 
   importPdf: (pdfPath) => invoke(IPC_CHANNELS.projectImportPdf, pdfPath),
   openProject: (path) => invoke(IPC_CHANNELS.projectOpen, path),
@@ -36,6 +37,7 @@ const api: SolfaOverlayApi = {
     invoke(IPC_CHANNELS.projectSetKeyRegionDecisions, decisions),
   setSettings: (settings) => invoke(IPC_CHANNELS.projectSetSettings, settings),
   completeConfirmation: () => invoke(IPC_CHANNELS.projectCompleteConfirmation),
+  exportPdf: (outPath) => invoke(IPC_CHANNELS.projectExportPdf, outPath),
 
   onOmrProgress: (listener) => {
     // ipcRenderer のイベント引数（第1引数は IpcRendererEvent）は Renderer へ渡さない。

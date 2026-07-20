@@ -49,8 +49,10 @@ project-root/
 **配置ファイル**:
 
 - `index.ts`: エントリポイント（ウィンドウ生成・ライフサイクル・IPCハンドラ登録・ダイアログ）
-- `ProjectSession.ts`: 解析パイプラインの編成（構造解決 → 照合 → 確認項目 → 調文脈 → 階名）と
-  ユーザー判断の保持・自動保存の予約。判断ロジックは持たず、順序と状態だけを担う
+- `ProjectSession.ts`: 解析パイプラインの編成（構造解決 → 照合 → 確認項目 → 調文脈 → 階名 → 注釈）と
+  ユーザー判断の保持・自動保存の予約・PDF 出力。判断ロジックは持たず、順序と状態だけを担う
+- `errors.ts`: 編成レイヤーの操作エラー（`ConfirmationRequiredError`）。
+  IPC 越しに例外を投げるとクラス情報が失われるため、`toIpcError` が種別へ翻訳できるよう型で表す
 - `ipc/projectHandlers.ts`: セッション操作を `IpcResult` へ変換するハンドラ群。
   Electron の `ipcMain` に依存しない純粋な関数として作り、登録だけを `index.ts` が行う
   （Electron を起動せずにエラー分類を単体テストできるようにするため）
@@ -88,7 +90,9 @@ project-root/
 
 **配置ファイル**:
 
-- `screens/`: 画面単位のコンポーネント（`Home/`, `OmrProgress/`, `StructureConfirm/`, `ClefKeyConfirm/`, `Editor/`, `Export/`）
+- `screens/`: 画面単位のコンポーネント（`Home/`, `OmrProgress/`, `StructureConfirm/`, `ClefKeyConfirm/`, `Editor/`）
+  - `Export/` は作らない。出力は「保存先を選ぶ → 書き出す → 結果を見る」という一過性の操作でしかなく、
+    画面にすると Editor と同じ内容を二重に描くことになる（機能設計書の画面遷移図を参照）
 - `components/`: 画面横断の再利用コンポーネント
 - `viewer/`: PDF.js によるページ描画と注釈オーバーレイ表示
 - `state/`: UI状態管理（プロジェクトの編集状態はIPC越しにMainが正とする）
@@ -111,8 +115,8 @@ project-root/
 
 - `score/`: `ScoreModelBuilder.ts`, `MusicXmlParser.ts`, `OmrSheetParser.ts`, `BookStructureResolver.ts`（段ごとの小節番号アンカーの確定）, `structureAnchors.ts`（確定構造から通し小節番号の基準値を求める純粋関数。照合と調文脈生成が共有する）
 - `solfa/`: `SolfaEngine.ts`, `syllableTables.ts`（コダーイ式/Tonic sol-fa の文字列化表）, `KeyRegionBuilder.ts`（調号から調文脈を自動生成）, `keyTable.ts`（調号→主音の対応表）
-- `annotations/`: `AnnotationManager.ts`, `placementResolver.ts`（衝突回避）
-- `render/`: `OverlayRenderer.ts`, `coordinateTransform.ts`（.omr px → PDF pt）
+- `annotations/`: `AnnotationManager.ts`（注釈の生成・編集と手動修正の保全）, `placementResolver.ts`（衝突回避。候補位置の梯子と一様格子による近傍索引）
+- `render/`: `OverlayRenderer.ts`（注釈付きPDFのバイト列生成）, `coordinateTransform.ts`（.omr px → PDF pt。y 軸反転と軸ごとの縮尺）, `pageInfo.ts`（Audiveris ページと元PDFページの対応づけ）, `fontMetrics.ts`（標準14フォントの寸法計測と描けない文字の置換。**配置と描画が同じ関数で測る**ための共通の入口）
 
 **命名規則**:
 
@@ -153,9 +157,10 @@ project-root/
 
 - `types/`: 機能設計書のエンティティ定義（`Project.ts`, `ScoreModel.ts`, `Annotation.ts`, `KeyRegion.ts`,
   `Confirmation.ts`, `StructureDecision.ts`, `OmrRawArtifacts.ts` 等）
-- `types/Issues.ts`: 解析が検出した問題（`StructureIssue` / `BuildIssue` / `KeyRegionIssue`）。
-  **domain ではなく shared に置く**: 確認画面へ IPC で送る表示用データであり `ipc/contract.ts` が
-  型として参照するため。shared は domain へ依存できない（ESLint で強制）。
+- `types/Issues.ts`: 解析が検出した問題（`StructureIssue` / `BuildIssue` / `KeyRegionIssue` /
+  `PageInfoIssue` / `AnnotationIssue` / `RenderIssue`）。
+  **domain ではなく shared に置く**: 確認画面・Editor へ IPC で送る表示用データであり
+  `ipc/contract.ts` が型として参照するため。shared は domain へ依存できない（ESLint で強制）。
   domain 側は `export type` で再エクスポートし、利用側の import 先は変えていない
 - `constants/`: 既定値（`DEFAULT_SETTINGS.ts` 等）
 - `ipc/`: IPCチャネル名とペイロード型（Main/preload/Renderer で共有）

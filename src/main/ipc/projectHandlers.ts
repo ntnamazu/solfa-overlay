@@ -1,5 +1,6 @@
 import type {
   ClefCorrections,
+  ExportSummary,
   IpcError,
   IpcResult,
   ProjectSnapshot,
@@ -11,6 +12,7 @@ import type { ProjectSettings } from '../../shared/types/ProjectSettings';
 import type { StructureDecision } from '../../shared/types/StructureDecision';
 import { ProjectFileError } from '../../storage/errors';
 import type { ProjectSession } from '../ProjectSession';
+import { ConfirmationRequiredError } from '../errors';
 import { OmrArchiveError, OmrRunError } from '../omr/errors';
 
 /**
@@ -39,6 +41,9 @@ export function toIpcError(error: unknown): IpcError {
   }
   if (error instanceof OmrRunError || error instanceof OmrArchiveError) {
     return { kind: 'omr', message: error.message };
+  }
+  if (error instanceof ConfirmationRequiredError) {
+    return { kind: 'confirmationRequired', message: error.message };
   }
   if (error instanceof Error) {
     return { kind: 'unexpected', message: error.message };
@@ -104,6 +109,9 @@ export function createProjectHandlers(
 
     completeConfirmation: (): IpcResult<ProjectSnapshot> =>
       attempt(() => session.completeConfirmation()),
+
+    exportPdf: (outPath: string): Promise<IpcResult<ExportSummary>> =>
+      attemptAsync(() => session.exportPdf(outPath)),
   };
 }
 

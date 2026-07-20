@@ -11,7 +11,14 @@ export interface Annotation {
   id: string;
   /** 'chordRole' は v2（和音役割レイヤー）で使う */
   layer: 'solfa' | 'chordRole';
-  /** 描画位置（衝突回避で調整後の位置） */
+  /**
+   * 描画位置（衝突回避で調整後の位置）
+   *
+   * 座標は `.omr` の 300dpi 画像ピクセルで、**文字列の左端＋ベースライン**を指す
+   * （pdf-lib の `drawText` が取る基準に合わせてある。中心や左上にすると、
+   * 描画時に毎回オフセットを足し引きすることになり食い違いの温床になる）。
+   * `pageIndex` は Audiveris のページ添字であり元PDFのページ番号ではない（`PageInfo` を参照）
+   */
   anchor: PageAnchor;
   /** 自動生成注釈は元音符を参照する。手動追加は null */
   noteId: string | null;

@@ -31,6 +31,15 @@ function stubApi(overrides: Partial<SolfaOverlayApi> = {}) {
     chooseSourcePdf: vi.fn().mockResolvedValue('/scores/song.pdf'),
     chooseProjectFile: vi.fn().mockResolvedValue('/scores/song.solfaproj'),
     chooseSavePath: vi.fn().mockResolvedValue('/scores/song.solfaproj'),
+    chooseExportPdfPath: vi.fn().mockResolvedValue('/scores/song-solfa.pdf'),
+    exportPdf: vi.fn().mockResolvedValue(
+      ok({
+        outPath: '/scores/song-solfa.pdf',
+        drawnCount: 808,
+        unresolvedPlacements: 0,
+        renderIssues: [],
+      }),
+    ),
     importPdf: vi.fn().mockResolvedValue(ok(snapshot())),
     openProject: vi.fn().mockResolvedValue(ok(snapshot())),
     saveProject: vi.fn().mockResolvedValue(ok(project())),
@@ -277,12 +286,95 @@ describe('App', () => {
     await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
     await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
 
-    // 確認画面に留まったままエラーを出す（承認自体は成功しているため Home へ戻さない）。
-    // 確認画面は自前で通知を描かないため、App が添えないと無言で握りつぶされる
+    // 承認自体は成功しているため Editor へ進むが、保存の失敗は理由付きで表示し続ける
+    // （Editor は自前で通知を描かないため、App が添えないと無言で握りつぶされる）
     await waitFor(() => {
-      expect(screen.getByRole('alert').textContent).toBe('書き込めません');
+      expect(screen.getByText('書き込めません')).toBeDefined();
     });
-    expect(screen.getByRole('heading', { name: '音部記号と調の確認' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: '階名の確認と出力' })).toBeDefined();
+  });
+
+  describe('Editor と PDF 出力', () => {
+    /** 承認済みのスナップショット（Editor が出力可能な状態） */
+    const approved = () =>
+      snapshot({
+        project: project({
+          confirmation: { items: [confirmationItem()], completedAt: '2026-07-20T00:00:00.000Z' },
+          score: { parts: [], systems: [], measures: [] },
+        }),
+        filePath: '/scores/song.solfaproj',
+        preview: [{ partId: 'P1', partName: 'Soprano', measureIndex: 0, syllables: ['do', 're'] }],
+      });
+
+    /** Home → 構造確認 → 音部記号確認 → 承認 → Editor まで進める */
+    async function advanceToEditor() {
+      await advanceToStructure();
+      await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
+      await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
+      await screen.findByRole('heading', { name: '階名の確認と出力' });
+    }
+
+    it('承認すると Editor へ進む', async () => {
+      stubApi({ completeConfirmation: vi.fn().mockResolvedValue(ok(approved())) });
+      render(<App />);
+
+      await advanceToEditor();
+      expect(screen.getByText('do re')).toBeDefined();
+    });
+
+    it('出力ボタンで保存先を尋ね、選ばれたパスで出力する', async () => {
+      const { api } = stubApi({ completeConfirmation: vi.fn().mockResolvedValue(ok(approved())) });
+      render(<App />);
+
+      await advanceToEditor();
+      await userEvent.click(screen.getByRole('button', { name: '注釈付きPDFを出力' }));
+
+      await waitFor(() => {
+        expect(api.exportPdf).toHaveBeenCalledWith('/scores/song-solfa.pdf');
+      });
+      expect(screen.getByText(/808 件の階名を出力しました/)).toBeDefined();
+    });
+
+    it('保存先の選択をキャンセルしたら出力しない（エラーにもしない）', async () => {
+      const { api } = stubApi({
+        completeConfirmation: vi.fn().mockResolvedValue(ok(approved())),
+        chooseExportPdfPath: vi.fn().mockResolvedValue(null),
+      });
+      render(<App />);
+
+      await advanceToEditor();
+      await userEvent.click(screen.getByRole('button', { name: '注釈付きPDFを出力' }));
+
+      expect(api.exportPdf).not.toHaveBeenCalled();
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('出力に失敗したら理由を表示する', async () => {
+      stubApi({
+        completeConfirmation: vi.fn().mockResolvedValue(ok(approved())),
+        exportPdf: vi.fn().mockResolvedValue(fail('保存先に書き込めません', 'io')),
+      });
+      render(<App />);
+
+      await advanceToEditor();
+      await userEvent.click(screen.getByRole('button', { name: '注釈付きPDFを出力' }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('alert').textContent).toBe('保存先に書き込めません');
+      });
+      // 成功したかのような表示を残さない
+      expect(screen.queryByText(/件の階名を出力しました/)).toBeNull();
+    });
+
+    it('確認画面へ戻れる', async () => {
+      stubApi({ completeConfirmation: vi.fn().mockResolvedValue(ok(approved())) });
+      render(<App />);
+
+      await advanceToEditor();
+      await userEvent.click(screen.getByRole('button', { name: '確認画面へ戻る' }));
+
+      expect(screen.getByRole('heading', { name: '音部記号と調の確認' })).toBeDefined();
+    });
   });
 
   it('進捗の購読をアンマウント時に解除する（リスナーの積み上がりを防ぐ）', () => {

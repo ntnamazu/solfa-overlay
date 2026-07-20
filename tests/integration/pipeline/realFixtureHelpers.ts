@@ -1,7 +1,17 @@
+import { PDFDocument } from 'pdf-lib';
+import { regenerateAnnotations } from '../../../src/domain/annotations/AnnotationManager';
+import { buildPageInfos } from '../../../src/domain/render/pageInfo';
 import { BookStructureResolver } from '../../../src/domain/score/BookStructureResolver';
 import type { StructureIssue } from '../../../src/domain/score/BookStructureResolver';
 import { parseBookXml } from '../../../src/domain/score/OmrSheetParser';
-import { assembleArtifacts, unzipEntries } from '../../../src/main/omr/omrArchive';
+import {
+  assembleArtifacts,
+  assemblePageGeometry,
+  unzipEntries,
+} from '../../../src/main/omr/omrArchive';
+import type { Annotation } from '../../../src/shared/types/Annotation';
+import type { AnnotationIssue, PageInfoIssue } from '../../../src/shared/types/Issues';
+import type { PageInfo } from '../../../src/shared/types/Project';
 import type { OmrArtifacts } from '../../../src/domain/score/ScoreModelBuilder';
 import { ScoreModelBuilder } from '../../../src/domain/score/ScoreModelBuilder';
 import type { BuildIssue, BuildResult } from '../../../src/domain/score/ScoreModelBuilder';
@@ -149,6 +159,69 @@ export function runSolfa(run: FixtureRun, settings: ProjectSettings = DEFAULT_SE
     degreeCount: degrees.size,
     score,
     syllableHistogram,
+  };
+}
+
+/**
+ * 実フィクスチャの元PDF を合成する
+ *
+ * PD楽譜の PDF 本体は数十MBあるためリポジトリに置いていない。`.omr` の画像寸法を
+ * 300dpi として逆算した寸法の空PDF を代わりに使う。検証したいのは px → pt の
+ * 線形変換とページ対応であり、版面の中身には依存しない
+ */
+export async function makeSourcePdf(
+  pageCount: number,
+  imagePx: [number, number],
+): Promise<Uint8Array> {
+  const document = await PDFDocument.create();
+  const [widthPx, heightPx] = imagePx;
+  for (let i = 0; i < pageCount; i += 1) {
+    document.addPage([(widthPx / 300) * 72, (heightPx / 300) * 72]);
+  }
+  return document.save();
+}
+
+/** 階名から注釈生成までを通した結果 */
+export interface AnnotationRun {
+  pages: PageInfo[];
+  pageIssues: PageInfoIssue[];
+  annotations: Annotation[];
+  issues: AnnotationIssue[];
+  /** 配置を解決できなかった注釈の数 */
+  unresolved: number;
+}
+
+/**
+ * 照合・階名済みの結果から注釈生成まで通す
+ *
+ * @param sourcePdf - 元PDF のバイト列（`makeSourcePdf` で合成したもの）
+ */
+export async function runAnnotations(
+  omr: Uint8Array,
+  solfa: SolfaRun,
+  sourcePdf: Uint8Array,
+  settings: ProjectSettings = DEFAULT_SETTINGS,
+): Promise<AnnotationRun> {
+  const bookBytes = unzipEntries(omr).get('book.xml');
+  if (bookBytes === undefined) {
+    throw new Error('フィクスチャの .omr に book.xml がありません');
+  }
+  const bookPages = parseBookXml(Buffer.from(bookBytes).toString('utf-8'));
+  const geometry = assemblePageGeometry(omr);
+  const { pages, issues: pageIssues } = await buildPageInfos(sourcePdf, geometry, bookPages);
+  const { annotations, issues } = regenerateAnnotations({
+    score: solfa.score,
+    geometry,
+    pages,
+    settings,
+    existing: [],
+  });
+  return {
+    pages,
+    pageIssues,
+    annotations,
+    issues,
+    unresolved: issues.filter((issue) => issue.kind === 'placementUnresolved').length,
   };
 }
 

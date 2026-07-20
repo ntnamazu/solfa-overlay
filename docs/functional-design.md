@@ -81,13 +81,32 @@ interface Project {
 }
 
 interface PageInfo {
-  pageIndex: number; // 0始まり
-  widthPt: number; // PDFポイント
+  pageIndex: number; // Audiveris のページ添字（= PageAnchor.pageIndex）。0始まり
+  sourcePageIndex: number; // 元PDFのページ添字。0始まり。pageIndex とは一致しない（下記）
+  widthPt: number; // 元PDFページの寸法（PDFポイント）。ページ回転 90/270 は適用済み
   heightPt: number;
-  omrImageWidthPx: number; // .omr の座標基準（300dpi画像）
-  omrImageHeightPx: number; // ポイント座標へは線形スケールで変換
+  omrImageWidthPx: number; // .omr の座標基準（sheet 単位の画像）
+  omrImageHeightPx: number; // ポイント座標へは軸ごとの線形スケールで変換
+  interlinePx: number; // 譜線間隔。注釈の配置オフセットの基準
 }
+```
 
+**`pageIndex` と `sourcePageIndex` は別物**（Phase 5 の実測で判明）:
+Audiveris は 1 つの sheet（＝元PDFの1ページ）の中で movement 境界を検出すると **page を分割する**。
+Victoria フィクスチャは 3 ページの PDF に対し **4 つの Audiveris ページ**を持ち、`sheet#1` が
+page 0 と page 1 を含む。両者を同一視すると 2 ページ目以降の注釈が丸ごと別のページへ描かれる。
+対応の正は book.xml の `<sheet><input><number>`（元PDFのページ番号）。
+
+| フィクスチャ | 元PDFページ数 | Audiveris ページ数 | 対応        |
+| ------------ | ------------- | ------------------ | ----------- |
+| Victoria     | 3             | 4                  | `[0,0,1,2]` |
+| divisi       | 20            | 20                 | 1:1         |
+
+また `.omr` の画像寸法は **sheet 単位**で、A4 とは限らない
+（Victoria 2480×3507px / divisi 2408×3150px）。寸法の決め打ちはできず、
+元PDF から実寸を読んで x / y 別々にスケールを求める。
+
+```typescript
 /** 認識済み楽譜の論理＋物理モデル */
 interface ScoreModel {
   parts: Part[]; // 例: Soprano/Alto/Tenor/Bass
@@ -477,14 +496,32 @@ function applyDegrees(score: ScoreModel, degrees: ReadonlyMap<string, SolfaDegre
 **インターフェース**:
 
 ```typescript
+interface RegenerateInput {
+  score: ScoreModel; // applyDegrees 済み（note.solfa が入っている）
+  geometry: readonly PageGeometry[]; // .omr 由来の記号の矩形。添字は Audiveris ページ
+  pages: readonly PageInfo[]; // ページ寸法（buildPageInfos の結果）
+  settings: ProjectSettings;
+  existing: readonly Annotation[]; // 手動注釈・deleted・手動上書きの引き継ぎ元
+}
+
 class AnnotationManager {
-  regenerate(score: ScoreModel, degrees: Map<string, SolfaDegree>): void; // 手動注釈は保持
-  add(anchor: PageAnchor, text: string): Annotation;
-  update(id: string, patch: Partial<Annotation>): void;
-  remove(id: string): void;
-  listSkippedMeasures(): Measure[]; // 修正UIのジャンプ先一覧
+  regenerate(input: RegenerateInput): { annotations: Annotation[]; issues: AnnotationIssue[] };
+  add(anchor: PageAnchor, text: string, id: string): Annotation;
+  update(annotations, id, patch: Partial<Omit<Annotation, 'id'>>): Annotation[];
+  remove(annotations, id): Annotation[]; // 自動注釈は消さずに deleted を立てる
+  listSkippedMeasures(score: ScoreModel): Measure[]; // 修正UIのジャンプ先一覧
 }
 ```
+
+**引数を `regenerate(score, degrees)` から変えた理由**:
+
+1. `degrees` は不要。`SolfaEngine.applyDegrees` 済みの `ScoreModel` が `note.solfa` を持つ
+2. 配置に記号の矩形（`geometry`）とページ寸法・設定が要る
+3. 手動修正の保全には既存注釈列が要る
+
+**注釈 id は `solfa-<noteId>`**。音符 id から決まるため再解析しても同じ id になり、
+`deleted` と手動上書き `text` を id だけで引き継げる（`mergeCorrections` と同じ考え方）。
+対応する音符が消えた自動注釈は捨てずに残し、`orphanAnnotation` として報告する。
 
 ### OverlayRenderer
 
@@ -499,9 +536,27 @@ class AnnotationManager {
 
 ```typescript
 class OverlayRenderer {
-  render(project: Project): Promise<Uint8Array>;
+  render(input: { sourcePdf: Uint8Array; project: Project }): Promise<{
+    bytes: Uint8Array;
+    issues: RenderIssue[];
+    drawnCount: number;
+  }>;
 }
 ```
+
+**引数を `render(project)` から変えた理由**: `Project.sourcePdf` はプロジェクト内の
+**相対パス文字列**であり、domain はファイルを読めない。元PDFのバイト列を受け取る。
+
+**実装上の決定**:
+
+- 元PDFを `PDFDocument.load` して**描き足すだけ**にする。新しいドキュメントへページを
+  複製すると版面・埋め込みフォント・しおりが失われる
+- 書体は標準14フォント（`sans-serif`→Helvetica / `serif`→TimesRoman / `monospace`→Courier）。
+  未知の名前は既定へ落とし、**設定の綴り間違いで出力を失敗させない**
+- 文字寸法の計測は `fontMetrics` に集約し、**配置（AnnotationManager）と描画が同じ関数で測る**。
+  別々に測ると「配置は収まると判断したのに描画では重なる」食い違いが生じる
+- 描けない文字・ページ寸法の欠落・色の解釈失敗はいずれも例外にせず `RenderIssue` で報告する
+  （部分失敗で出力全体を落とさない）
 
 **依存関係**: pdf-lib
 
@@ -667,10 +722,35 @@ movement の先頭小節は段の並び順に依存しないよう `firstMeasure
 
 **目的**: 階名を符頭の直上に置きつつ、臨時記号等との重なりを避ける（PRD F-4／プロトタイプの改善課題2）
 
-1. 基本位置: 符頭中心の直上、固定オフセット
-2. .omr が持つ近傍記号（臨時記号・付点等）のバウンディングボックスと注釈の描画矩形の交差を判定する
-3. 交差する場合は候補位置（さらに上→符頭直下→左右斜め上）の順に空きを探し、最初に交差しない位置を採用する
-4. どの候補も交差する場合は基本位置に置き、修正UIで警告マークを表示して人間の調整に委ねる
+1. 基本位置: 符頭中心の直上、譜線間隔に比例した固定オフセット
+2. .omr が持つ近傍記号のバウンディングボックスと注釈の描画矩形の交差を判定する。
+   ただし**符幹（stem）と加線（ledger）は障害物にしない**（下記）。
+   和音・段全体を覆う**集約要素**（`head-chord` / `beam-group` / `staff-barline` 等）も除く。
+   これらを入れると譜面の大半が「埋まっている」ことになり配置が破綻する
+3. 交差する場合は候補位置 10 段（さらに上→符頭直下→さらに下→左右斜め上→2段上下→左右斜め下）の
+   順に空きを探し、最初に交差しない位置を採用する。**先に置いた注釈も障害物として扱う**ため、
+   注釈どうしも重ならない
+4. どの候補も交差する場合は基本位置に置き、`placementUnresolved` として報告して人間の調整に委ねる
+
+**符幹・加線を障害物にしない理由（実測）**: これらは幅数pxの細い線で、階名文字が重なっても
+判読を妨げない（手書きの階名も符幹をまたいで書く）。設計どおり全記号を避けると、
+衝突相手の 8 割が符幹になり配置品質が大きく落ちる。
+
+| 指標（符頭直上をそのまま使えた割合＝配置品質） | 全記号を回避        | 細線を許容（採用） |
+| ---------------------------------------------- | ------------------- | ------------------ |
+| Victoria: 基本位置を採用                       | 349 / 808（43.2%）  | **721（89.2%）**   |
+| divisi: 基本位置を採用                         | 755 / 3500（21.6%） | **2138（61.1%）**  |
+| divisi: 配置不能（警告行き）                   | 123（3.5%）         | **29（0.8%）**     |
+
+全記号を避けると Victoria は**注釈の 57% が符頭の真上から追い出される**（多くは符頭の下へ回る）。
+
+**衝突判定の高さはアセンダ高を使う**（em 全体ではない）。階名の音節は小文字のみで
+ディセンダを持たないため、em 全体で判定すると実際は空いている位置を「埋まっている」と誤判定し、
+divisi の配置不能が倍増する。
+
+**探索の効率化**: 障害物と配置済み注釈は一様格子（セル = 譜線間隔 × 4）に索引する。
+ページあたり障害物 930・注釈 283 の実測に対し、候補 10 段の総当たりでは
+5,000 注釈の性能要件（アーキテクチャ設計書）に余裕がない。
 
 ## ユースケース図
 
@@ -725,10 +805,12 @@ stateDiagram-v2
     StructureConfirm --> ClefKeyConfirm: 譜表構造を承認
     ClefKeyConfirm --> Editor: 音部記号・調号を承認
     Editor --> ClefKeyConfirm: 確認画面へ戻る
-    Editor --> Export: PDF出力
-    Export --> Editor
     Editor --> [*]
 ```
+
+**Export は独立した画面にしない**（Phase 5 で決定）。実体が「保存先を選ぶ → 書き出す →
+結果を見る」という一過性の操作でしかなく、画面にすると Editor と同じ内容を二重に描くことになる。
+出力の起動と結果表示は Editor 内に置く。
 
 - **StructureConfirm**: システム・譜表の検出構造を表示。インチピット等による誤分割の統合をここで行う
 - **ClefKeyConfirm**: 譜表ごとの音部記号・調号を元画像の切り抜きと並べて一覧表示。1曲5分以内で完了する分量に収める（F-2）
@@ -797,13 +879,33 @@ stateDiagram-v2
 
 ### Editor画面の表示
 
-| 項目               | 説明                                  | フォーマット                                       |
-| ------------------ | ------------------------------------- | -------------------------------------------------- |
-| 楽譜ページ         | 元PDFのレンダリング＋注釈オーバーレイ | PDF.js キャンバス                                  |
-| 階名注釈           | 幹音/半音変化を色分け                 | 幹音=濃赤・変化音=紫（設定変更可）                 |
-| スキップ小節       | 階名が欠落している小節                | 一覧パネル＋楽譜上のハイライト。クリックでジャンプ |
-| 転調点             | KeyRegion の境界                      | 小節上のマーカー（auto=グレー、user=青）           |
-| 孤立注釈・配置警告 | 再照合失敗・衝突回避失敗              | 警告アイコン                                       |
+**Phase 5 時点の実装（テキストによる最小表示）**:
+
+| 項目                 | 説明                                               |
+| -------------------- | -------------------------------------------------- |
+| 概要                 | パート数・照合できた音符数・注釈数・スキップ小節数 |
+| 階名プレビュー       | パート×小節の階名列（曲の先頭部分のみ）            |
+| スキップ小節一覧     | 階名が欠落している小節                             |
+| 配置警告             | 衝突回避に失敗した注釈の件数                       |
+| 孤立注釈             | 再照合できず出力されない注釈の件数                 |
+| ページの問題         | 元PDFとの対応が取れなかったページ                  |
+| 適用されなかった訂正 | `unmatchedCorrections`                             |
+| PDF出力              | 承認前は無効化し、理由を併記                       |
+
+**Phase 6 で追加する（F-5 / F-6）**:
+
+| 項目         | 説明                                  | フォーマット                             |
+| ------------ | ------------------------------------- | ---------------------------------------- |
+| 楽譜ページ   | 元PDFのレンダリング＋注釈オーバーレイ | PDF.js キャンバス                        |
+| 階名注釈     | 幹音/半音変化を色分け                 | 幹音=濃赤・変化音=紫（設定変更可）       |
+| スキップ小節 | 楽譜上のハイライト                    | 黄ハイライト。クリックでジャンプ         |
+| 転調点       | KeyRegion の境界                      | 小節上のマーカー（auto=グレー、user=青） |
+| 配置警告     | 衝突回避失敗の位置                    | 楽譜上の警告アイコン                     |
+
+**プレビューは Main 側で文字列まで確定させて渡す**。度数＋変位から表示文字列を導くのは
+domain（`syllableTables`）の仕事だが、Renderer は domain へ依存できない
+（アーキテクチャ設計書の依存方向。ESLint で強制）。件数も Main 側で上限を掛け、
+3,500 音符の曲でも IPC の payload と描画量を抑える。
 
 ### 転調点の指定・修正の操作フロー（F-6）
 
@@ -817,7 +919,15 @@ stateDiagram-v2
 
 - 濃赤: 幹音の階名（モノクロ印刷では黒に近い濃度で判読可能）
 - 紫: 半音変化した階名（モノクロ印刷では書体差＝太字でも区別できるようにする）
-- 黄ハイライト: スキップ小節（画面のみ。出力PDFには含めない）
+- 黄ハイライト: スキップ小節（画面のみ。出力PDFには含めない。Phase 6 の楽譜表示で実装）
+
+**`♯` `♭` は ASCII へ置換して描く**: `syllableFor` は表にない変位を `do♯` `l♭` のように
+フォールバック表示するが、`♯`(U+266F) / `♭`(U+266D) は pdf-lib の標準フォント
+（WinAnsiEncoding）で**エンコードできず例外になる**。これは理論上の話ではなく実データで起きる
+（divisi で kodaly なら `do♭`×3 / `ti♯`×1、Tonic sol-fa なら `l♭`×51）。1 文字でも混ざると
+**出力そのものが失敗する**ため、描画・計測の共通の入口（`fontMetrics.displayText`）で
+`♯`→`#`、`♭`→`b` に置換し、置換したことを `RenderIssue` として報告する
+（それでも描けない文字は `?` へ落とす）。埋め込みフォントによる字形描画は将来の課題。
 
 ## ファイル構造
 

@@ -73,12 +73,12 @@ function registerIpcHandlers(): void {
   handleIpc(IPC_CHANNELS.dialogOpenProject, () =>
     pickOpenPath({ name: 'Solfa プロジェクト', extensions: ['solfaproj'] }),
   );
-  handleIpc(IPC_CHANNELS.dialogSaveProject, async () => {
-    const result = await dialog.showSaveDialog({
-      filters: [{ name: 'Solfa プロジェクト', extensions: ['solfaproj'] }],
-    });
-    return result.canceled ? null : (result.filePath ?? null);
-  });
+  handleIpc(IPC_CHANNELS.dialogSaveProject, () =>
+    pickSavePath({ name: 'Solfa プロジェクト', extensions: ['solfaproj'] }),
+  );
+  handleIpc(IPC_CHANNELS.dialogSaveExportPdf, () =>
+    pickSavePath({ name: '注釈付きPDF', extensions: ['pdf'] }),
+  );
 
   handleIpc(IPC_CHANNELS.projectImportPdf, (pdfPath) => handlers.importPdf(pdfPath));
   handleIpc(IPC_CHANNELS.projectOpen, (path) => handlers.open(path));
@@ -95,6 +95,16 @@ function registerIpcHandlers(): void {
   );
   handleIpc(IPC_CHANNELS.projectSetSettings, (settings) => handlers.setSettings(settings));
   handleIpc(IPC_CHANNELS.projectCompleteConfirmation, () => handlers.completeConfirmation());
+  handleIpc(IPC_CHANNELS.projectExportPdf, (outPath) => handlers.exportPdf(outPath));
+}
+
+/** 保存先選択ダイアログを開き、選ばれたパスを返す（キャンセルなら null） */
+async function pickSavePath(filter: {
+  name: string;
+  extensions: string[];
+}): Promise<string | null> {
+  const result = await dialog.showSaveDialog({ filters: [filter] });
+  return result.canceled ? null : (result.filePath ?? null);
 }
 
 /** ファイル選択ダイアログを開き、選ばれたパスを返す（キャンセルなら null） */

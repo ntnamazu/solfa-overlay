@@ -59,6 +59,7 @@ const bookPages = (movementStarts: boolean[]): BookPageRef[] =>
     sheetNumber: index + 1,
     pageIndexInSheet: 0,
     movementStart,
+    sourcePageNumber: index + 1,
   }));
 
 const resolver = new BookStructureResolver();

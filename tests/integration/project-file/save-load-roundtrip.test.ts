@@ -10,7 +10,7 @@ import { applyDegrees, SolfaEngine } from '../../../src/domain/solfa/SolfaEngine
 import { assembleArtifacts } from '../../../src/main/omr/omrArchive';
 import type { Project } from '../../../src/shared/types/Project';
 import { ProjectStore } from '../../../src/storage/ProjectStore';
-import { runFixture } from '../pipeline/realFixtureHelpers';
+import { makeSourcePdf, runFixture } from '../pipeline/realFixtureHelpers';
 
 /**
  * 実フィクスチャを使った `.solfaproj` の保存・読込の往復
@@ -25,7 +25,14 @@ const readFixture = (name: string): Uint8Array =>
 
 const OMR_BYTES = readFixture('IMSLP19716.omr');
 const MOVEMENT_BYTES = [readFixture('IMSLP19716.mvt1.mxl'), readFixture('IMSLP19716.mvt2.mxl')];
-const SOURCE_PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // "%PDF"
+
+/**
+ * 元PDF の代わり（実物は数十MBのためリポジトリに置いていない）
+ *
+ * Victoria の実際の元PDF と同じ **3 ページ・A4**。Audiveris は 4 ページを検出するため、
+ * ページ対応の解決がこの往復でも実際に効く
+ */
+let SOURCE_PDF: Uint8Array;
 
 let directory: string;
 let projectPath: string;
@@ -35,6 +42,7 @@ beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), 'solfa-roundtrip-'));
   projectPath = join(directory, 'victoria.solfaproj');
   store = new ProjectStore();
+  SOURCE_PDF = await makeSourcePdf(3, [2480, 3507]);
 });
 
 afterEach(async () => {

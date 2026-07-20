@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ProjectSession } from '../../../../src/main/ProjectSession';
 import { createProjectHandlers, toIpcError } from '../../../../src/main/ipc/projectHandlers';
+import { ConfirmationRequiredError } from '../../../../src/main/errors';
 import { OmrArchiveError, OmrRunError } from '../../../../src/main/omr/errors';
 import { ProjectFileError } from '../../../../src/storage/errors';
 
@@ -29,6 +30,12 @@ function fakeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
     setKeyRegionDecisions: vi.fn().mockReturnValue(snapshot),
     setSettings: vi.fn().mockReturnValue(snapshot),
     completeConfirmation: vi.fn().mockReturnValue(snapshot),
+    exportPdf: vi.fn().mockResolvedValue({
+      outPath: '/out.pdf',
+      drawnCount: 3,
+      unresolvedPlacements: 0,
+      renderIssues: [],
+    }),
     ...overrides,
   } as unknown as ProjectSession;
 }
@@ -51,6 +58,13 @@ describe('toIpcError', () => {
   it('OMR 由来のエラーは omr', () => {
     expect(toIpcError(new OmrRunError('起動失敗')).kind).toBe('omr');
     expect(toIpcError(new OmrArchiveError('展開失敗')).kind).toBe('omr');
+  });
+
+  it('確認が未完了なら confirmationRequired（確認画面へ戻る案内を出すため独立させる）', () => {
+    expect(toIpcError(new ConfirmationRequiredError('未承認です'))).toEqual({
+      kind: 'confirmationRequired',
+      message: '未承認です',
+    });
   });
 
   it('その他の Error は unexpected（メッセージは残す）', () => {
@@ -132,5 +146,37 @@ describe('createProjectHandlers', () => {
     const session = fakeSession();
     await createProjectHandlers(session, () => {}).save();
     expect(session.save).toHaveBeenCalledWith(undefined);
+  });
+
+  it('PDF 出力先をそのままセッションへ渡し、要約を返す', async () => {
+    const session = fakeSession();
+    const result = await createProjectHandlers(session, () => {}).exportPdf('/out.pdf');
+
+    expect(session.exportPdf).toHaveBeenCalledWith('/out.pdf');
+    expect(result).toEqual({
+      ok: true,
+      value: { outPath: '/out.pdf', drawnCount: 3, unresolvedPlacements: 0, renderIssues: [] },
+    });
+  });
+
+  it('承認前の PDF 出力は confirmationRequired として返す（確認画面へ戻る案内を出せるように）', async () => {
+    const session = fakeSession({
+      exportPdf: vi.fn().mockRejectedValue(new ConfirmationRequiredError('確認が完了していません')),
+    } as unknown as Partial<ProjectSession>);
+    const result = await createProjectHandlers(session, () => {}).exportPdf('/out.pdf');
+
+    expect(result).toEqual({
+      ok: false,
+      error: { kind: 'confirmationRequired', message: '確認が完了していません' },
+    });
+  });
+
+  it('PDF の書き出し失敗は io として返す（保存先の変更を案内するため）', async () => {
+    const session = fakeSession({
+      exportPdf: vi.fn().mockRejectedValue(new ProjectFileError('書けません', 'io')),
+    } as unknown as Partial<ProjectSession>);
+    const result = await createProjectHandlers(session, () => {}).exportPdf('/out.pdf');
+
+    expect(result).toEqual({ ok: false, error: { kind: 'io', message: '書けません' } });
   });
 });

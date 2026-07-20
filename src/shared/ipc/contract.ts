@@ -1,4 +1,11 @@
-import type { BuildIssue, KeyRegionIssue, StructureIssue } from '../types/Issues';
+import type {
+  AnnotationIssue,
+  BuildIssue,
+  KeyRegionIssue,
+  PageInfoIssue,
+  RenderIssue,
+  StructureIssue,
+} from '../types/Issues';
 import type { KeyRegionDecision } from '../types/KeyRegion';
 import type { Project } from '../types/Project';
 import type { ProjectSettings } from '../types/ProjectSettings';
@@ -26,12 +33,35 @@ export interface ProjectSnapshot {
   structureIssues: StructureIssue[];
   buildIssues: BuildIssue[];
   keyRegionIssues: KeyRegionIssue[];
+  /** ページ寸法を確定できなかったページ（該当ページは注釈を描けない） */
+  pageIssues: PageInfoIssue[];
+  /** 注釈生成で見つかった問題（配置不能・孤立注釈など） */
+  annotationIssues: AnnotationIssue[];
+  /** Editor の階名プレビュー（先頭の一定小節まで） */
+  preview: SolfaPreviewRow[];
   /**
    * 対象が見つからず適用されなかった訂正
    *
    * 「訂正したのに反映されない」を無言で起こさないための報告
    */
   unmatchedCorrections: UnmatchedCorrection[];
+}
+
+/**
+ * Editor の階名プレビュー 1 行（パート×小節）
+ *
+ * 度数＋変位から表示文字列を導くのは domain（`syllableTables`）の仕事で、
+ * Renderer は domain を import できない（アーキテクチャ設計書の依存方向）。
+ * そのため**文字列まで確定した形**で送る。件数は Main 側で上限を掛けてあり、
+ * 3,500 音符の曲でも payload は小さいままになる
+ */
+export interface SolfaPreviewRow {
+  partId: string;
+  partName: string;
+  /** 通し小節番号（0始まり） */
+  measureIndex: number;
+  /** 小節内の階名列。階名のない音符は '?' */
+  syllables: string[];
 }
 
 /** 適用先が見つからなかった訂正 1 件 */
@@ -55,6 +85,8 @@ export type IpcErrorKind =
   | 'projectVersion'
   /** OMR の起動・実行の失敗、またはキャンセル → 入力PDFを見直す／やり直す */
   | 'omr'
+  /** 音部記号・調の確認が未完了 → 確認画面へ戻って承認する */
+  | 'confirmationRequired'
   /** ディスク・権限などの入出力エラー → 保存先を変える */
   | 'io'
   /** 上記に当てはまらない想定外 → 詳細を表示して報告を促す */
@@ -69,6 +101,16 @@ export interface IpcError {
 /** 音部記号の訂正（確認項目 id → 訂正後の Audiveris kind。null は訂正の取り消し） */
 export type ClefCorrections = Record<string, string | null>;
 
+/** PDF 出力の結果（Editor が結果表示に使う） */
+export interface ExportSummary {
+  outPath: string;
+  /** 実際に描いた注釈の数 */
+  drawnCount: number;
+  /** 配置を解決できなかった注釈の数（人手調整の目安） */
+  unresolvedPlacements: number;
+  renderIssues: RenderIssue[];
+}
+
 export interface IpcContract {
   [IPC_CHANNELS.appGetVersion]: () => string;
 
@@ -76,6 +118,7 @@ export interface IpcContract {
   [IPC_CHANNELS.dialogOpenPdf]: () => Promise<string | null>;
   [IPC_CHANNELS.dialogOpenProject]: () => Promise<string | null>;
   [IPC_CHANNELS.dialogSaveProject]: () => Promise<string | null>;
+  [IPC_CHANNELS.dialogSaveExportPdf]: () => Promise<string | null>;
 
   [IPC_CHANNELS.projectImportPdf]: (pdfPath: string) => Promise<IpcResult<ProjectSnapshot>>;
   [IPC_CHANNELS.projectOpen]: (path: string) => Promise<IpcResult<ProjectSnapshot>>;
@@ -93,4 +136,5 @@ export interface IpcContract {
   ) => IpcResult<ProjectSnapshot>;
   [IPC_CHANNELS.projectSetSettings]: (settings: ProjectSettings) => IpcResult<ProjectSnapshot>;
   [IPC_CHANNELS.projectCompleteConfirmation]: () => IpcResult<ProjectSnapshot>;
+  [IPC_CHANNELS.projectExportPdf]: (outPath: string) => Promise<IpcResult<ExportSummary>>;
 }

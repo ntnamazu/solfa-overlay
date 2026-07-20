@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { OmrArchiveError } from '../../../../src/main/omr/errors';
 import {
   assembleArtifacts,
+  assemblePageGeometry,
   extractMusicXml,
   unzipEntries,
 } from '../../../../src/main/omr/omrArchive';
@@ -122,5 +123,54 @@ describe('assembleArtifacts', () => {
   it('シート XML が皆無なら OmrArchiveError にする', () => {
     const omr = makeZip({ 'book.xml': '<book/>', 'sheet#1/BINARY.png': 'x' });
     expect(() => assembleArtifacts({ omr, movements: [] })).toThrow(OmrArchiveError);
+  });
+});
+
+describe('assemblePageGeometry', () => {
+  /** 1 sheet に 2 ページ（Victoria の実データと同じ形） */
+  const TWO_PAGE_SHEET = `<sheet>
+    <picture width="2480" height="3507"/>
+    <scale><interline main="17"/></scale>
+    <page><system><sig><inters>
+      <head staff="1"><bounds x="10" y="20" w="20" h="16"/></head>
+    </inters></sig></system></page>
+    <page><system><sig><inters>
+      <stem><bounds x="40" y="50" w="4" h="60"/></stem>
+    </inters></sig></system></page>
+  </sheet>`;
+
+  it('ページごとに記号を返し、sheet の画像情報を各ページへ配る', () => {
+    const omr = makeZip({ 'sheet#1/sheet#1.xml': TWO_PAGE_SHEET });
+    const geometry = assemblePageGeometry(omr);
+    expect(geometry).toHaveLength(2);
+    expect(geometry[0]?.symbols.map((s) => s.kind)).toEqual(['head']);
+    expect(geometry[1]?.symbols.map((s) => s.kind)).toEqual(['stem']);
+    // 同一 sheet の 2 ページは同じ画像座標空間にいる
+    expect(geometry[0]?.image).toEqual({ widthPx: 2480, heightPx: 3507, interlinePx: 17 });
+    expect(geometry[1]?.image).toEqual(geometry[0]?.image);
+  });
+
+  it('assembleArtifacts(...).pages と長さ・順序が一致する（注釈のページずれ防止）', () => {
+    const omr = makeZip({
+      'sheet#2/sheet#2.xml': SHEET_XML,
+      'sheet#10/sheet#10.xml': TWO_PAGE_SHEET,
+      'sheet#1/sheet#1.xml': SHEET_XML,
+    });
+    const pages = assembleArtifacts({ omr, movements: [] }).pages;
+    const geometry = assemblePageGeometry(omr);
+    expect(geometry).toHaveLength(pages.length);
+    // sheet#10（2ページ・記号あり）が末尾に来ていれば数値順の連結が両者で揃っている
+    expect(geometry.at(-2)?.symbols.map((s) => s.kind)).toEqual(['head']);
+    expect(geometry.at(-1)?.symbols.map((s) => s.kind)).toEqual(['stem']);
+  });
+
+  it('画像情報のないシートは image が null（assembleArtifacts と同じく例外にしない）', () => {
+    const omr = makeZip({ 'sheet#1/sheet#1.xml': SHEET_XML });
+    expect(assemblePageGeometry(omr)[0]?.image).toBeNull();
+  });
+
+  it('シート XML が皆無なら assembleArtifacts と同じく OmrArchiveError にする', () => {
+    const omr = makeZip({ 'book.xml': '<book/>', 'sheet#1/BINARY.png': 'x' });
+    expect(() => assemblePageGeometry(omr)).toThrow(OmrArchiveError);
   });
 });

@@ -6,6 +6,7 @@ export const IPC_CHANNELS = {
   dialogOpenPdf: 'dialog:openPdf',
   dialogOpenProject: 'dialog:openProject',
   dialogSaveProject: 'dialog:saveProject',
+  dialogSaveExportPdf: 'dialog:saveExportPdf',
 
   /** プロジェクト操作 */
   projectImportPdf: 'project:importPdf',
@@ -17,6 +18,7 @@ export const IPC_CHANNELS = {
   projectSetKeyRegionDecisions: 'project:setKeyRegionDecisions',
   projectSetSettings: 'project:setSettings',
   projectCompleteConfirmation: 'project:completeConfirmation',
+  projectExportPdf: 'project:exportPdf',
 } as const;
 
 /** Main → Renderer の一方向イベント（`webContents.send`） */

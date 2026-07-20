@@ -3,6 +3,7 @@ import { ScoreParseError } from '../../../../src/domain/score/errors';
 import {
   groupMovements,
   parseBookXml,
+  parseSheetGeometry,
   parseSheetXml,
 } from '../../../../src/domain/score/OmrSheetParser';
 
@@ -125,6 +126,73 @@ describe('parseSheetXml', () => {
   });
 });
 
+describe('parseSheetGeometry', () => {
+  /** 実 .omr と同じく picture / scale を sheet 直下に持ち、記号が page 配下に散らばる文書 */
+  const GEOMETRY_XML = `<sheet number="1">
+    <picture width="2480" height="3507"/>
+    <scale><interline min="16" main="17" max="17"/></scale>
+    <page id="1">
+      <system>
+        <sig><inters>
+          <head staff="11"><bounds x="100" y="200" w="20" h="16"/></head>
+          <stem><bounds x="118" y="120" w="4" h="80"/></stem>
+          <head-chord><bounds x="90" y="100" w="60" h="200"/></head-chord>
+          <alter><bounds x="70" y="196" w="14" h="24"/></alter>
+        </inters></sig>
+      </system>
+    </page>
+    <page id="2">
+      <system><sig><inters>
+        <beam><bounds x="300" y="400" w="120" h="8"/></beam>
+      </inters></sig></system>
+    </page>
+  </sheet>`;
+
+  const geometry = parseSheetGeometry(GEOMETRY_XML);
+
+  it('sheet 単位の画像寸法と譜線間隔を読む', () => {
+    expect(geometry.image).toEqual({ widthPx: 2480, heightPx: 3507, interlinePx: 17 });
+  });
+
+  it('ページごとに記号の矩形を種別付きで集める', () => {
+    expect(geometry.pages).toHaveLength(2);
+    expect(geometry.pages[0]?.symbols).toEqual([
+      { kind: 'head', x: 100, y: 200, w: 20, h: 16 },
+      { kind: 'stem', x: 118, y: 120, w: 4, h: 80 },
+      { kind: 'alter', x: 70, y: 196, w: 14, h: 24 },
+    ]);
+    expect(geometry.pages[1]?.symbols).toEqual([{ kind: 'beam', x: 300, y: 400, w: 120, h: 8 }]);
+  });
+
+  it('和音などの集約要素は障害物にしない（譜面の大半を覆ってしまうため）', () => {
+    expect(geometry.pages[0]?.symbols.map((s) => s.kind)).not.toContain('head-chord');
+  });
+
+  it('ページ順と件数が parseSheetXml と一致する', () => {
+    expect(geometry.pages).toHaveLength(parseSheetXml(GEOMETRY_XML).pages.length);
+    expect(parseSheetGeometry(SHEET_XML).pages).toHaveLength(parseSheetXml(SHEET_XML).pages.length);
+  });
+
+  it('picture が欠けていれば image は null（既定値で補って誤った位置に描かない）', () => {
+    const xml = '<sheet><scale><interline main="17"/></scale><page/></sheet>';
+    expect(parseSheetGeometry(xml).image).toBeNull();
+  });
+
+  it('interline が欠けていれば image は null', () => {
+    const xml = '<sheet><picture width="2480" height="3507"/><page/></sheet>';
+    expect(parseSheetGeometry(xml).image).toBeNull();
+  });
+
+  it('bounds を持たない記号は座標が定まらないため無視する', () => {
+    const xml = '<sheet><page><system><head staff="1"/></system></page></sheet>';
+    expect(parseSheetGeometry(xml).pages[0]?.symbols).toEqual([]);
+  });
+
+  it('整形式でない XML は ScoreParseError にする（parseSheetXml と揃える）', () => {
+    expect(() => parseSheetGeometry('<sheet>')).toThrow(ScoreParseError);
+  });
+});
+
 describe('parseBookXml / groupMovements', () => {
   const BOOK_XML = `<book>
     <sheet number="1"><page/></sheet>
@@ -134,11 +202,45 @@ describe('parseBookXml / groupMovements', () => {
 
   it('sheet 番号・sheet 内ページ順・movement-start を抽出する', () => {
     expect(parseBookXml(BOOK_XML)).toEqual([
-      { sheetNumber: 1, pageIndexInSheet: 0, movementStart: false },
-      { sheetNumber: 2, pageIndexInSheet: 0, movementStart: true },
-      { sheetNumber: 2, pageIndexInSheet: 1, movementStart: false },
-      { sheetNumber: 3, pageIndexInSheet: 0, movementStart: false },
+      { sheetNumber: 1, pageIndexInSheet: 0, movementStart: false, sourcePageNumber: 1 },
+      { sheetNumber: 2, pageIndexInSheet: 0, movementStart: true, sourcePageNumber: 2 },
+      { sheetNumber: 2, pageIndexInSheet: 1, movementStart: false, sourcePageNumber: 2 },
+      { sheetNumber: 3, pageIndexInSheet: 0, movementStart: false, sourcePageNumber: 3 },
     ]);
+  });
+
+  it('<input><number> を元PDFのページ番号として読む', () => {
+    const xml = `<book>
+      <sheet number="1"><input><path>/in.pdf</path><number>5</number></input><page/><page/></sheet>
+    </book>`;
+    // 同一 sheet の 2 ページが**同じ**元PDFページを指す（Victoria の実データがこの形）
+    expect(parseBookXml(xml).map((page) => page.sourcePageNumber)).toEqual([5, 5]);
+  });
+
+  it('<input><number> が数値でなければ sheet 番号で代替する', () => {
+    const xml = '<book><sheet number="7"><input><number>abc</number></input><page/></sheet></book>';
+    expect(parseBookXml(xml)[0]?.sourcePageNumber).toBe(7);
+  });
+
+  it('sheet が文書順で並んでいなくても番号の昇順に直す', () => {
+    // 呼び出し側（buildPageInfos）はこの戻り値と assemblePageGeometry の結果を
+    // **配列添字で対応づける**。後者は必ず番号昇順のため、ここで並べ直さないと
+    // あるシートの画像寸法と別のシートの元PDFページ番号が結び付き、
+    // 注釈が誤ったページへ誤った縮尺で描かれる（例外にも issue にもならない）
+    const xml = `<book>
+      <sheet number="3"><input><number>30</number></input><page/></sheet>
+      <sheet number="1"><input><number>10</number></input><page/></sheet>
+      <sheet number="10"><input><number>100</number></input><page/></sheet>
+      <sheet number="2"><input><number>20</number></input><page/></sheet>
+    </book>`;
+
+    expect(parseBookXml(xml).map((page) => page.sheetNumber)).toEqual([1, 2, 3, 10]);
+    expect(parseBookXml(xml).map((page) => page.sourcePageNumber)).toEqual([10, 20, 30, 100]);
+  });
+
+  it('number 属性のない sheet は文書順を番号とみなす', () => {
+    const xml = '<book><sheet><page/></sheet><sheet><page/></sheet></book>';
+    expect(parseBookXml(xml).map((page) => page.sheetNumber)).toEqual([1, 2]);
   });
 
   it('movement-start で分割し、先頭ページは暗黙に movement 1 の開始とする', () => {

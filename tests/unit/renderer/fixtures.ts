@@ -69,6 +69,9 @@ export function snapshot(overrides: Partial<ProjectSnapshot> = {}): ProjectSnaps
     structureIssues: [],
     buildIssues: [],
     keyRegionIssues: [],
+    pageIssues: [],
+    annotationIssues: [],
+    preview: [],
     unmatchedCorrections: [],
     ...overrides,
   };
