@@ -3,6 +3,8 @@ import type {
   ResolvedStructure,
   ResolvedSystem,
 } from '../../shared/types/ResolvedStructure';
+import type { StructureIssue } from '../../shared/types/Issues';
+import type { StructureDecision } from '../../shared/types/StructureDecision';
 import type { MusicXmlSystemLayout, ParsedMusicXml } from './MusicXmlParser';
 import type { BookPageRef, OmrPageContent } from './OmrSheetParser';
 import { groupMovements } from './OmrSheetParser';
@@ -11,61 +13,18 @@ import type { OmrArtifacts } from './ScoreModelBuilder';
 /**
  * 譜表構造の問題（例外にせず検出結果として返す。StructureConfirm 画面の表示材料）
  *
- * 機能設計書「エラーハンドリング」＝ 部分失敗は全体を失敗にしない。すべて位置情報を持つため、
- * 確認画面がそのままハイライト位置として使える
+ * 型の実体は `shared/types/Issues.ts`（確認画面へ IPC 越しに送るため、
+ * どのレイヤーにも依存しない shared に置いてある）
  */
-export type StructureIssue =
-  | {
-      kind: 'movementCountMismatch';
-      /** book.xml の movement 分割数 */
-      omrMovementCount: number;
-      /** Audiveris が出力した MusicXML の数 */
-      musicXmlCount: number;
-    }
-  | {
-      kind: 'pageCountMismatch';
-      movementIndex: number;
-      omrPageCount: number;
-      xmlPageCount: number;
-    }
-  | {
-      kind: 'systemCountMismatch';
-      movementIndex: number;
-      pageIndex: number;
-      omrSystemCount: number;
-      xmlSystemCount: number;
-    }
-  | {
-      kind: 'systemMeasureCountMismatch';
-      movementIndex: number;
-      pageIndex: number;
-      systemIndex: number;
-      /** .omr の stack 数 */
-      omrStackCount: number;
-      /** MusicXML の段レイアウト上の小節数（こちらを採用する） */
-      xmlMeasureCount: number;
-    }
-  | {
-      kind: 'inconsistentSystemStaffCount';
-      movementIndex: number;
-      pageIndex: number;
-      /** ページ内の段ごとの譜表数（不揃い＝段の検出が疑わしい） */
-      staffCounts: number[];
-    }
-  | {
-      kind: 'pageCorrespondenceMismatch';
-      /** book.xml が列挙するページ数 */
-      bookPageCount: number;
-      /** 実際に sheet XML を持つページ数 */
-      artifactPageCount: number;
-    };
+export type { StructureIssue };
 
-/** 確認画面（StructureConfirm）でのユーザー判断 */
-export type StructureDecision =
-  /** 段の小節数を上書きする */
-  | { kind: 'systemMeasureCount'; pageIndex: number; systemIndex: number; measureCount: number }
-  /** movement（ページ群）に対応づける MusicXML を上書きする */
-  | { kind: 'movementAssignment'; movementIndex: number; musicXmlIndex: number };
+/**
+ * 確認画面（StructureConfirm）でのユーザー判断
+ *
+ * 型の実体は `shared/types/StructureDecision.ts`（プロジェクトファイルへ永続化するため、
+ * domain へ依存できない storage からも参照できる場所に置いてある）
+ */
+export type { StructureDecision };
 
 /** movement（book.xml のページ群）→ MusicXML の割当と実体のあるページ */
 interface MovementPlan {

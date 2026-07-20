@@ -69,3 +69,22 @@ export function tonicForFifths(fifths: number, mode: 'major' | 'minor'): KeyToni
   // 範囲内の fifths は必ず表に存在する（テストで全域の定義を検証済み）
   return (mode === 'major' ? MAJOR_TONICS : MINOR_TONICS)[fifths] ?? /* v8 ignore next */ null;
 }
+
+/**
+ * 主音と旋法から調号を逆引きする（`tonicForFifths` の逆写像）
+ *
+ * `KeyRegion` は調号ではなく主音を保持するため、ユーザーが旋法だけを訂正したときに
+ * 「調号を保ったまま平行調へ移す」には元の調号を復元する必要がある
+ * （例: ハ長調の区間に `mode: 'minor'` を指定 → 同じ調号のイ短調になる）
+ *
+ * @returns 表にない主音・旋法の組み合わせでは `null`
+ */
+export function fifthsForTonic(tonic: KeyTonic, mode: 'major' | 'minor'): number | null {
+  const table = mode === 'major' ? MAJOR_TONICS : MINOR_TONICS;
+  for (const [fifths, candidate] of Object.entries(table)) {
+    if (candidate.step === tonic.step && candidate.alter === tonic.alter) {
+      return Number(fifths);
+    }
+  }
+  return null;
+}

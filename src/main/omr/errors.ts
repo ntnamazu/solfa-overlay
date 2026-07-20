@@ -7,10 +7,7 @@
 
 /** Audiveris の起動・実行・出力収集の失敗 */
 export class OmrRunError extends Error {
-  constructor(
-    message: string,
-    options?: { cause?: unknown },
-  ) {
+  constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = 'OmrRunError';
   }
@@ -18,10 +15,7 @@ export class OmrRunError extends Error {
 
 /** `.omr` / `.mxl`（zip）の展開失敗・パストラバーサル・必須エントリ欠落 */
 export class OmrArchiveError extends Error {
-  constructor(
-    message: string,
-    options?: { cause?: unknown },
-  ) {
+  constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = 'OmrArchiveError';
   }

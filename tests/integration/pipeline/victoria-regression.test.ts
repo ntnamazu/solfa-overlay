@@ -15,7 +15,10 @@ const read = (name: string): Uint8Array =>
   new Uint8Array(readFileSync(new URL(`../../fixtures/victoria/${name}`, import.meta.url)));
 
 describe('Victoria O magnum mysterium 実データ回帰', () => {
-  const run = runFixture(read('IMSLP19716.omr'), [read('IMSLP19716.mvt1.mxl'), read('IMSLP19716.mvt2.mxl')]);
+  const run = runFixture(read('IMSLP19716.omr'), [
+    read('IMSLP19716.mvt1.mxl'),
+    read('IMSLP19716.mvt2.mxl'),
+  ]);
 
   it('2 movement・4 ページ・4 声部（SATB）を復元する', () => {
     expect(run.summary.movements).toBe(2);

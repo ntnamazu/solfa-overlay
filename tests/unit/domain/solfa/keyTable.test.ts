@@ -5,16 +5,14 @@ import {
   MAX_FIFTHS,
   MIN_FIFTHS,
   MINOR_TONICS,
+  fifthsForTonic,
   tonicForFifths,
 } from '../../../../src/domain/solfa/keyTable';
 import type { KeyTonic } from '../../../../src/domain/solfa/keyTable';
 import { resolveDo } from '../../../../src/domain/solfa/SolfaEngine';
 import type { KeyRegion } from '../../../../src/shared/types/KeyRegion';
 
-const ALL_FIFTHS = Array.from(
-  { length: MAX_FIFTHS - MIN_FIFTHS + 1 },
-  (_, i) => MIN_FIFTHS + i,
-);
+const ALL_FIFTHS = Array.from({ length: MAX_FIFTHS - MIN_FIFTHS + 1 }, (_, i) => MIN_FIFTHS + i);
 
 /** 期待表（五度圏。異名同音の書き分けを含む） */
 const EXPECTED: readonly (readonly [number, string, string])[] = [
@@ -107,5 +105,34 @@ describe('tonicForFifths', () => {
   it('整数でない fifths は null を返す', () => {
     expect(tonicForFifths(1.5, 'major')).toBeNull();
     expect(tonicForFifths(Number.NaN, 'major')).toBeNull();
+  });
+});
+
+describe('fifthsForTonic', () => {
+  it('全 15 通りの調号で tonicForFifths の逆写像になる（長調）', () => {
+    for (let fifths = MIN_FIFTHS; fifths <= MAX_FIFTHS; fifths += 1) {
+      const tonic = tonicForFifths(fifths, 'major');
+      expect(tonic).not.toBeNull();
+      expect(fifthsForTonic(tonic as KeyTonic, 'major')).toBe(fifths);
+    }
+  });
+
+  it('全 15 通りの調号で tonicForFifths の逆写像になる（短調）', () => {
+    for (let fifths = MIN_FIFTHS; fifths <= MAX_FIFTHS; fifths += 1) {
+      const tonic = tonicForFifths(fifths, 'minor');
+      expect(tonic).not.toBeNull();
+      expect(fifthsForTonic(tonic as KeyTonic, 'minor')).toBe(fifths);
+    }
+  });
+
+  it('同じ主音でも旋法が違えば別の調号になる（平行調の関係）', () => {
+    // ハ長調は調号なし、ハ短調は♭3つ
+    expect(fifthsForTonic({ step: 'C', alter: 0 }, 'major')).toBe(0);
+    expect(fifthsForTonic({ step: 'C', alter: 0 }, 'minor')).toBe(-3);
+  });
+
+  it('表にない主音は null を返す（例外にしない）', () => {
+    expect(fifthsForTonic({ step: 'C', alter: 2 }, 'major')).toBeNull();
+    expect(fifthsForTonic({ step: 'B', alter: 1 }, 'minor')).toBeNull();
   });
 });

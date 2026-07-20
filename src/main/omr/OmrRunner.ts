@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { OmrArtifacts } from '../../domain/score/ScoreModelBuilder';
 import type { OmrProgress } from '../../shared/types/OmrProgress';
+import type { OmrRawArtifacts } from '../../shared/types/OmrRawArtifacts';
 import { buildAudiverisArgs, buildAudiverisEnv, parseProgressLine } from './audiverisCommand';
 import { OmrRunError } from './errors';
 import { assembleArtifacts } from './omrArchive';
@@ -60,11 +61,18 @@ export class OmrRunner {
   /**
    * PDF を OMR にかけ、成果物（MusicXML movements ＋ sheet ページ）を返す
    *
+   * 組み立て済みの `artifacts` に加えて**生バイト列 `raw` も返す**。プロジェクトファイルへ
+   * 同梱して OMR 再実行なしに再開するために必要で、一時ディレクトリは本メソッドの終了時に
+   * 消えるため、ここで返さないと二度と取得できない
+   *
    * @param pdfPath - 入力 PDF の絶対パス
    * @param onProgress - シート単位の進捗通知
    * @throws OmrRunError 起動・実行・出力収集の失敗、またはキャンセル
    */
-  async run(pdfPath: string, onProgress: (progress: OmrProgress) => void): Promise<OmrArtifacts> {
+  async run(
+    pdfPath: string,
+    onProgress: (progress: OmrProgress) => void,
+  ): Promise<{ artifacts: OmrArtifacts; raw: OmrRawArtifacts }> {
     // 同一インスタンスの多重起動を防ぐ（可変状態 child/canceled の競合回避。IPC 誤多重起動対策）
     if (this.running) {
       throw new OmrRunError('OMR は既に実行中です');
@@ -73,10 +81,10 @@ export class OmrRunner {
     const outputDir = await mkdtemp(join(tmpdir(), 'solfa-omr-'));
     try {
       await this.execAudiveris(pdfPath, outputDir, onProgress);
-      const { omr, movements } = await this.collectOutputs(outputDir);
-      const artifacts = assembleArtifacts({ omr, movements });
+      const raw = await this.collectOutputs(outputDir);
+      const artifacts = assembleArtifacts(raw);
       onProgress({ phase: 'completed', sheet: null, totalSheets: null, message: '' });
-      return artifacts;
+      return { artifacts, raw };
     } finally {
       this.child = null;
       this.running = false;
@@ -142,9 +150,7 @@ export class OmrRunner {
   }
 
   /** 出力ディレクトリから `.omr` と `.mxl`（movement 昇順）を読み出す */
-  private async collectOutputs(
-    outputDir: string,
-  ): Promise<{ omr: Uint8Array; movements: Uint8Array[] }> {
+  private async collectOutputs(outputDir: string): Promise<OmrRawArtifacts> {
     const names = await readdir(outputDir);
     const omrName = names.find((name) => name.toLowerCase().endsWith('.omr'));
     if (omrName === undefined) {

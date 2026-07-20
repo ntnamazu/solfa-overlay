@@ -1,42 +1,21 @@
 import type { MusicXmlPart, ParsedMusicXml } from '../score/MusicXmlParser';
 import type { OmrArtifacts } from '../score/ScoreModelBuilder';
 import { movementEndMeasureIndex, movementFirstMeasureIndex } from '../score/structureAnchors';
-import type { KeyRegion } from '../../shared/types/KeyRegion';
+import type { AdoptedKey, KeyRegionIssue } from '../../shared/types/Issues';
+import type { KeyRegion, KeyRegionDecision } from '../../shared/types/KeyRegion';
 import type { ResolvedMovement, ResolvedStructure } from '../../shared/types/ResolvedStructure';
-import { tonicForFifths } from './keyTable';
+import { fifthsForTonic, tonicForFifths } from './keyTable';
 
 /**
- * 調文脈（KeyRegion）の自動生成で検出した問題
+ * 調文脈の生成で検出した問題と、1 小節分の有効な調
  *
- * 例外にせず部分結果と共に返す（機能設計書「エラーハンドリング」= 部分失敗は全体を失敗にしない）。
- * 実データでは調号の食い違いが日常的に起きるため、報告に留めて訂正は確認画面（F-2）へ委ねる
+ * 型の実体は `shared/types/Issues.ts`（確認画面へ IPC 越しに送るため）
  */
-export type KeyRegionIssue =
-  | {
-      /** 同じ小節でパートごとに有効な調号が食い違う（多数決で 1 つに決めた） */
-      kind: 'keySignatureConflict';
-      measureIndex: number;
-      /** パートID → その小節で有効だった fifths */
-      fifthsByPart: Record<string, number>;
-      adopted: number;
-    }
-  | {
-      /** 五度圏の範囲（-7〜+7）を外れた調号。その宣言は無視し、直前の調号を維持する */
-      kind: 'unsupportedKeySignature';
-      measureIndex: number;
-      partId: string;
-      fifths: number;
-    };
+export type { AdoptedKey, KeyRegionIssue };
 
 export interface KeyRegionBuildResult {
   keyRegions: KeyRegion[];
   issues: KeyRegionIssue[];
-}
-
-/** 1 小節分の採用調号 */
-interface AdoptedKey {
-  fifths: number;
-  mode: 'major' | 'minor';
 }
 
 /** MusicXML の `<key>` 宣言 1 つ分（範囲外の調号は採用せず報告のみ行う） */
@@ -69,6 +48,97 @@ function keyToRegion(key: AdoptedKey, measureIndex: number): KeyRegion | null {
     mode: key.mode,
     source: 'auto',
   };
+}
+
+/**
+ * 訂正を 1 つの区間へ適用する
+ *
+ * 旋法だけを訂正した場合は**調号を保ったまま平行調へ移す**（例: ハ長調 → イ短調）。
+ * これが La 基準の移動ドを成立させる操作そのもので、主音を直接指定させるより
+ * 「この区間は実は短調だった」というユーザーの意図に近い
+ *
+ * @returns 訂正後の区間。調号が範囲外なら null（呼び出し側が報告する）
+ */
+function applyDecision(region: KeyRegion, decision: KeyRegionDecision): KeyRegion | null {
+  const mode = decision.mode ?? region.mode;
+  // 現在の主音から元の調号を復元してから、旋法の変更を反映した主音を引き直す
+  const currentFifths = fifthsForTonic(
+    { step: region.tonicStep, alter: region.tonicAlter },
+    region.mode,
+  );
+  const fifths = decision.fifths ?? currentFifths;
+  if (fifths === null) {
+    return null;
+  }
+  const tonic = tonicForFifths(fifths, mode);
+  if (tonic === null) {
+    return null;
+  }
+  return { ...region, tonicStep: tonic.step, tonicAlter: tonic.alter, mode, source: 'user' };
+}
+
+/**
+ * 自動生成した調文脈へユーザー訂正を反映する
+ *
+ * 対象は**既存区間の開始小節と一致する decision のみ**。区間の新規追加は F-6 の担当であり、
+ * 一致しない decision は例外にせず `unmatchedKeyDecision` として報告する
+ * （ユーザー入力由来の不整合であって、呼び出し側の契約違反ではない）
+ */
+function applyDecisions(
+  keyRegions: KeyRegion[],
+  decisions: readonly KeyRegionDecision[],
+  issues: KeyRegionIssue[],
+): KeyRegion[] {
+  if (decisions.length === 0) {
+    return keyRegions;
+  }
+  const byMeasure = new Map<number, KeyRegion>();
+  for (const region of keyRegions) {
+    byMeasure.set(region.start.measureIndex, region);
+  }
+  for (const decision of decisions) {
+    const target = byMeasure.get(decision.measureIndex);
+    if (target === undefined) {
+      issues.push({ kind: 'unmatchedKeyDecision', measureIndex: decision.measureIndex });
+      continue;
+    }
+    const corrected = applyDecision(target, decision);
+    if (corrected === null) {
+      issues.push({
+        kind: 'unsupportedKeySignature',
+        measureIndex: decision.measureIndex,
+        partId: null,
+        // 主音を引けなかった原因は decision の fifths（省略時は表に載る値のため必ず引ける）
+        fifths: decision.fifths ?? Number.NaN,
+      });
+      continue;
+    }
+    byMeasure.set(decision.measureIndex, corrected);
+  }
+  return mergeAdjacent(
+    keyRegions.map((region) => byMeasure.get(region.start.measureIndex) ?? region),
+  );
+}
+
+/**
+ * 隣接する同じ調の区間を 1 つに統合する（先頭側＝開始が早い区間を残す）
+ *
+ * 訂正の結果、前後の区間が同じ調になることがある（例: 転調先を元の調に戻す訂正）。
+ * 統合しないと転調していないのに区間が 2 つ並び、転調点 UI（F-6）が
+ * **存在しない転調点を描いてしまう**。曲頭の既定と最初の検出調が重複する不具合
+ * （Phase 3 のコードレビュー修正1）とまったく同じ現象の別経路
+ */
+function mergeAdjacent(keyRegions: readonly KeyRegion[]): KeyRegion[] {
+  const merged: KeyRegion[] = [];
+  for (const region of keyRegions) {
+    const previous = merged[merged.length - 1];
+    // 先頭側を残すため、同じ調なら後続を捨てる（曲頭区間は必ず残り、昇順制約も保たれる）
+    if (previous !== undefined && sameTonic(previous, region)) {
+      continue;
+    }
+    merged.push(region);
+  }
+  return merged;
 }
 
 /**
@@ -137,7 +207,8 @@ function declarationsByPart(parts: MusicXmlPart[]): Map<string, Map<number, Decl
 /** movement 内のローカル小節番号の上限（全パートで最も長いもの） */
 function localMeasureCount(musicXml: ParsedMusicXml): number {
   return musicXml.parts.reduce(
-    (max, part) => part.measures.reduce((inner, measure) => Math.max(inner, measure.index + 1), max),
+    (max, part) =>
+      part.measures.reduce((inner, measure) => Math.max(inner, measure.index + 1), max),
     0,
   );
 }
@@ -153,7 +224,15 @@ function localMeasureCount(musicXml: ParsedMusicXml): number {
  * 短調（La 基準の移動ド）で読みたい場合はユーザー指定が必要（F-2 / F-6 の担当）
  */
 export class KeyRegionBuilder {
-  build(artifacts: OmrArtifacts, structure: ResolvedStructure): KeyRegionBuildResult {
+  /**
+   * @param decisions - 確認画面（ClefKeyConfirm）での訂正。自動生成が**終わってから**適用する
+   *   （生成中に混ぜると調号の持続計算と多数決の母数が汚れる）
+   */
+  build(
+    artifacts: OmrArtifacts,
+    structure: ResolvedStructure,
+    decisions: readonly KeyRegionDecision[] = [],
+  ): KeyRegionBuildResult {
     const issues: KeyRegionIssue[] = [];
     const keyRegions: KeyRegion[] = [];
     /** 直前までに採用されている調（movement をまたいで持続する） */
@@ -181,7 +260,7 @@ export class KeyRegionBuilder {
     }
 
     this.ensureHeadRegion(keyRegions);
-    return { keyRegions, issues };
+    return { keyRegions: applyDecisions(keyRegions, decisions, issues), issues };
   }
 
   /**
@@ -316,19 +395,16 @@ export class KeyRegionBuilder {
     measureIndex: number,
     issues: KeyRegionIssue[],
   ): void {
-    const distinct = new Set([...effective.values()].map((key) => key.fifths));
+    // 旋法も含めて食い違いを判定する。fifths だけで見ると、同じ調号で長短だけが割れている
+    // 状態が「一致」として無言で通り、確認画面に訂正材料が出ない
+    const distinct = new Set([...effective.values()].map((key) => `${key.fifths}:${key.mode}`));
     if (distinct.size < 2) {
       return;
     }
-    const fifthsByPart: Record<string, number> = {};
+    const keyByPart: Record<string, AdoptedKey> = {};
     for (const [partId, key] of effective) {
-      fifthsByPart[partId] = key.fifths;
+      keyByPart[partId] = key;
     }
-    issues.push({
-      kind: 'keySignatureConflict',
-      measureIndex,
-      fifthsByPart,
-      adopted: adopted.fifths,
-    });
+    issues.push({ kind: 'keySignatureConflict', measureIndex, keyByPart, adopted });
   }
 }

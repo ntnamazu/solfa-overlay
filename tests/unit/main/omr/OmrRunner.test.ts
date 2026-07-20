@@ -13,14 +13,17 @@ const SHEET_XML =
 const MUSICXML =
   '<score-partwise><part-list><score-part id="P1"><part-name>S</part-name></score-part></part-list>' +
   '<part id="P1"><measure number="1"><note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration></note></measure></part></score-partwise>';
-const CONTAINER =
-  '<container><rootfiles><rootfile full-path="score.xml"/></rootfiles></container>';
+const CONTAINER = '<container><rootfiles><rootfile full-path="score.xml"/></rootfiles></container>';
 
 function makeOmr(): Buffer {
-  return Buffer.from(zipSync({ 'book.xml': strToU8('<book/>'), 'sheet#1/sheet#1.xml': strToU8(SHEET_XML) }));
+  return Buffer.from(
+    zipSync({ 'book.xml': strToU8('<book/>'), 'sheet#1/sheet#1.xml': strToU8(SHEET_XML) }),
+  );
 }
 function makeMxl(): Buffer {
-  return Buffer.from(zipSync({ 'META-INF/container.xml': strToU8(CONTAINER), 'score.xml': strToU8(MUSICXML) }));
+  return Buffer.from(
+    zipSync({ 'META-INF/container.xml': strToU8(CONTAINER), 'score.xml': strToU8(MUSICXML) }),
+  );
 }
 
 /** ChildLike を満たす擬似子プロセス。stdout も EventEmitter で代替する */
@@ -53,10 +56,15 @@ describe('OmrRunner', () => {
       return child;
     };
     const progresses: OmrProgress[] = [];
-    const artifacts = await new OmrRunner({ spawn }).run('/in/score.pdf', (p) => progresses.push(p));
+    const { artifacts, raw } = await new OmrRunner({ spawn }).run('/in/score.pdf', (p) =>
+      progresses.push(p),
+    );
 
     expect(artifacts.pages).toHaveLength(1);
     expect(artifacts.movements).toHaveLength(1);
+    // 生バイト列も返す（プロジェクトファイルへ同梱するため。一時ディレクトリは run 終了時に消える）
+    expect(raw.omr.length).toBeGreaterThan(0);
+    expect(raw.movements).toHaveLength(1);
     expect(progresses.map((p) => p.phase)).toEqual([
       'starting',
       'loading',
@@ -79,8 +87,9 @@ describe('OmrRunner', () => {
       }, 0);
       return child;
     };
-    const artifacts = await new OmrRunner({ spawn }).run('/in/score.pdf', () => {});
+    const { artifacts, raw } = await new OmrRunner({ spawn }).run('/in/score.pdf', () => {});
     expect(artifacts.movements).toHaveLength(2);
+    expect(raw.movements).toHaveLength(2);
   });
 
   it('非ゼロ終了を OmrRunError にする', async () => {
@@ -123,9 +132,7 @@ describe('OmrRunner', () => {
       }, 0);
       return child;
     };
-    await expect(new OmrRunner({ spawn }).run('/in/score.pdf', () => {})).rejects.toThrow(
-      /\.omr/,
-    );
+    await expect(new OmrRunner({ spawn }).run('/in/score.pdf', () => {})).rejects.toThrow(/\.omr/);
   });
 
   it('.mxl が出力されなければ OmrRunError にする', async () => {
@@ -137,9 +144,7 @@ describe('OmrRunner', () => {
       }, 0);
       return child;
     };
-    await expect(new OmrRunner({ spawn }).run('/in/score.pdf', () => {})).rejects.toThrow(
-      /\.mxl/,
-    );
+    await expect(new OmrRunner({ spawn }).run('/in/score.pdf', () => {})).rejects.toThrow(/\.mxl/);
   });
 
   it('実行中に同じインスタンスへ run() を再呼び出しすると OmrRunError で拒否する', async () => {

@@ -1,11 +1,12 @@
 import type { ConfirmationState } from '../../shared/types/Confirmation';
-import type { PitchStep } from '../../shared/types/Pitch';
+import type { BuildIssue } from '../../shared/types/Issues';
 import type { ResolvedStructure } from '../../shared/types/ResolvedStructure';
 import type {
   Measure,
   NoteEvent,
   Part,
   ScoreModel,
+  StaffRef,
   SystemInfo,
 } from '../../shared/types/ScoreModel';
 import { diatonicIndex, headStepOctave, isKnownClefKind } from './clefTable';
@@ -27,53 +28,11 @@ export interface BuildResult {
 }
 
 /**
- * 照合中に検出した問題（例外にせず部分結果と共に返す。
- * 機能設計書「エラーハンドリング」= 部分失敗は全体を失敗にしない）
+ * 照合中に検出した問題（例外にせず部分結果と共に返す）
+ *
+ * 型の実体は `shared/types/Issues.ts`（確認画面へ IPC 越しに送るため）
  */
-export type BuildIssue =
-  | {
-      kind: 'measureCountMismatch';
-      partId: string;
-      measureIndex: number;
-      pageIndex: number;
-      systemIndex: number;
-      omrCount: number;
-      xmlCount: number;
-    }
-  | {
-      kind: 'pitchCrossCheckMismatch';
-      noteId: string;
-      partId: string;
-      measureIndex: number;
-      /** MusicXML 由来の音名（採用される値） */
-      expectedStep: PitchStep;
-      /** .omr の譜表位置＋音部記号から逆算した音名 */
-      omrStep: PitchStep;
-    }
-  | {
-      kind: 'unknownClef';
-      pageIndex: number;
-      systemIndex: number;
-      staffIndex: number;
-      partId: string;
-      clefKind: string;
-    }
-  | { kind: 'partNotFound'; partId: string; pageIndex: number; systemIndex: number }
-  | {
-      kind: 'measureOutOfRange';
-      partId: string;
-      pageIndex: number;
-      systemIndex: number;
-      measureIndex: number;
-    }
-  | {
-      /** 確定構造が存在を主張する小節に対応する stack が .omr にない（小節線の検出漏れ等） */
-      kind: 'measureNotDetected';
-      partId: string;
-      pageIndex: number;
-      systemIndex: number;
-      measureIndex: number;
-    };
+export type { BuildIssue };
 
 /** 確認画面の clef 修正値を (page, system, staff) で引くためのキー */
 function staffKey(pageIndex: number, systemIndex: number, staffIndex: number): string {
@@ -84,8 +43,12 @@ function staffKey(pageIndex: number, systemIndex: number, staffIndex: number): s
 function collectClefCorrections(confirmation: ConfirmationState): Map<string, string> {
   const corrections = new Map<string, string>();
   for (const item of confirmation.items) {
-    if (item.kind === 'clef' && item.corrected !== null) {
-      const { pageIndex, systemIndex, staffIndex } = item.staffRef;
+    if (item.kind !== 'clef' || item.corrected === null) {
+      continue;
+    }
+    // 1 項目はパート×検出値でグルーピングされた**複数譜表**を指す。
+    // 訂正はそのグループの全譜表へ適用される（divisi の P6 は 1 行の訂正が 35 段へ効く）
+    for (const { pageIndex, systemIndex, staffIndex } of item.staffRefs) {
       corrections.set(staffKey(pageIndex, systemIndex, staffIndex), item.corrected);
     }
   }
@@ -152,9 +115,9 @@ function matchStack(
   xmlNotes: MusicXmlNote[],
   stack: OmrStack,
   globalMeasureIndex: number,
-  pageIndex: number,
-  systemIndex: number,
+  staffRef: StaffRef,
 ): void {
+  const { pageIndex, systemIndex } = staffRef;
   const measure = ensureMeasure(context, staff.partId, globalMeasureIndex);
   if (measure.status === 'skipped') {
     return; // 同一小節の別譜表で既に不一致確定（notes は破棄済み）
@@ -210,6 +173,7 @@ function matchStack(
           noteId: noteEvent.id,
           partId: staff.partId,
           measureIndex: globalMeasureIndex,
+          staffRef,
           expectedStep: xmlNote.pitch.step,
           omrStep: derived.step,
         });
@@ -355,6 +319,7 @@ export class ScoreModelBuilder {
       this.buildStaff(context, xmlPart, staff, clefKind, stacks, position, {
         ordinal,
         isMultiStaffPart,
+        staffIndex,
       });
     }
   }
@@ -366,8 +331,14 @@ export class ScoreModelBuilder {
     clefKind: string | null,
     stacks: OmrStack[],
     position: SystemPosition,
-    staffRole: { ordinal: number; isMultiStaffPart: boolean },
+    staffRole: { ordinal: number; isMultiStaffPart: boolean; staffIndex: number },
   ): void {
+    const staffRef: StaffRef = {
+      pageIndex: position.pageIndex,
+      systemIndex: position.systemIndex,
+      staffIndex: staffRole.staffIndex,
+      partId: staff.partId,
+    };
     // 確定構造の小節数と .omr の stack 数は食い違い得るため、両方を覆う範囲を走査して
     // 「stack はあるが小節がない」「小節はあるが stack がない」の両方を issue にする
     // （どちらも段の中で閉じるため、後続段の小節番号はずれない）
@@ -409,16 +380,7 @@ export class ScoreModelBuilder {
       const xmlNotes = staffRole.isMultiStaffPart
         ? xmlMeasure.notes.filter((note) => (note.staff ?? 1) === staffRole.ordinal)
         : xmlMeasure.notes;
-      matchStack(
-        context,
-        staff,
-        clefKind,
-        xmlNotes,
-        stack,
-        globalMeasureIndex,
-        position.pageIndex,
-        position.systemIndex,
-      );
+      matchStack(context, staff, clefKind, xmlNotes, stack, globalMeasureIndex, staffRef);
     }
   }
 }

@@ -97,10 +97,9 @@ describe('BookStructureResolver.resolve', () => {
       pages: [page([system(3), system(4)])],
     };
     expect(
-      resolver.resolve(artifacts, bookPages([true])).movements[0]?.systems.map((s) => [
-        s.firstMeasureIndex,
-        s.measureCount,
-      ]),
+      resolver
+        .resolve(artifacts, bookPages([true]))
+        .movements[0]?.systems.map((s) => [s.firstMeasureIndex, s.measureCount]),
     ).toEqual([
       [0, 3],
       [3, 4],
@@ -139,10 +138,9 @@ describe('BookStructureResolver.resolve', () => {
       pages: [page([system(3), system(3), system(3)])],
     };
     expect(
-      resolver.resolve(artifacts, bookPages([true])).movements[0]?.systems.map((s) => [
-        s.firstMeasureIndex,
-        s.measureCount,
-      ]),
+      resolver
+        .resolve(artifacts, bookPages([true]))
+        .movements[0]?.systems.map((s) => [s.firstMeasureIndex, s.measureCount]),
     ).toEqual([
       [0, 3],
       [3, 3],

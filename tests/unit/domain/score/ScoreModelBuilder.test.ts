@@ -61,9 +61,7 @@ const oneSystemMovement = (stackCount: number): ResolvedStructure => ({
     {
       musicXmlIndex: 0,
       pageIndices: [0],
-      systems: [
-        { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: stackCount },
-      ],
+      systems: [{ pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: stackCount }],
     },
   ],
 });
@@ -80,7 +78,8 @@ describe('ScoreModelBuilder', () => {
     const artifacts: OmrArtifacts = {
       movements: [
         {
-          musicXml: { layout: [],
+          musicXml: {
+            layout: [],
             parts: [
               part('P1', 'Soprano', [
                 // 逐次音は offset を分けて実パーサの出力に合わせる（同 offset は同時発音の意味になる）
@@ -140,7 +139,8 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: { layout: [],
+            musicXml: {
+              layout: [],
               parts: [
                 part('P1', 'Alto', [
                   measure(0, [note('C', 4), note('D', 4, 0, null, 4)]), // OMR 側は 1 個 → 不一致
@@ -150,7 +150,9 @@ describe('ScoreModelBuilder', () => {
             },
           },
         ],
-        pages: [{ systems: [twoStackSystem([staff('P1', 'TREBLE', [head(6, 10), head(4, 110)])])] }],
+        pages: [
+          { systems: [twoStackSystem([staff('P1', 'TREBLE', [head(6, 10), head(4, 110)])])] },
+        ],
       };
       const result = builder.build(artifacts, singleMovement, noCorrections);
       expect(result.score.measures.map((m) => [m.index, m.status])).toEqual([
@@ -178,7 +180,12 @@ describe('ScoreModelBuilder', () => {
       // 旧方式（文書順×x順の添字 zip）では座標取り違え＋クロスチェック誤検出になったケース
       const artifacts: OmrArtifacts = {
         movements: [
-          { musicXml: { layout: [], parts: [part('P1', 'Sop', [measure(0, [note('C', 4), note('E', 4)])])] } },
+          {
+            musicXml: {
+              layout: [],
+              parts: [part('P1', 'Sop', [measure(0, [note('C', 4), note('E', 4)])])],
+            },
+          },
         ],
         pages: [
           {
@@ -208,7 +215,12 @@ describe('ScoreModelBuilder', () => {
       // TREBLE: G5 = pitch -5（x=40）, G4 = pitch 2（x=10）
       const artifacts: OmrArtifacts = {
         movements: [
-          { musicXml: { layout: [], parts: [part('P1', 'Sop', [measure(0, [note('G', 5), note('G', 4)])])] } },
+          {
+            musicXml: {
+              layout: [],
+              parts: [part('P1', 'Sop', [measure(0, [note('G', 5), note('G', 4)])])],
+            },
+          },
         ],
         pages: [
           {
@@ -237,7 +249,8 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: { layout: [],
+            musicXml: {
+              layout: [],
               parts: [
                 part('P1', 'Sop', [
                   measure(0, [
@@ -278,7 +291,12 @@ describe('ScoreModelBuilder', () => {
       // 確認してから導入判断するため、現状の厳格照合（skip + issue）を固定する
       const artifacts: OmrArtifacts = {
         movements: [
-          { musicXml: { layout: [], parts: [part('P1', 'Sop', [measure(0, [note('G', 4), note('G', 4)])])] } },
+          {
+            musicXml: {
+              layout: [],
+              parts: [part('P1', 'Sop', [measure(0, [note('G', 4), note('G', 4)])])],
+            },
+          },
         ],
         pages: [
           {
@@ -328,6 +346,7 @@ describe('ScoreModelBuilder', () => {
           noteId: 'P1:m0:n0',
           partId: 'P1',
           measureIndex: 0,
+          staffRef: { pageIndex: 0, systemIndex: 0, staffIndex: 0, partId: 'P1' },
           expectedStep: 'D',
           omrStep: 'B',
         },
@@ -339,12 +358,14 @@ describe('ScoreModelBuilder', () => {
       const confirmation: ConfirmationState = {
         items: [
           {
-            id: 'c1',
+            id: 'clef-P1-TREBLE',
             kind: 'clef',
-            staffRef: { pageIndex: 0, systemIndex: 0, staffIndex: 0, partId: 'P1' },
+            partId: 'P1',
+            staffRefs: [{ pageIndex: 0, systemIndex: 0, staffIndex: 0, partId: 'P1' }],
             detected: 'TREBLE',
             corrected: 'BASS',
             clipRect: { pageIndex: 0, x: 0, y: 0, width: 10, height: 10 },
+            mismatchCount: 1,
           },
         ],
         completedAt: '2026-07-18T00:00:00Z',
@@ -387,12 +408,10 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: { layout: [],
+            musicXml: {
+              layout: [],
               parts: [
-                part('P1', 'Tenor', [
-                  measure(0, [note('G', 3)]),
-                  measure(1, [note('A', 3)]),
-                ]),
+                part('P1', 'Tenor', [measure(0, [note('G', 3)]), measure(1, [note('A', 3)])]),
               ],
             },
           },
@@ -420,16 +439,12 @@ describe('ScoreModelBuilder', () => {
           {
             musicXmlIndex: 0,
             pageIndices: [0],
-            systems: [
-              { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 },
-            ],
+            systems: [{ pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 }],
           },
           {
             musicXmlIndex: 1,
             pageIndices: [1],
-            systems: [
-              { pageIndex: 1, systemIndex: 0, firstMeasureIndex: 2, measureCount: 1 },
-            ],
+            systems: [{ pageIndex: 1, systemIndex: 0, firstMeasureIndex: 2, measureCount: 1 }],
           },
         ],
       };
@@ -446,12 +461,9 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: { layout: [],
-              parts: [
-                part('P1', 'Piano', [
-                  measure(0, [note('C', 5, 0, 1), note('E', 3, 0, 2)]),
-                ]),
-              ],
+            musicXml: {
+              layout: [],
+              parts: [part('P1', 'Piano', [measure(0, [note('C', 5, 0, 1), note('E', 3, 0, 2)])])],
             },
           },
         ],
@@ -483,12 +495,9 @@ describe('ScoreModelBuilder', () => {
       const artifacts: OmrArtifacts = {
         movements: [
           {
-            musicXml: { layout: [],
-              parts: [
-                part('P1', 'Piano', [
-                  measure(0, [note('C', 5, 0, 1), note('E', 3, 0, 2)]),
-                ]),
-              ],
+            musicXml: {
+              layout: [],
+              parts: [part('P1', 'Piano', [measure(0, [note('C', 5, 0, 1), note('E', 3, 0, 2)])])],
             },
           },
         ],
@@ -532,9 +541,7 @@ describe('ScoreModelBuilder', () => {
         movements: [{ musicXml: { layout: [], parts: [part('P1', 'Sop', [measure(0, [])])] } }],
         pages: [
           {
-            systems: [
-              { stacks: [{ left: 0, right: 100 }], staves: [staff('P9', 'TREBLE', [])] },
-            ],
+            systems: [{ stacks: [{ left: 0, right: 100 }], staves: [staff('P9', 'TREBLE', [])] }],
           },
         ],
       };
@@ -684,17 +691,13 @@ describe('ScoreModelBuilder', () => {
           {
             musicXmlIndex: 0,
             pageIndices: [0],
-            systems: [
-              { pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 },
-            ],
+            systems: [{ pageIndex: 0, systemIndex: 0, firstMeasureIndex: 0, measureCount: 2 }],
           },
           {
             // 前 movement が 0-1 を使っているのに 1 から始まる＝小節が重なる
             musicXmlIndex: 0,
             pageIndices: [0],
-            systems: [
-              { pageIndex: 0, systemIndex: 1, firstMeasureIndex: 1, measureCount: 1 },
-            ],
+            systems: [{ pageIndex: 0, systemIndex: 1, firstMeasureIndex: 1, measureCount: 1 }],
           },
         ],
       };

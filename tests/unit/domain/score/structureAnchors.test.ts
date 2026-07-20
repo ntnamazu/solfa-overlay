@@ -4,7 +4,10 @@ import {
   movementEndMeasureIndex,
   movementFirstMeasureIndex,
 } from '../../../../src/domain/score/structureAnchors';
-import type { ResolvedMovement, ResolvedSystem } from '../../../../src/shared/types/ResolvedStructure';
+import type {
+  ResolvedMovement,
+  ResolvedSystem,
+} from '../../../../src/shared/types/ResolvedStructure';
 
 function system(firstMeasureIndex: number, measureCount: number): ResolvedSystem {
   return { pageIndex: 0, systemIndex: 0, firstMeasureIndex, measureCount };

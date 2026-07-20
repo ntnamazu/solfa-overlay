@@ -69,9 +69,9 @@ describe('Victoria: 階名パイプライン一気通貫', () => {
   });
 
   it('音節体系の切り替えが階名文字列に反映される', () => {
-    expect(syllablesOf(solfa, 'P1', 4, { ...DEFAULT_SETTINGS, syllableSystem: 'tonicSolfa' })).toEqual(
-      ['d', 'r', 'm', 'm'],
-    );
+    expect(
+      syllablesOf(solfa, 'P1', 4, { ...DEFAULT_SETTINGS, syllableSystem: 'tonicSolfa' }),
+    ).toEqual(['d', 'r', 'm', 'm']);
   });
 });
 

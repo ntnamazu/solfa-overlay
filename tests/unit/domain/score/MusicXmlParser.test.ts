@@ -32,10 +32,7 @@ describe('parseMusicXml', () => {
   });
 
   it('part-name が欠落したパートは id を名前として使う', () => {
-    const xml = partwise(
-      `<score-part id="P1"/>`,
-      `<part id="P1"><measure number="1"/></part>`,
-    );
+    const xml = partwise(`<score-part id="P1"/>`, `<part id="P1"><measure number="1"/></part>`);
     expect(parseMusicXml(xml).parts[0]?.name).toBe('P1');
   });
 

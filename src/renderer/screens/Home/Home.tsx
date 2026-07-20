@@ -1,19 +1,29 @@
 import { useEffect, useState } from 'react';
+import { getApi } from '../../api';
 
-// ブラウザで dev サーバを直接開いた場合は preload がなく window.solfaOverlay が
-// 存在しないため、クラッシュさせずプレビュー表示に切り替える
-const solfaOverlay = window.solfaOverlay;
-const isElectron = solfaOverlay !== undefined;
+/**
+ * 起動画面（画面遷移図の Home）
+ *
+ * 入口は 2 つだけ: PDF を取り込んで新規に始めるか、保存済みプロジェクトを開くか。
+ * 実際の取り込み・読込は App が行い、この画面は選択の受け付けに徹する
+ */
+export interface HomeProps {
+  onImportPdf: () => void;
+  onOpenProject: () => void;
+  /** 直前の操作が失敗したときのメッセージ（なければ null） */
+  errorMessage: string | null;
+  busy: boolean;
+}
 
-/** 起動画面のスタブ（画面遷移図の Home。PDF取込・既存プロジェクトを開く導線は今後実装） */
-export function Home() {
+export function Home({ onImportPdf, onOpenProject, errorMessage, busy }: HomeProps) {
   const [version, setVersion] = useState<string | null>(null);
+  const api = getApi();
 
   useEffect(() => {
-    if (solfaOverlay === undefined) {
+    if (api === null) {
       return;
     }
-    void solfaOverlay
+    void api
       .getAppVersion()
       .then(setVersion)
       .catch((error: unknown) => {
@@ -21,17 +31,28 @@ export function Home() {
         console.error('app:getVersion の呼び出しに失敗しました:', error);
         setVersion('取得失敗');
       });
-  }, []);
+  }, [api]);
 
   return (
     <main>
       <h1>Solfa Overlay</h1>
       <p>合唱楽譜PDFへの移動ド階名自動付与アプリ</p>
-      {isElectron ? (
-        <p>{version === null ? 'バージョン取得中…' : `バージョン: ${version}`}</p>
-      ) : (
+
+      {api === null ? (
         <p>ブラウザプレビュー（Electron 外で実行中のため IPC は無効）</p>
+      ) : (
+        <>
+          <p>{version === null ? 'バージョン取得中…' : `バージョン: ${version}`}</p>
+          <button type="button" onClick={onImportPdf} disabled={busy}>
+            PDFを取り込む
+          </button>
+          <button type="button" onClick={onOpenProject} disabled={busy}>
+            プロジェクトを開く
+          </button>
+        </>
       )}
+
+      {errorMessage !== null && <p role="alert">{errorMessage}</p>}
     </main>
   );
 }

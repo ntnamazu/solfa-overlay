@@ -75,9 +75,7 @@ describe('SolfaEngine', () => {
         const doPitch = { step: doStep, alter: doAlter };
         for (const letter of SHARP_ORDER) {
           const degree = letterDistance(doStep, letter);
-          expect(expectedAlterInDoMajor(doPitch, degree)).toBe(
-            signatureAlterOf(letter, signature),
-          );
+          expect(expectedAlterInDoMajor(doPitch, degree)).toBe(signatureAlterOf(letter, signature));
         }
       },
     );
@@ -98,25 +96,29 @@ describe('SolfaEngine', () => {
     });
 
     // La基準短調の do = 平行長調の主音（同じ調号を持つ長調）
-    it.each<{ name: string; tonicStep: PitchStep; tonicAlter: number; doStep: PitchStep; doAlter: number }>(
-      [
-        { name: 'イ短調 → C', tonicStep: 'A', tonicAlter: 0, doStep: 'C', doAlter: 0 },
-        { name: 'ホ短調 → G', tonicStep: 'E', tonicAlter: 0, doStep: 'G', doAlter: 0 },
-        { name: 'ロ短調 → D', tonicStep: 'B', tonicAlter: 0, doStep: 'D', doAlter: 0 },
-        { name: '嬰ヘ短調 → A', tonicStep: 'F', tonicAlter: 1, doStep: 'A', doAlter: 0 },
-        { name: '嬰ハ短調 → E', tonicStep: 'C', tonicAlter: 1, doStep: 'E', doAlter: 0 },
-        { name: '嬰ト短調 → B', tonicStep: 'G', tonicAlter: 1, doStep: 'B', doAlter: 0 },
-        { name: '嬰ニ短調 → F♯', tonicStep: 'D', tonicAlter: 1, doStep: 'F', doAlter: 1 },
-        { name: '嬰イ短調 → C♯', tonicStep: 'A', tonicAlter: 1, doStep: 'C', doAlter: 1 },
-        { name: 'ニ短調 → F', tonicStep: 'D', tonicAlter: 0, doStep: 'F', doAlter: 0 },
-        { name: 'ト短調 → B♭', tonicStep: 'G', tonicAlter: 0, doStep: 'B', doAlter: -1 },
-        { name: 'ハ短調 → E♭', tonicStep: 'C', tonicAlter: 0, doStep: 'E', doAlter: -1 },
-        { name: 'ヘ短調 → A♭', tonicStep: 'F', tonicAlter: 0, doStep: 'A', doAlter: -1 },
-        { name: '変ロ短調 → D♭', tonicStep: 'B', tonicAlter: -1, doStep: 'D', doAlter: -1 },
-        { name: '変ホ短調 → G♭', tonicStep: 'E', tonicAlter: -1, doStep: 'G', doAlter: -1 },
-        { name: '変イ短調 → C♭', tonicStep: 'A', tonicAlter: -1, doStep: 'C', doAlter: -1 },
-      ],
-    )('La基準短調: $name', ({ tonicStep, tonicAlter, doStep, doAlter }) => {
+    it.each<{
+      name: string;
+      tonicStep: PitchStep;
+      tonicAlter: number;
+      doStep: PitchStep;
+      doAlter: number;
+    }>([
+      { name: 'イ短調 → C', tonicStep: 'A', tonicAlter: 0, doStep: 'C', doAlter: 0 },
+      { name: 'ホ短調 → G', tonicStep: 'E', tonicAlter: 0, doStep: 'G', doAlter: 0 },
+      { name: 'ロ短調 → D', tonicStep: 'B', tonicAlter: 0, doStep: 'D', doAlter: 0 },
+      { name: '嬰ヘ短調 → A', tonicStep: 'F', tonicAlter: 1, doStep: 'A', doAlter: 0 },
+      { name: '嬰ハ短調 → E', tonicStep: 'C', tonicAlter: 1, doStep: 'E', doAlter: 0 },
+      { name: '嬰ト短調 → B', tonicStep: 'G', tonicAlter: 1, doStep: 'B', doAlter: 0 },
+      { name: '嬰ニ短調 → F♯', tonicStep: 'D', tonicAlter: 1, doStep: 'F', doAlter: 1 },
+      { name: '嬰イ短調 → C♯', tonicStep: 'A', tonicAlter: 1, doStep: 'C', doAlter: 1 },
+      { name: 'ニ短調 → F', tonicStep: 'D', tonicAlter: 0, doStep: 'F', doAlter: 0 },
+      { name: 'ト短調 → B♭', tonicStep: 'G', tonicAlter: 0, doStep: 'B', doAlter: -1 },
+      { name: 'ハ短調 → E♭', tonicStep: 'C', tonicAlter: 0, doStep: 'E', doAlter: -1 },
+      { name: 'ヘ短調 → A♭', tonicStep: 'F', tonicAlter: 0, doStep: 'A', doAlter: -1 },
+      { name: '変ロ短調 → D♭', tonicStep: 'B', tonicAlter: -1, doStep: 'D', doAlter: -1 },
+      { name: '変ホ短調 → G♭', tonicStep: 'E', tonicAlter: -1, doStep: 'G', doAlter: -1 },
+      { name: '変イ短調 → C♭', tonicStep: 'A', tonicAlter: -1, doStep: 'C', doAlter: -1 },
+    ])('La基準短調: $name', ({ tonicStep, tonicAlter, doStep, doAlter }) => {
       expect(resolveDo(keyRegion({ tonicStep, tonicAlter, mode: 'minor' }), 'la')).toEqual({
         step: doStep,
         alter: doAlter,
@@ -221,7 +223,11 @@ describe('computeDegrees（ScoreModel との結線）', () => {
     return { parts: [{ id: 'P1', name: 'P1', staves: [] }], systems: [], measures };
   }
 
-  function measure(index: number, notes: NoteEvent[], status: Measure['status'] = 'matched'): Measure {
+  function measure(
+    index: number,
+    notes: NoteEvent[],
+    status: Measure['status'] = 'matched',
+  ): Measure {
     return { partId: 'P1', index, status, notes };
   }
 
@@ -268,11 +274,7 @@ describe('computeDegrees（ScoreModel との結線）', () => {
     for (let m = 0; m < 100; m += 1) {
       const expectedStep = steps[Math.floor(m / 10)];
       expect(expectedStep).toBeDefined();
-      const expected = computeDegree(
-        pitch('C', 0),
-        regionAtMeasure(0, expectedStep ?? 'C'),
-        'la',
-      );
+      const expected = computeDegree(pitch('C', 0), regionAtMeasure(0, expectedStep ?? 'C'), 'la');
       expect(degrees.get(`n${m}`)).toEqual(expected);
     }
   });

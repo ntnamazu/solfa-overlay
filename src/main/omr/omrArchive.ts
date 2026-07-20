@@ -1,9 +1,10 @@
-import { strFromU8, unzipSync } from 'fflate';
+import { strFromU8 } from 'fflate';
 import { parseMusicXml } from '../../domain/score/MusicXmlParser';
 import type { OmrPageContent } from '../../domain/score/OmrSheetParser';
 import { parseSheetXml } from '../../domain/score/OmrSheetParser';
 import type { OmrArtifacts } from '../../domain/score/ScoreModelBuilder';
 import { find, parseXml } from '../../domain/score/xmlTree';
+import { ZipError, unzipEntries as unzipSafely } from '../../storage/zipArchive';
 import { OmrArchiveError } from './errors';
 
 /**
@@ -17,49 +18,24 @@ import { OmrArchiveError } from './errors';
 const SHEET_XML_ENTRY = /^sheet#(\d+)\/sheet#\d+\.xml$/;
 
 /**
- * エントリ名が安全か（パストラバーサルでないか）を判定する
- *
- * セキュリティ要件（機能設計書・アーキテクチャ）: 絶対パスや `..` セグメントを含むエントリを
- * 拒否する。展開はメモリ上だが、名前を信頼して扱う経路を一切作らないための防御。
- */
-function isSafeEntryName(name: string): boolean {
-  // Windows 由来の区切りも同一視して判定する
-  const segments = name.split(/[/\\]/);
-  if (segments.some((segment) => segment === '..')) {
-    return false;
-  }
-  // 絶対パス（POSIX の先頭 '/' / Windows のドライブレター）を拒否
-  if (name.startsWith('/') || name.startsWith('\\') || /^[A-Za-z]:/.test(name)) {
-    return false;
-  }
-  return true;
-}
-
-/**
  * zip バイト列を展開し、エントリ名 → 内容のマップを返す
  *
- * ディレクトリエントリ（名前が '/' で終わる）は除外する。パストラバーサルは拒否する。
+ * 展開とエントリ名の検証（パストラバーサル拒否）は `storage/zipArchive` に集約されており、
+ * ここでは OMR 層のエラー分類（`OmrArchiveError`）へ翻訳するだけに徹する。
+ * `.omr` / `.mxl` と `.solfaproj` で防御が食い違わないようにするための構成
  *
  * @throws OmrArchiveError 展開に失敗、またはパストラバーサルなエントリを含む場合
  */
 export function unzipEntries(bytes: Uint8Array): Map<string, Uint8Array> {
-  let raw: Record<string, Uint8Array>;
   try {
-    raw = unzipSync(bytes);
+    return unzipSafely(bytes);
   } catch (cause) {
-    throw new OmrArchiveError('zip の展開に失敗しました', { cause });
-  }
-  const entries = new Map<string, Uint8Array>();
-  for (const [name, data] of Object.entries(raw)) {
-    if (name.endsWith('/')) {
-      continue; // ディレクトリエントリ
+    if (cause instanceof ZipError) {
+      throw new OmrArchiveError(cause.message, { cause });
     }
-    if (!isSafeEntryName(name)) {
-      throw new OmrArchiveError(`不正なエントリ名（パストラバーサル）: ${name}`);
-    }
-    entries.set(name, data);
+    /* v8 ignore next -- unzipSafely は ZipError 以外を投げない */
+    throw cause;
   }
-  return entries;
 }
 
 /** UTF-8 バイト列を文字列へ復号する（先頭 BOM は除去） */

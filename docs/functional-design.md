@@ -44,15 +44,15 @@ graph TB
 
 ## 技術スタック
 
-| 分類 | 技術 | 選定理由 |
-|------|------|----------|
-| アプリ形態 | デスクトップアプリ（Electron） | OMR（Audiveris＝Java）をWASM化するのは非現実的。子プロセス実行と同梱配布ができ、ローカル完結要件（PRD セキュリティ要件）を満たす |
-| 言語 | TypeScript | UI・解析・出力を単一言語で実装し配布を単純化。プロトタイプの解析部はPython標準ライブラリのみ＝外部ライブラリ非依存のロジックであり、TypeScriptへの移植コストが低い |
-| OMR | Audiveris（同梱JREでヘッドレス実行） | プロトタイプで検証済み（`GDK_SCALE=1`、`-Djava.awt.headless=true`）。MusicXMLと.omrの2出力が本設計の前提 |
-| 画面上の楽譜表示 | PDF.js | 元PDFのページ画像化と注釈オーバーレイ表示（修正UI） |
-| PDF出力 | pdf-lib | 元PDFを再エンコードせずページに描画を追加できる |
-| 楽譜解析 | 自前実装（MusicXML/.omr パーサ＋階名計算） | v1に必要な解析は自前で足りることをプロトタイプで実証済み。music21（Python）はv2の和音解析で導入を再検討 |
-| テスト | Vitest ＋ Playwright | ユニット／E2E |
+| 分類             | 技術                                       | 選定理由                                                                                                                                                           |
+| ---------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| アプリ形態       | デスクトップアプリ（Electron）             | OMR（Audiveris＝Java）をWASM化するのは非現実的。子プロセス実行と同梱配布ができ、ローカル完結要件（PRD セキュリティ要件）を満たす                                   |
+| 言語             | TypeScript                                 | UI・解析・出力を単一言語で実装し配布を単純化。プロトタイプの解析部はPython標準ライブラリのみ＝外部ライブラリ非依存のロジックであり、TypeScriptへの移植コストが低い |
+| OMR              | Audiveris（同梱JREでヘッドレス実行）       | プロトタイプで検証済み（`GDK_SCALE=1`、`-Djava.awt.headless=true`）。MusicXMLと.omrの2出力が本設計の前提                                                           |
+| 画面上の楽譜表示 | PDF.js                                     | 元PDFのページ画像化と注釈オーバーレイ表示（修正UI）                                                                                                                |
+| PDF出力          | pdf-lib                                    | 元PDFを再エンコードせずページに描画を追加できる                                                                                                                    |
+| 楽譜解析         | 自前実装（MusicXML/.omr パーサ＋階名計算） | v1に必要な解析は自前で足りることをプロトタイプで実証済み。music21（Python）はv2の和音解析で導入を再検討                                                            |
+| テスト           | Vitest ＋ Playwright                       | ユニット／E2E                                                                                                                                                      |
 
 ## データモデル定義
 
@@ -67,43 +67,43 @@ graph TB
 ```typescript
 /** プロジェクト全体（プロジェクトファイルのルート） */
 interface Project {
-  schemaVersion: number;         // project.json のスキーマ版数（v1 = 1）。互換性判定に使う
-  id: string;                    // UUID
-  sourcePdf: string;             // プロジェクト内に取り込んだ元PDFの相対パス
-  pages: PageInfo[];             // ページごとの画像サイズ・スケール係数
-  score: ScoreModel | null;      // OMR＋照合の結果（OMR未実行ならnull）
+  schemaVersion: number; // project.json のスキーマ版数（v1 = 1）。互換性判定に使う
+  id: string; // UUID
+  sourcePdf: string; // プロジェクト内に取り込んだ元PDFの相対パス
+  pages: PageInfo[]; // ページごとの画像サイズ・スケール係数
+  score: ScoreModel | null; // OMR＋照合の結果（OMR未実行ならnull）
   confirmation: ConfirmationState; // 音部記号・調号の確認状態
-  keyRegions: KeyRegion[];       // 調文脈（自動検出＋ユーザー指定の転調点）
-  annotations: Annotation[];     // 注釈レイヤー（自動生成＋手動）
+  keyRegions: KeyRegion[]; // 調文脈（自動検出＋ユーザー指定の転調点）
+  annotations: Annotation[]; // 注釈レイヤー（自動生成＋手動）
   settings: ProjectSettings;
-  createdAt: string;             // ISO 8601
+  createdAt: string; // ISO 8601
   updatedAt: string;
 }
 
 interface PageInfo {
-  pageIndex: number;             // 0始まり
-  widthPt: number;               // PDFポイント
+  pageIndex: number; // 0始まり
+  widthPt: number; // PDFポイント
   heightPt: number;
-  omrImageWidthPx: number;       // .omr の座標基準（300dpi画像）
-  omrImageHeightPx: number;      // ポイント座標へは線形スケールで変換
+  omrImageWidthPx: number; // .omr の座標基準（300dpi画像）
+  omrImageHeightPx: number; // ポイント座標へは線形スケールで変換
 }
 
 /** 認識済み楽譜の論理＋物理モデル */
 interface ScoreModel {
-  parts: Part[];                 // 例: Soprano/Alto/Tenor/Bass
-  systems: SystemInfo[];         // ページ内の段。誤分割の統合結果を反映
-  measures: Measure[];           // パート×小節
+  parts: Part[]; // 例: Soprano/Alto/Tenor/Bass
+  systems: SystemInfo[]; // ページ内の段。誤分割の統合結果を反映
+  measures: Measure[]; // パート×小節
 }
 
 interface Part {
-  id: string;                    // MusicXML part id（= book.xml logical-id）
+  id: string; // MusicXML part id（= book.xml logical-id）
   name: string;
-  staves: StaffRef[];            // 譜表→パート対応（sheet XML の part id で解決）
+  staves: StaffRef[]; // 譜表→パート対応（sheet XML の part id で解決）
 }
 
 interface Measure {
   partId: string;
-  index: number;                 // 曲頭からの通し小節番号
+  index: number; // 曲頭からの通し小節番号
   status: 'matched' | 'skipped'; // 照合結果。skipped は修正UIの対象
   notes: NoteEvent[];
 }
@@ -113,57 +113,71 @@ interface NoteEvent {
   id: string;
   partId: string;
   measureIndex: number;
-  pitch: Pitch;                  // MusicXML由来
-  head: PageAnchor;              // .omr由来の符頭座標（300dpi px）
-  solfa: SolfaDegree | null;     // 計算結果。休符等はnull
+  pitch: Pitch; // MusicXML由来
+  head: PageAnchor; // .omr由来の符頭座標（300dpi px）
+  solfa: SolfaDegree | null; // 計算結果。休符等はnull
 }
 
 interface Pitch {
-  step: 'A'|'B'|'C'|'D'|'E'|'F'|'G';
-  alter: number;                 // -2〜+2（記譜上の変位。調号込みの実音）
+  step: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'G';
+  alter: number; // -2〜+2（記譜上の変位。調号込みの実音）
   octave: number;
 }
 
 interface PageAnchor {
   pageIndex: number;
-  x: number;                     // .omr 300dpi画像ピクセル
+  x: number; // .omr 300dpi画像ピクセル
   y: number;
 }
 
 /** 階名の内部表現（表示文字列はSolfaEngineが導出） */
 interface SolfaDegree {
-  degree: 1|2|3|4|5|6|7;         // 現在の「do」を1とするダイアトニック度数
-  alteration: number;            // ダイアトニック音からの半音変位。通常 -1/0/+1、重変化で ±2（±2は文字列化時にフォールバック表示）
+  degree: 1 | 2 | 3 | 4 | 5 | 6 | 7; // 現在の「do」を1とするダイアトニック度数
+  alteration: number; // ダイアトニック音からの半音変位。通常 -1/0/+1、重変化で ±2（±2は文字列化時にフォールバック表示）
 }
 
 /** 調文脈。転調点で区切られた区間ごとに1つ */
 interface KeyRegion {
   id: string;
-  start: ScorePosition;          // この調が始まる位置
-  tonicStep: Pitch['step'];      // 主音
+  start: ScorePosition; // この調が始まる位置
+  tonicStep: Pitch['step']; // 主音
   tonicAlter: number;
   mode: 'major' | 'minor';
-  source: 'auto' | 'user';       // 自動検出（調号変更）かユーザー指定か
+  source: 'auto' | 'user'; // 自動検出（調号変更）かユーザー指定か
 }
 
 interface ScorePosition {
   measureIndex: number;
-  offset: number;                // 小節内オフセット（divisions基準）。小節頭は0
+  offset: number; // 小節内オフセット（divisions基準）。小節頭は0
 }
 
 /** 音部記号・調号の確認画面（F-2）の状態 */
 interface ConfirmationState {
   items: ConfirmationItem[];
-  completedAt: string | null;    // 未完了なら階名生成に進めない
+  completedAt: string | null; // 未完了なら階名生成に進めない
 }
 
+/**
+ * 音部記号の確認項目
+ *
+ * **譜表 1 段につき 1 行ではなく、(パート, 検出音部記号) のグループにつき 1 行**。
+ * 実データの誤検出はパート単位で系統的に起きる（divisi の P6 は 35 段が一括で ALTO 誤検出）
+ * ため、この単位に畳んでも訂正能力を失わない。実測: Victoria 36 譜表 → 5 行 /
+ * divisi 288 譜表 → 17 行。畳まないと「1曲5分以内」（PRD F-2）を満たせない。
+ *
+ * `kind` を 'clef' に限定しているのは、調号は譜表ではなく小節区間の性質であり
+ * `KeyRegionDecision` が、譜表構造は `StructureDecision` が担うため
+ * （1 つの訂正概念に型が 1 つだけ対応する状態を保つ）。
+ */
 interface ConfirmationItem {
-  id: string;
-  kind: 'clef' | 'keySignature' | 'systemStructure';
-  staffRef: StaffRef;
-  detected: string;              // 検出値（例: 'G-clef-8vb', '1 sharp'）
-  corrected: string | null;      // ユーザー修正値。nullなら検出値を採用
+  id: string; // `clef-<partId>-<detected>` 形式（決定的。再解析後も同じ行に訂正を戻せる）
+  kind: 'clef';
+  partId: string | null;
+  detected: string; // 検出値（例: 'ALTO', 'TREBLE_DOWN_8'）。未検出は 'UNKNOWN'
+  corrected: string | null; // ユーザー修正値。nullなら検出値を採用
+  staffRefs: StaffRef[]; // グループに属する全譜表。訂正はこの全てに適用される
   clipRect: PageAnchor & { width: number; height: number }; // 元画像の切り抜き範囲
+  mismatchCount: number; // 音高クロスチェック不一致の件数（そのまま誤検出の疑わしさ）
 }
 
 interface StaffRef {
@@ -176,27 +190,30 @@ interface StaffRef {
 /** 注釈（出力PDFに描画される単位） */
 interface Annotation {
   id: string;
-  layer: 'solfa' | 'chordRole';  // chordRole は v2
-  anchor: PageAnchor;            // 描画位置（衝突回避で調整後の位置）
-  noteId: string | null;         // 自動生成注釈は元音符を参照。手動追加はnull
-  text: string | null;           // 手動上書き文字列。nullなら solfa から導出
+  layer: 'solfa' | 'chordRole'; // chordRole は v2
+  anchor: PageAnchor; // 描画位置（衝突回避で調整後の位置）
+  noteId: string | null; // 自動生成注釈は元音符を参照。手動追加はnull
+  text: string | null; // 手動上書き文字列。nullなら solfa から導出
   origin: 'auto' | 'manual';
-  deleted: boolean;              // 自動生成注釈の非表示化（再生成で復活させない）
+  deleted: boolean; // 自動生成注釈の非表示化（再生成で復活させない）
 }
 
 /** 設定（PRD F-3の決定事項） */
 interface ProjectSettings {
   syllableSystem: 'kodaly' | 'tonicSolfa'; // デフォルト: 'kodaly'
-  minorBasis: 'la' | 'do';                 // デフォルト: 'la'
-  diatonicColor: string;         // デフォルト: 濃赤
-  chromaticColor: string;        // デフォルト: 紫
-  fontFamily: string;            // 小サイズ判読性を選定基準とする（PRD F-4）
+  minorBasis: 'la' | 'do'; // デフォルト: 'la'
+  diatonicColor: string; // デフォルト: 濃赤
+  chromaticColor: string; // デフォルト: 紫
+  fontFamily: string; // 小サイズ判読性を選定基準とする（PRD F-4）
   fontSizePt: number;
 }
 ```
 
 **制約**:
+
 - `ConfirmationState.completedAt` が null の間は階名生成・PDF出力に進めない（F-2の受け入れ条件）
+- **承認後に訂正を入れると `completedAt` は null に戻る**。承認は「この解析結果を人が確認した」
+  という記録であり、訂正後の解析結果は別物のため（設定変更は「何を確認したか」を変えないため対象外）
 - `KeyRegion` は `start` 昇順で重複なし。先頭要素は曲頭（measureIndex=0, offset=0）に必ず存在する
   （`KeyRegionBuilder` が曲頭の既定を必ず置いて担保し、`SolfaEngine.computeDegrees` が契約として検証する）
 - `Annotation.noteId` を持つ注釈は、OMR再実行時に音符IDの再照合で引き継ぐ。照合できない場合は孤立注釈として修正UIに提示する
@@ -221,10 +238,12 @@ erDiagram
 ### OmrRunner
 
 **責務**:
+
 - 同梱 Audiveris のヘッドレス子プロセス実行と進捗通知（F-1）
 - MusicXML・.omr（zip内sheet XML）・book.xml の取得と展開
 
 **インターフェース**:
+
 ```typescript
 class OmrRunner {
   // 子プロセス起動（spawn）は DI 可能。既定は node:child_process.spawn を shell:false で使用
@@ -235,6 +254,7 @@ class OmrRunner {
 ```
 
 **実装の構成**（`src/main/omr/`）:
+
 - `OmrRunner.ts`: オーケストレーション（副作用の入口）。一時ディレクトリ作成→spawn→stdout 行を
   `parseProgressLine` で進捗化→正常終了後に出力を収集→`assembleArtifacts`→後片付け。
 - `audiverisCommand.ts`（純粋）: `buildAudiverisArgs`（引数配列。`--` 以降に PDF パスを分離）/
@@ -255,11 +275,13 @@ class OmrRunner {
 ### BookStructureResolver
 
 **責務**:
+
 - book.xml の movement 分割情報と sheet XML から、インチピット等による譜表構造の誤分割を検出する（プロトタイプで実際に発生した系統的エラー。機械的に復元できることを検証済み）
 - 復元候補（システムの統合・譜表→パート割当）を生成し、StructureConfirm 画面の表示材料を提供する
 - ユーザーの承認・修正結果を適用した確定構造（`ResolvedStructure`）を出力する
 
 **インターフェース**:
+
 ```typescript
 class BookStructureResolver {
   // 構造上の問題の検出（例外は投げず StructureIssue[] を返す）
@@ -289,14 +311,14 @@ skipped 135・照合音符 3500 へ改善した（`tests/fixtures/divisi/README.
 
 **検出する StructureIssue**:
 
-| kind | 内容 |
-| --- | --- |
-| `movementCountMismatch` | book.xml の movement 分割数と MusicXML の数が違う |
-| `pageCountMismatch` | movement のページ数が MusicXML のページ数と違う |
-| `systemCountMismatch` | ページ内の段数が MusicXML の段数と違う |
-| `systemMeasureCountMismatch` | 段の stack 数が MusicXML の小節数と違う（MusicXML 側を採用） |
+| kind                           | 内容                                                         |
+| ------------------------------ | ------------------------------------------------------------ |
+| `movementCountMismatch`        | book.xml の movement 分割数と MusicXML の数が違う            |
+| `pageCountMismatch`            | movement のページ数が MusicXML のページ数と違う              |
+| `systemCountMismatch`          | ページ内の段数が MusicXML の段数と違う                       |
+| `systemMeasureCountMismatch`   | 段の stack 数が MusicXML の小節数と違う（MusicXML 側を採用） |
 | `inconsistentSystemStaffCount` | 同一ページ内で段ごとの譜表数が不揃い（段検出が疑わしい警告） |
-| `pageCorrespondenceMismatch` | book.xml のページ数と sheet XML を持つページ数が違う（下記） |
+| `pageCorrespondenceMismatch`   | book.xml のページ数と sheet XML を持つページ数が違う（下記） |
 
 > **ページ対応が壊れている場合**: `OmrArtifacts.pages` は sheet XML を持つページだけを連結した
 > 配列のため、book.xml のページ数と一致するときに限り「k 番目 ↔ k 番目」の対応が成立する。
@@ -313,14 +335,20 @@ skipped 135・照合音符 3500 へ改善した（`tests/fixtures/divisi/README.
 ### ScoreModelBuilder
 
 **責務**:
+
 - MusicXML（論理）と .omr（座標）の照合による `ScoreModel` 構築。譜表構造は BookStructureResolver の確定結果（`ResolvedStructure`）を前提とする
 - 小節単位の音符数突き合わせ。不一致小節は `skipped` として隔離し、他小節へ波及させない（プロトタイプで実証済みの方式）
 - 音高のクロスチェック: .omr の譜表位置＋音部記号から逆算した音名と MusicXML の音名を照合し、不一致を確認画面の材料にする
 
 **インターフェース**:
+
 ```typescript
 class ScoreModelBuilder {
-  build(artifacts: OmrArtifacts, structure: ResolvedStructure, confirmation: ConfirmationState): BuildResult;
+  build(
+    artifacts: OmrArtifacts,
+    structure: ResolvedStructure,
+    confirmation: ConfirmationState,
+  ): BuildResult;
   // BuildResult = { score: ScoreModel; issues: BuildIssue[] }
 }
 ```
@@ -330,21 +358,38 @@ class ScoreModelBuilder {
 ### KeyRegionBuilder
 
 **責務**:
+
 - MusicXML の調号宣言（`<key><fifths>`）から調文脈（`KeyRegion[]`）を自動生成
 - movement ローカルの小節番号を確定構造のアンカー経由で通し小節番号へ変換
 - パートごとに調号を持続計算し、小節単位の多数決で 1 つに決める
 - 検出した問題は例外にせず `KeyRegionIssue` として部分結果と共に返す
+- ユーザー訂正（`decisions`）は**自動生成が終わってから**適用する（生成中に混ぜない）。
+  旋法だけの訂正は調号を保ったまま平行調へ移し、`source` を `'user'` にする。
+  訂正の結果として隣接区間が同じ調になったらマージする（存在しない転調点を描かせない）。
+  既存区間の開始位置と一致しない訂正は `unmatchedKeyDecision` として報告する
+  （区間の新規挿入は F-6 の担当であり、本コンポーネントは既存区間の訂正しか行わない）
 
 **インターフェース**:
+
 ```typescript
 class KeyRegionBuilder {
-  build(artifacts: OmrArtifacts, structure: ResolvedStructure): KeyRegionBuildResult;
+  build(
+    artifacts: OmrArtifacts,
+    structure: ResolvedStructure,
+    decisions?: readonly KeyRegionDecision[], // ClefKeyConfirm での旋法・調号の訂正
+  ): KeyRegionBuildResult;
   // KeyRegionBuildResult = { keyRegions: KeyRegion[]; issues: KeyRegionIssue[] }
+  // KeyRegionDecision = { measureIndex: number; fifths?: number; mode?: 'major' | 'minor' }
 }
 
 type KeyRegionIssue =
   // 同じ小節でパートごとに有効な調号が食い違う（多数決で 1 つに決めた）
-  | { kind: 'keySignatureConflict'; measureIndex: number; fifthsByPart: Record<string, number>; adopted: number }
+  | {
+      kind: 'keySignatureConflict';
+      measureIndex: number;
+      fifthsByPart: Record<string, number>;
+      adopted: number;
+    }
   // 五度圏の範囲（-7〜+7）を外れた調号。その宣言は無視し直前の調号を維持する
   | { kind: 'unsupportedKeySignature'; measureIndex: number; partId: string; fifths: number };
 ```
@@ -363,9 +408,20 @@ type KeyRegionIssue =
 **実データの制約（重要）**:
 Audiveris は `<key><fifths>` のみを出力し **`<mode>` を書かない**（Victoria・divisi 両フィクスチャの
 全宣言で確認）。このため**長調/短調の自動判別はできず**、自動生成される `KeyRegion` は全て長調になる。
-結果として **La 基準の移動ド（本アプリの主目的の1つ）は自動では効かない**（長調では La 基準と
-Do 基準で do の位置が変わらないため）。短調として読ませるにはユーザー指定が必要であり、
-**ClefKeyConfirm（F-2）で調の長短を指定できるようにすることが必須要件**となる。
+この影響は**短調基準（`minorBasis`）によって異なる**。実装時の検証（Phase 4）で判明した:
+
+- **La 基準**: 影響を受けない。La 基準は短調の主音を La と数える＝ do を「主音の短3度上」に置くため、
+  do の位置は平行長調の主音と一致する。自動判定の「常に長調（＝平行長調）」のままでも
+  階名は正しく、実際に統合テストで両者の階名が完全一致することを確認した
+- **Do 基準**: 影響を受ける。短調の主音を Do と数えるため、平行長調として解釈されると
+  階名が 5 度分ずれる
+
+したがって**旋法の指定が必須なのは Do 基準のユーザー**である。とはいえ調区間の表示（「イ短調」と
+出るか「ハ長調」と出るか）と v2 の和音役割分析はどちらの基準でも旋法を要求するため、
+**ClefKeyConfirm（F-2）で調の長短を指定できるようにすること**自体は引き続き必要である。
+
+> 補足: 当初は「La 基準の移動ドが自動では効かない」と記述していたが、上記のとおり不正確だった。
+> Phase 4 の実装検証で `SolfaEngine.resolveDo` を追って判明し、記述を訂正した。
 
 また実データでは曲頭に調号宣言がない（Victoria は通し 28 小節目、divisi は 48 小節目が初出）ため、
 曲頭には既定のハ長調を必ず置く（`KeyRegion` の「先頭要素は曲頭に必ず存在する」制約の担保）。
@@ -375,13 +431,19 @@ Do 基準で do の位置が変わらないため）。短調として読ませ�
 ### SolfaEngine
 
 **責務**:
+
 - `KeyRegion` 列から各音符の調文脈を解決し、`SolfaDegree`（度数＋変位）を計算
 - 設定（音節体系×短調基準）に応じた表示文字列の導出
 
 **インターフェース**:
+
 ```typescript
 class SolfaEngine {
-  computeDegrees(score: ScoreModel, keyRegions: readonly KeyRegion[], basis: MinorBasis): Map<string, SolfaDegree>;
+  computeDegrees(
+    score: ScoreModel,
+    keyRegions: readonly KeyRegion[],
+    basis: MinorBasis,
+  ): Map<string, SolfaDegree>;
   toSyllable(degree: SolfaDegree, settings: ProjectSettings): string;
 }
 
@@ -407,30 +469,34 @@ function applyDegrees(score: ScoreModel, degrees: ReadonlyMap<string, SolfaDegre
 ### AnnotationManager
 
 **責務**:
+
 - 階名計算結果からの注釈自動生成（配置の衝突回避を含む）
 - 手動注釈の追加・編集・削除、自動注釈の上書き（F-5）
 - 転調指定変更時の再計算と、手動修正の保全
 
 **インターフェース**:
+
 ```typescript
 class AnnotationManager {
   regenerate(score: ScoreModel, degrees: Map<string, SolfaDegree>): void; // 手動注釈は保持
   add(anchor: PageAnchor, text: string): Annotation;
   update(id: string, patch: Partial<Annotation>): void;
   remove(id: string): void;
-  listSkippedMeasures(): Measure[];  // 修正UIのジャンプ先一覧
+  listSkippedMeasures(): Measure[]; // 修正UIのジャンプ先一覧
 }
 ```
 
 ### OverlayRenderer
 
 **責務**:
+
 - 元PDFの版面を変更せず、注釈を重ね書きしたPDFのバイト列を生成（F-4）
 - .omr ピクセル座標→PDFポイント座標の線形変換
 - モノクロ印刷でも判読できるスタイル（色＋書体差）の適用
 - ファイルへの書き込みは行わない（domain の純粋性維持）。IPCハンドラが生成結果を storage の書き出し処理（`writeExportPdf`）へ渡して編成する
 
 **インターフェース**:
+
 ```typescript
 class OverlayRenderer {
   render(project: Project): Promise<Uint8Array>;
@@ -442,23 +508,47 @@ class OverlayRenderer {
 ### ProjectStore
 
 **責務**:
+
 - プロジェクトファイル（.solfaproj）の保存・読込・自動保存（信頼性要件: 修正作業の永続化）
 
 **インターフェース**:
+
 ```typescript
 class ProjectStore {
-  create(sourcePdfPath: string): Promise<Project>;
-  save(project: Project): Promise<void>;   // 編集操作ごとに自動保存
-  load(path: string): Promise<Project>;
+  create(): Project; // 引数を取らない（下記参照）
+  readSourcePdf(sourcePdfPath: string): Promise<Uint8Array>;
+  save(
+    path: string,
+    project: Project,
+    sourcePdf: Uint8Array,
+    omr: OmrRawArtifacts,
+  ): Promise<Project>;
+  load(path: string): Promise<ProjectArchive>;
+  // ProjectArchive = { project: Project; sourcePdf: Uint8Array; omr: OmrRawArtifacts }
 }
 ```
+
+**設計上の決定**:
+
+- `create()` は元PDFのパスを取らない。`Project.sourcePdf` はプロジェクト内の**固定相対パス**
+  （`source.pdf`）であり、取り込み元の絶対パスを持つとファイルを移動・共有した先の環境で
+  無効な参照になるため
+- `save` は原子的に書く（**保存先と同じディレクトリ**の一時ファイル → リネーム。OS のテンポラリ領域に
+  置くとクロスデバイスでリネームが失敗する）。保存前に直前版を `.bak1..3` へ世代退避し、
+  **退避後に最終リネームが失敗した場合は `.bak1` を本体の位置へ戻す**
+  （戻さないと「保存に失敗したらファイルが消えた」状態になる）
+- 自動保存は編成レイヤー（`ProjectSession`）が 300ms デバウンスで予約する。保存先が未確定の間
+  （PDF 取り込み直後）は書けないため予約しない。**ファイルを開いた直後の解析では保存しない**
+  （開いただけでバックアップ世代を 1 つ消費してしまうため）
 
 ### writeExportPdf（storage）
 
 **責務**:
+
 - OverlayRenderer が生成した注釈付きPDFのバイト列を、ユーザー指定パスへ原子的に書き出す（一時ファイルに書いてからリネームし、書き込み途中の失敗で不完全なPDFを残さない。エラーハンドリング表「PDF出力失敗」に対応）
 
 **インターフェース**:
+
 ```typescript
 function writeExportPdf(outPath: string, pdfBytes: Uint8Array): Promise<void>;
 ```
@@ -511,24 +601,25 @@ function expectedAlterInDoMajor(doPitch, d):
 
 #### ステップ4: 文字列化（表示時のみ）
 
-| 度数 | 変位0 (コダーイ式) | +1 | -1 | 変位0 (Tonic sol-fa略記) | +1 | -1 |
-|---|---|---|---|---|---|---|
-| 1 | do | di | — | d | de | — |
-| 2 | re | ri | ra | r | re | ra |
-| 3 | mi | — | me | m | — | ma |
-| 4 | fa | fi | — | f | fe | — |
-| 5 | so | si | se | s | se | — |
-| 6 | la | li | le | l | le | — |
-| 7 | ti | — | te | t | — | ta |
+| 度数 | 変位0 (コダーイ式) | +1  | -1  | 変位0 (Tonic sol-fa略記) | +1  | -1  |
+| ---- | ------------------ | --- | --- | ------------------------ | --- | --- |
+| 1    | do                 | di  | —   | d                        | de  | —   |
+| 2    | re                 | ri  | ra  | r                        | re  | ra  |
+| 3    | mi                 | —   | me  | m                        | —   | ma  |
+| 4    | fa                 | fi  | —   | f                        | fe  | —   |
+| 5    | so                 | si  | se  | s                        | se  | —   |
+| 6    | la                 | li  | le  | l                        | le  | —   |
+| 7    | ti                 | —   | te  | t                        | —   | ta  |
 
 - 各列はそれぞれの流儀の規則に厳密に従う: コダーイ式は幹音の7度を **ti** と綴り、上げは母音 i（di, ri, fi, si, li）、下げは ra/me/se/le/**te**。Tonic sol-fa（Curwen式）は幹音の7度を te（略記 t）と綴り、上げは母音 e（de, re, fe, se, le）、下げは母音 a（ra, ma, **ta**）。同じ「下げた7度」がコダーイ式では te、Tonic sol-fa 略記では ta になる点に注意（両者を混用しない）
 - Do基準短調では自然短音階の3・6・7度が変位-1として me/le/te で現れる。La基準では同じ音が度数1・4・5（do/fa/so）の変位0として現れ、表全体は共通に使える（2軸直交の担保）。例: イ短調の C/F/G は、Do基準では me/le/te、La基準では平行長調ハ長調の do/fa/so
 - 表の空欄・稀な変位（重変化含む）は「異名同音に読み替えず、変位記号付き文字列（例: `do♯♯`）」でフォールバック表示する
 
 **実装例**:
+
 ```typescript
 function computeDegree(note: Pitch, region: KeyRegion, basis: 'la' | 'do'): SolfaDegree {
-  const doPitch = resolveDo(region, basis);           // ステップ1
+  const doPitch = resolveDo(region, basis); // ステップ1
   const degree = letterDistance(doPitch.step, note.step); // ステップ2
   const alteration = note.alter - expectedAlterInDoMajor(doPitch, degree); // ステップ3
   return { degree, alteration };
@@ -548,9 +639,9 @@ function computeDegree(note: Pitch, region: KeyRegion, basis: 'la' | 'do'): Solf
 （`firstMeasureIndex` + stack 添字）から引く。段の `measureCount` と .omr の stack 数は食い違い得るため、
 両方向を issue にする（いずれも段の中で閉じ、後続段の番号には影響しない）:
 
-| 状況 | 扱い |
-| --- | --- |
-| stack はあるが対応する論理小節がない | `measureOutOfRange`（その stack を捨てる） |
+| 状況                                  | 扱い                                                    |
+| ------------------------------------- | ------------------------------------------------------- |
+| stack はあるが対応する論理小節がない  | `measureOutOfRange`（その stack を捨てる）              |
 | 論理小節はあるが対応する stack がない | `measureNotDetected` ＋ 当該小節を `skipped` として残す |
 
 後者を `skipped` として残すのは、黙って小節を欠落させると `SystemInfo.measureCount` が
@@ -616,6 +707,7 @@ sequenceDiagram
 ```
 
 **フロー説明**:
+
 1. OMRは長時間処理のため進捗を表示し、キャンセル可能とする
 2. 確認画面の承認（`completedAt` セット）が階名生成のゲートになる
 3. 転調点の指定・修正（F-6）は階名の再計算を引き起こすが、手動注釈と削除フラグは保全される
@@ -646,42 +738,72 @@ stateDiagram-v2
 
 ### StructureConfirm 画面
 
-| 項目 | 説明 |
-|------|------|
-| ページサムネイル | 検出されたシステム・譜表の境界をオーバーレイ表示 |
-| 構造ツリー | movement／システム／譜表／パート割当の一覧（BookStructureResolver の検出結果） |
-| 誤分割の警告 | インチピット等による分割疑い箇所を、復元候補付きで提示 |
+| 項目             | 説明                                                                           |
+| ---------------- | ------------------------------------------------------------------------------ |
+| ページサムネイル | 検出されたシステム・譜表の境界をオーバーレイ表示                               |
+| 構造ツリー       | movement／システム／譜表／パート割当の一覧（BookStructureResolver の検出結果） |
+| 誤分割の警告     | インチピット等による分割疑い箇所を、復元候補付きで提示                         |
 
 **操作フロー**:
+
 1. 誤分割の警告を確認し、復元候補を承認する（または手動でシステムを統合・分離する）
 2. 譜表→パートの割当を確認・修正する
 3. 「構造を承認」で ClefKeyConfirm へ進む
 
 ### ClefKeyConfirm 画面（F-2 の中心画面）
 
-| 項目 | 説明 |
-|------|------|
-| 確認テーブル | 譜表ごとに1行: ページ／段／譜表／パート／音部記号／調号 |
-| 元画像切り抜き | 各行に `clipRect` の切り抜き画像を並置し、検出値と目視照合できるようにする |
-| 修正コントロール | 音部記号（G / G-8vb / F / C 等）・調号（♯♭の種類と数）のドロップダウン |
-| 警告表示 | 音高クロスチェック不一致のある譜表を強調し、一覧の先頭に出す |
+**2 つの表に分ける**。音部記号は譜表の性質、調は小節区間の性質であり、1 つの表に混ぜると
+行の意味が定まらない（当初計画は単一テーブルだったが、実装時にこの理由で分割した）。
+
+**表1: 音部記号**（`ConfirmationItem` 1 件につき 1 行 ＝ パート×検出値のグループ）
+
+| 項目             | 説明                                                                          |
+| ---------------- | ----------------------------------------------------------------------------- |
+| パート／検出結果 | グループのキー。`UNKNOWN` は音部記号を検出できなかった譜表                    |
+| 対象の段数       | `staffRefs.length`。1 行の訂正が何段に効くかを示す（divisi の P6 は 35 段）   |
+| 音高の不一致     | `mismatchCount`。そのまま誤検出の疑わしさ。降順に並べ、上から直せば効果が最大 |
+| 修正コントロール | TREBLE / TREBLE_DOWN_8 / ALTO / TENOR / BASS のドロップダウン                 |
+
+同義の別名（`G_CLEF` / `F_CLEF`）は選択肢に出さない（同じ意味の項目が 2 つ並ぶと選べない）。
+
+**表2: 調**（`KeyRegion` 1 件につき 1 行）
+
+| 項目       | 説明                                                         |
+| ---------- | ------------------------------------------------------------ |
+| 開始小節   | 区間の開始位置                                               |
+| 判定       | 主音と長短                                                   |
+| 出所       | `source`（自動判定 / 指定済み）                              |
+| 旋法の指定 | 長調 / 短調のドロップダウン → `KeyRegionDecision` を生成する |
 
 **操作フロー**:
-1. 一覧を上から順に切り抜き画像と照合し、誤検出は行内のドロップダウンで修正する（特にテノールの G-8vb は重点確認）
-2. 全行を確認済みにする（行単位のチェック。問題ない行の一括チェックも可）
-3. 「承認して階名を生成」で `completedAt` がセットされ、Editor へ進む
 
-- 分量の目安: 1曲（10ページ以内）で数十行。**5分以内に完了できる**ことを受け入れ条件とする（PRD F-2）
+1. 音部記号の表を不一致件数の多い順に確認し、誤検出はドロップダウンで訂正する
+   （特にテノールの `TREBLE_DOWN_8` は重点確認）
+2. 短調の曲は調の表で旋法を指定する（自動判定は必ず長調になるため。後述の制約参照）
+3. 「確認を完了する」で `completedAt` がセットされ、プロジェクトが保存される
+
+- 訂正のたびに解析パイプライン全体を頭から流し直し、結果を画面へ反映する（差分更新はしない）
+- **一度提示した行の並びはセッション中固定する**。訂正が効くと不一致件数が 0 になり、
+  素の生成順（件数の降順）では今直した行が末尾へ落ちて下の行が繰り上がってしまう。
+  これでは「上から順に直す」導線が成立しない（新しく現れた項目だけ末尾に足す）
+- 不一致が 0 件の行は確認対象に数えない（全行を警告にすると導線が成立しない）
+- 不一致が残っていても承認は妨げない（部分失敗で作業を止めない）
+- 分量の目安: 実測で Victoria 5 行 / divisi 17 行。**5分以内に完了できる**ことを受け入れ条件とする（PRD F-2）
+
+**この画面の効果（実測）**: divisi 実フィクスチャで ALTO 誤検出 41 段を TREBLE へ訂正すると、
+音高クロスチェックの不一致が **569 → 111 件**（P6 402→0 / P4 38→0）に減る。
+残る 111 件は音部記号の誤検出ではないためこの画面では解決しない。
+`tests/integration/pipeline/confirmation-effect.test.ts` が回帰として固定している。
 
 ### Editor画面の表示
 
-| 項目 | 説明 | フォーマット |
-|------|------|-------------|
-| 楽譜ページ | 元PDFのレンダリング＋注釈オーバーレイ | PDF.js キャンバス |
-| 階名注釈 | 幹音/半音変化を色分け | 幹音=濃赤・変化音=紫（設定変更可） |
-| スキップ小節 | 階名が欠落している小節 | 一覧パネル＋楽譜上のハイライト。クリックでジャンプ |
-| 転調点 | KeyRegion の境界 | 小節上のマーカー（auto=グレー、user=青） |
-| 孤立注釈・配置警告 | 再照合失敗・衝突回避失敗 | 警告アイコン |
+| 項目               | 説明                                  | フォーマット                                       |
+| ------------------ | ------------------------------------- | -------------------------------------------------- |
+| 楽譜ページ         | 元PDFのレンダリング＋注釈オーバーレイ | PDF.js キャンバス                                  |
+| 階名注釈           | 幹音/半音変化を色分け                 | 幹音=濃赤・変化音=紫（設定変更可）                 |
+| スキップ小節       | 階名が欠落している小節                | 一覧パネル＋楽譜上のハイライト。クリックでジャンプ |
+| 転調点             | KeyRegion の境界                      | 小節上のマーカー（auto=グレー、user=青）           |
+| 孤立注釈・配置警告 | 再照合失敗・衝突回避失敗              | 警告アイコン                                       |
 
 ### 転調点の指定・修正の操作フロー（F-6）
 
@@ -700,6 +822,7 @@ stateDiagram-v2
 ## ファイル構造
 
 **プロジェクトファイル（.solfaproj = zip）**:
+
 ```
 score.solfaproj/
 ├── project.json        # Project エンティティ（annotations, keyRegions, settings 含む）
@@ -730,15 +853,15 @@ score.solfaproj/
 
 ### エラーの分類
 
-| エラー種別 | 処理 | ユーザーへの表示 |
-|-----------|------|-----------------|
-| PDFが開けない/画像化できない | 処理を中断 | 「PDFを読み込めませんでした。スキャン画像のPDFか確認してください」 |
-| OMRの実行失敗（プロセス異常終了） | ログを保全し中断 | 「楽譜の認識に失敗しました」＋ログ表示 |
-| 一部ページのみ認識失敗 | 成功ページだけで続行 | 失敗ページを一覧表示し、部分的な結果を提供（全体を失敗にしない） |
-| 小節照合の不一致 | 当該小節を skipped として続行 | Editor のスキップ小節一覧に表示 |
-| 音高クロスチェック不一致 | 該当音に警告フラグ | Editor 上に警告アイコン（音部記号誤りの兆候として確認画面へ誘導） |
-| プロジェクト保存失敗（ディスク等） | リトライ→失敗なら編集を継続しつつ警告 | 「保存に失敗しました」＋手動保存の案内 |
-| PDF出力失敗 | 中断（プロジェクトは無傷） | 「出力に失敗しました」＋原因（書込権限等） |
+| エラー種別                         | 処理                                  | ユーザーへの表示                                                   |
+| ---------------------------------- | ------------------------------------- | ------------------------------------------------------------------ |
+| PDFが開けない/画像化できない       | 処理を中断                            | 「PDFを読み込めませんでした。スキャン画像のPDFか確認してください」 |
+| OMRの実行失敗（プロセス異常終了）  | ログを保全し中断                      | 「楽譜の認識に失敗しました」＋ログ表示                             |
+| 一部ページのみ認識失敗             | 成功ページだけで続行                  | 失敗ページを一覧表示し、部分的な結果を提供（全体を失敗にしない）   |
+| 小節照合の不一致                   | 当該小節を skipped として続行         | Editor のスキップ小節一覧に表示                                    |
+| 音高クロスチェック不一致           | 該当音に警告フラグ                    | Editor 上に警告アイコン（音部記号誤りの兆候として確認画面へ誘導）  |
+| プロジェクト保存失敗（ディスク等） | リトライ→失敗なら編集を継続しつつ警告 | 「保存に失敗しました」＋手動保存の案内                             |
+| PDF出力失敗                        | 中断（プロジェクトは無傷）            | 「出力に失敗しました」＋原因（書込権限等）                         |
 
 ## テスト戦略
 

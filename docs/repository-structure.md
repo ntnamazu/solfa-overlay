@@ -47,14 +47,24 @@ project-root/
 **役割**: アプリのエントリポイント、ウィンドウ管理、IPCハンドラ登録、Audiveris 子プロセスの実行制御
 
 **配置ファイル**:
-- `index.ts`: エントリポイント（ウィンドウ生成・ライフサイクル）
-- `ipc/`: IPCハンドラ（チャネルごとに1ファイル。domain/storage への委譲のみ行う）
+
+- `index.ts`: エントリポイント（ウィンドウ生成・ライフサイクル・IPCハンドラ登録・ダイアログ）
+- `ProjectSession.ts`: 解析パイプラインの編成（構造解決 → 照合 → 確認項目 → 調文脈 → 階名）と
+  ユーザー判断の保持・自動保存の予約。判断ロジックは持たず、順序と状態だけを担う
+- `ipc/projectHandlers.ts`: セッション操作を `IpcResult` へ変換するハンドラ群。
+  Electron の `ipcMain` に依存しない純粋な関数として作り、登録だけを `index.ts` が行う
+  （Electron を起動せずにエラー分類を単体テストできるようにするため）
 - `omr/OmrRunner.ts`: Audiveris のヘッドレス実行・進捗通知・キャンセル
+- `omr/omrArchive.ts`: `.omr` / `.mxl` の展開と `OmrArtifacts` 組み立て
 
 **命名規則**:
-- クラスは PascalCase、IPCハンドラは `handle[Domain][Action].ts`（例: `handleProjectOpen.ts`）
+
+- クラスは PascalCase。IPCハンドラは操作単位の関数を 1 モジュールにまとめる
+  （当初計画の `handle[Domain][Action].ts`（1チャネル1ファイル）は、ハンドラの実体が
+  「セッションへの委譲＋結果変換」の 2〜3 行しかなくファイル分割の利得がないため取りやめた）
 
 **依存関係**:
+
 - 依存可能: `domain/`, `storage/`, `shared/`
 - 依存禁止: `renderer/`（通知は IPC イベント経由）
 
@@ -63,10 +73,12 @@ project-root/
 **役割**: contextBridge で Renderer に公開する型付き API の定義（セキュリティ境界）
 
 **配置ファイル**:
+
 - `index.ts`: 公開APIの組み立て
 - `api.ts`: 公開APIの型定義（renderer から `import type` で参照）
 
 **依存関係**:
+
 - 依存可能: `shared/`（型のみ）
 - 依存禁止: `domain/`, `storage/` の実体（IPC呼び出しに限定）
 
@@ -75,16 +87,19 @@ project-root/
 **役割**: 画面表示、ユーザー入力の受付、編集操作の発行（機能設計書の画面遷移を実装）
 
 **配置ファイル**:
+
 - `screens/`: 画面単位のコンポーネント（`Home/`, `OmrProgress/`, `StructureConfirm/`, `ClefKeyConfirm/`, `Editor/`, `Export/`）
 - `components/`: 画面横断の再利用コンポーネント
 - `viewer/`: PDF.js によるページ描画と注釈オーバーレイ表示
 - `state/`: UI状態管理（プロジェクトの編集状態はIPC越しにMainが正とする）
 
 **命名規則**:
+
 - コンポーネントは PascalCase（例: `SkippedMeasureList.tsx`）
 - 画面ディレクトリは画面遷移図の状態名と一致させる
 
 **依存関係**:
+
 - 依存可能: `preload/api.ts`（型のみ）、`shared/`（型・定数のみ）
 - 依存禁止: `main/`, `domain/`, `storage/`、Node.js API 全般
 
@@ -93,15 +108,18 @@ project-root/
 **役割**: OMR成果物の照合・階名計算・注釈管理・PDF合成というドメインロジック。**Electron 非依存の純粋 TypeScript** に保ち、ユニットテスト容易性を担保する
 
 **配置ファイル**:
+
 - `score/`: `ScoreModelBuilder.ts`, `MusicXmlParser.ts`, `OmrSheetParser.ts`, `BookStructureResolver.ts`（段ごとの小節番号アンカーの確定）, `structureAnchors.ts`（確定構造から通し小節番号の基準値を求める純粋関数。照合と調文脈生成が共有する）
 - `solfa/`: `SolfaEngine.ts`, `syllableTables.ts`（コダーイ式/Tonic sol-fa の文字列化表）, `KeyRegionBuilder.ts`（調号から調文脈を自動生成）, `keyTable.ts`（調号→主音の対応表）
 - `annotations/`: `AnnotationManager.ts`, `placementResolver.ts`（衝突回避）
 - `render/`: `OverlayRenderer.ts`, `coordinateTransform.ts`（.omr px → PDF pt）
 
 **命名規則**:
+
 - クラスファイルは PascalCase、関数・テーブルファイルは camelCase
 
 **依存関係**:
+
 - 依存可能: `shared/`
 - 依存禁止: `main/`, `renderer/`, `preload/`, `storage/`、Electron API
 
@@ -110,13 +128,20 @@ project-root/
 **役割**: `.solfaproj`（zip）の保存・読込・世代バックアップ・スキーマ検証、アプリ設定の永続化、出力PDF（注釈付きPDF）の原子的書き出し
 
 **配置ファイル**:
-- `ProjectStore.ts`: 保存・読込・自動保存・原子的書き込み
-- `projectSchema.ts`: Zod スキーマ（project.json の検証）
-- `backupRotation.ts`: .bak 3世代管理
+
+- `ProjectStore.ts`: 保存・読込・原子的書き込み・世代退避の実行
+- `projectArchive.ts`: `.solfaproj`（zip）の構成と読み書き
+- `projectSchema.ts`: Zod スキーマ（project.json の検証）と版数判定・マイグレーション経路
+- `zipArchive.ts`: zip の安全な読み書き。**パストラバーサル拒否をここに集約する**
+  （`.omr` / `.mxl` と `.solfaproj` はどちらも外部入力であり、片方だけ防御が強化されて
+  もう片方が取り残される事故を構造的に防ぐ。`main/omr/omrArchive.ts` もこれを使う）
+- `backupRotation.ts`: .bak 3世代管理（操作列を組み立てる純粋関数。副作用は ProjectStore 側）
+- `errors.ts`: `ProjectFileError`（`zip` / `schema` / `version` / `io` で回復手段を分ける）
 - `AppSettingsStore.ts`: アプリ設定（楽譜由来データを含まない）
 - `writeExportPdf.ts`: 注釈付きPDFの原子的書き出し（OverlayRenderer が生成したバイト列を IPCハンドラ経由で受け取る）
 
 **依存関係**:
+
 - 依存可能: `shared/`
 - 依存禁止: `domain/`, `renderer/`, `main/`（呼び出される側に徹する）
 
@@ -125,7 +150,13 @@ project-root/
 **役割**: 全レイヤーが参照する型定義・定数。**実装ロジックは置かない**
 
 **配置ファイル**:
-- `types/`: 機能設計書のエンティティ定義（`Project.ts`, `ScoreModel.ts`, `Annotation.ts`, `KeyRegion.ts` 等）
+
+- `types/`: 機能設計書のエンティティ定義（`Project.ts`, `ScoreModel.ts`, `Annotation.ts`, `KeyRegion.ts`,
+  `Confirmation.ts`, `StructureDecision.ts`, `OmrRawArtifacts.ts` 等）
+- `types/Issues.ts`: 解析が検出した問題（`StructureIssue` / `BuildIssue` / `KeyRegionIssue`）。
+  **domain ではなく shared に置く**: 確認画面へ IPC で送る表示用データであり `ipc/contract.ts` が
+  型として参照するため。shared は domain へ依存できない（ESLint で強制）。
+  domain 側は `export type` で再エクスポートし、利用側の import 先は変えていない
 - `constants/`: 既定値（`DEFAULT_SETTINGS.ts` 等）
 - `ipc/`: IPCチャネル名とペイロード型（Main/preload/Renderer で共有）
 
@@ -135,29 +166,42 @@ project-root/
 
 #### unit/
 
-**役割**: domain/・storage/ の純粋ロジックのユニットテスト
+**役割**: domain/・storage/・main/ の純粋ロジックのユニットテストと、renderer の画面テスト
 
 **構造**:
+
 ```
-tests/unit/
-├── domain/
-│   ├── score/
-│   │   └── structureAnchors.test.ts  # src と同構造をミラー
-│   └── solfa/
-│       ├── SolfaEngine.test.ts
-│       ├── KeyRegionBuilder.test.ts
-│       └── keyTable.test.ts
-└── storage/
-    └── backupRotation.test.ts    # storage も同様にミラー
+tests/
+├── setup/renderer.ts             # jsdom 環境の共通セットアップ（明示的な cleanup）
+├── unit/
+│   ├── domain/
+│   │   ├── score/                # src と同構造をミラー
+│   │   └── solfa/
+│   ├── storage/                  # storage も同様にミラー
+│   ├── main/
+│   │   ├── ProjectSession.test.ts
+│   │   ├── ipc/projectHandlers.test.ts
+│   │   └── omr/
+│   └── renderer/                 # 画面コンポーネント（jsdom）。拡張子は .test.tsx
+│       ├── fixtures.ts           # 画面テスト用の最小データ
+│       ├── App.test.tsx
+│       └── [画面名].test.tsx
+└── integration/
+    ├── pipeline/                 # パース→照合→階名の実データ回帰
+    └── project-file/             # .solfaproj の保存→読込の往復
 ```
 
-**命名規則**: `[テスト対象ファイル名].test.ts`
+**命名規則**: `[テスト対象ファイル名].test.ts`（画面は `.test.tsx`）
+
+**環境の分離**: `vitest.config.ts` の `projects` で node / renderer を分ける。
+renderer だけが jsdom を必要とし、node 側に持ち込むと純粋ロジックのテストが遅くなるため
 
 #### integration/
 
 **役割**: パイプライン全体の回帰テスト（アーキテクチャ設計書のテスト戦略に対応）
 
 **構造**:
+
 ```
 tests/integration/
 ├── pipeline/
@@ -175,6 +219,7 @@ tests/integration/
 **役割**: Playwright による Electron アプリの操作シナリオ
 
 **構造**:
+
 ```
 tests/e2e/
 ├── first-project/         # 新規プロジェクト→確認→修正→出力
@@ -199,12 +244,14 @@ tests/fixtures/
     ├── IMSLP175782.mxl       # 単一 movement
     └── README.md             # 実測値の根拠・真因（小節番号ドリフト）と残る限界の記録
 ```
+
 > Audiveris 出力（`.omr`/`.mxl`）は zip。`.omr` 内の生画像（`BINARY.png`）はリポジトリ肥大化
 > 防止のため除去した slim 版を置く（パーサが読むのは XML のみで回帰結果に影響しない）。
 
 ### docs/ (ドキュメントディレクトリ)
 
 **配置ドキュメント**:
+
 - `product-requirements.md`: プロダクト要求定義書
 - `functional-design.md`: 機能設計書
 - `architecture.md`: アーキテクチャ設計書
@@ -218,6 +265,7 @@ tests/fixtures/
 **役割**: 実行時に必要なバイナリ・アセット。electron-builder の extraResources として同梱
 
 **配置ファイル**:
+
 - `audiveris/`: Audiveris 一式（バージョン固定。更新は回帰手順必須）
 - `jre/<platform>/`: OS別の同梱JRE
 - `fonts/`: 階名描画用フォント（小サイズ判読性で選定したもの。再配布可能なライセンスに限る）
@@ -229,6 +277,7 @@ tests/fixtures/
 ### scripts/
 
 **配置ファイル**:
+
 - `fetch-resources.ts`: Audiveris/JRE の取得・配置（バージョン・ハッシュ固定）
 - `generate-fixtures.ts`: フィクスチャの再生成（Audiveris 更新時のみ実行）
 
@@ -236,32 +285,32 @@ tests/fixtures/
 
 ### ソースファイル
 
-| ファイル種別 | 配置先 | 命名規則 | 例 |
-|------------|--------|---------|-----|
-| ドメインクラス | src/domain/[機能]/ | PascalCase | `SolfaEngine.ts` |
-| 純関数・テーブル | src/domain/[機能]/ | camelCase | `placementResolver.ts` |
-| 画面コンポーネント | src/renderer/screens/[画面名]/ | PascalCase | `Editor/AnnotationLayer.tsx` |
-| IPCハンドラ | src/main/ipc/ | handle + 対象 + 動詞 | `handleProjectSave.ts` |
-| 型定義 | src/shared/types/ | PascalCase | `KeyRegion.ts` |
-| 定数 | src/shared/constants/ | UPPER_SNAKE_CASE | `DEFAULT_SETTINGS.ts` |
+| ファイル種別       | 配置先                         | 命名規則             | 例                           |
+| ------------------ | ------------------------------ | -------------------- | ---------------------------- |
+| ドメインクラス     | src/domain/[機能]/             | PascalCase           | `SolfaEngine.ts`             |
+| 純関数・テーブル   | src/domain/[機能]/             | camelCase            | `placementResolver.ts`       |
+| 画面コンポーネント | src/renderer/screens/[画面名]/ | PascalCase           | `Editor/AnnotationLayer.tsx` |
+| IPCハンドラ        | src/main/ipc/                  | handle + 対象 + 動詞 | `handleProjectSave.ts`       |
+| 型定義             | src/shared/types/              | PascalCase           | `KeyRegion.ts`               |
+| 定数               | src/shared/constants/          | UPPER_SNAKE_CASE     | `DEFAULT_SETTINGS.ts`        |
 
 ### テストファイル
 
-| テスト種別 | 配置先 | 命名規則 | 例 |
-|-----------|--------|---------|-----|
-| ユニットテスト | tests/unit/（srcをミラー） | [対象].test.ts | `SolfaEngine.test.ts` |
-| 統合テスト | tests/integration/[機能]/ | [シナリオ].test.ts | `victoria-regression.test.ts` |
-| E2Eテスト | tests/e2e/[シナリオ]/ | [フロー].test.ts | `export-pdf.test.ts` |
+| テスト種別     | 配置先                     | 命名規則           | 例                            |
+| -------------- | -------------------------- | ------------------ | ----------------------------- |
+| ユニットテスト | tests/unit/（srcをミラー） | [対象].test.ts     | `SolfaEngine.test.ts`         |
+| 統合テスト     | tests/integration/[機能]/  | [シナリオ].test.ts | `victoria-regression.test.ts` |
+| E2Eテスト      | tests/e2e/[シナリオ]/      | [フロー].test.ts   | `export-pdf.test.ts`          |
 
 ### 設定ファイル
 
-| ファイル種別 | 配置先 | 命名規則 |
-|------------|--------|---------|
-| ツール設定 | プロジェクトルート | `[ツール名].config.ts`（`vitest.config.ts` 等） |
-| Prettier 設定 | プロジェクトルート | `.prettierrc`（JSON。ロジック不要のため dotfile 形式を採用） |
-| Electron ビルド設定 | プロジェクトルート | `electron-builder.yml` |
-| TypeScript 設定 | プロジェクトルート | `tsconfig.json`（＋プロセス別の `tsconfig.*.json`） |
-| CI/CD ワークフロー | .github/workflows/ | `[目的].yml`（`ci.yml`, `release.yml`） |
+| ファイル種別        | 配置先             | 命名規則                                                     |
+| ------------------- | ------------------ | ------------------------------------------------------------ |
+| ツール設定          | プロジェクトルート | `[ツール名].config.ts`（`vitest.config.ts` 等）              |
+| Prettier 設定       | プロジェクトルート | `.prettierrc`（JSON。ロジック不要のため dotfile 形式を採用） |
+| Electron ビルド設定 | プロジェクトルート | `electron-builder.yml`                                       |
+| TypeScript 設定     | プロジェクトルート | `tsconfig.json`（＋プロセス別の `tsconfig.*.json`）          |
+| CI/CD ワークフロー  | .github/workflows/ | `[目的].yml`（`ci.yml`, `release.yml`）                      |
 
 ## 命名規則
 
@@ -291,6 +340,7 @@ shared (型・定数)      shared (型・定数)
 ```
 
 **禁止される依存**:
+
 - `domain/` → `main/`・`renderer/`・`storage/`・Electron API (❌ domainは純粋TSを維持)
 - `storage/` → `domain/`・`renderer/` (❌)
 - `renderer/` → Node.js API・`main/` 実体 (❌ セキュリティ境界の維持)
@@ -321,6 +371,7 @@ shared (型・定数)      shared (型・定数)
 **役割**: 作業指示ごとの「今回何をするか」の記録（steeringスキルが使用）
 
 **構造**:
+
 ```
 .steering/
 └── [YYYYMMDD]-[task-name]/

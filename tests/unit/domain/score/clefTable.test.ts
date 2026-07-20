@@ -4,6 +4,7 @@ import {
   headStepOctave,
   isKnownClefKind,
 } from '../../../../src/domain/score/clefTable';
+import { SELECTABLE_CLEF_KINDS } from '../../../../src/shared/types/Confirmation';
 
 describe('clefTable', () => {
   describe('headStepOctave', () => {
@@ -73,5 +74,14 @@ describe('clefTable', () => {
     it('未知の clef kind で false を返す', () => {
       expect(isKnownClefKind('PERCUSSION')).toBe(false);
     });
+  });
+});
+
+describe('確認画面の選択肢との整合', () => {
+  it('確認画面で選べる音部記号はすべて domain が解釈できる', () => {
+    // 片方だけを増やすと「選べるのに解釈されない値」が生まれ、訂正しても照合が直らない
+    for (const kind of SELECTABLE_CLEF_KINDS) {
+      expect(isKnownClefKind(kind)).toBe(true);
+    }
   });
 });

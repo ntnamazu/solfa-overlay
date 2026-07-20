@@ -53,7 +53,7 @@ function stepAt(index: number): PitchStep {
 
 /** 半音差を最小絶対値（-6〜+5）に正規化する。実用上の調では -2〜+2 に収まる */
 function signedDiff12(diff: number): number {
-  return ((diff % 12) + 18) % 12 - 6;
+  return (((diff % 12) + 18) % 12) - 6;
 }
 
 /**
