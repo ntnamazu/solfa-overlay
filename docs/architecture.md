@@ -251,8 +251,11 @@ Renderer → ファイルシステム  (NG)
   （PD楽譜の PDF 本体は数十MBのためリポジトリに置いていない。検証したいのは
   px → pt の線形変換とページ対応であり、版面の中身には依存しない）
 - **対象**: パース→照合→階名パイプライン、プロジェクトファイルの保存→再読込の同一性
-- **申し送り**: 本物の Audiveris 起動を伴う E2E はコンテナでは不可（Audiveris/JRE 非搭載）。ホスト
-  実機での手動確認に委ねる。OmrRunner は spawn を DI 化し、子プロセス以外のロジックを単体テスト化。
+- **申し送り**: 自動テストでは本物の Audiveris を起動しない（フィクスチャ化した出力で回帰する）。
+  OmrRunner は spawn を DI 化し、子プロセス以外のロジックを単体テスト化する。
+  なお **devcontainer には Audiveris 5.6.1（同梱 JRE21）を同梱済み**（`.devcontainer/Dockerfile`）のため、
+  コンテナ内でも `npm run dev` から実 Audiveris を起動した手動の一気通貫確認が可能。自前調達（ホスト
+  install → PATH / `SOLFA_AUDIVERIS_PATH`）でも同じ。視覚確認はこれらの手動 `npm run dev` に委ねる。
 
 ### E2Eテスト
 

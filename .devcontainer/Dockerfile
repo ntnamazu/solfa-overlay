@@ -52,6 +52,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 #   scripts/dev.mjs が実行時に判定して付与する
 #   （環境変数は VS Code ターミナルまで伝播しないことがあるため）
 
+# Audiveris（OMR エンジン）を devcontainer に同梱する
+# - devcontainer 内で `npm run dev` して OMR まで一気通貫を回せるようにするための開発用途。
+#   配布物への同梱（scripts/fetch-resources.ts / electron-builder）とは別レイヤー。
+# - テストフィクスチャと同一の 5.6.1 に「バージョン＋SHA-256 固定」（architecture.md の
+#   「audiveris は完全固定」方針）。JRE は入れない（この .deb は jpackage 製で
+#   OpenJDK 21 ランタイムを同梱。現行コンテナで headless 実行を実証済み）。
+# - .deb は /opt/audiveris 配下のみを配置する（/usr は触らないため衝突なし・確認済み）。
+#   依存解決を伴わない dpkg-deb -x で展開し、PATH 解決名 `audiveris` を symlink する
+#   （OmrRunner の既定パス解決 = `audiveris` がそのまま通る）。
+# - firewall（init-firewall.sh）は postStartCommand で、docker build 時は非アクティブ。
+#   ビルド時の GitHub からの取得は成功する。実行時の OMR はローカル処理でネット不要。
+ARG AUDIVERIS_VERSION=5.6.1
+ARG AUDIVERIS_SHA256=3f05c33fe65a5fced51718bdafde9ed989528b882cf3297d4c72b588ef04a656
+RUN AUDIVERIS_DEB="Audiveris-${AUDIVERIS_VERSION}-ubuntu22.04-x86_64.deb" \
+  && wget -q "https://github.com/Audiveris/audiveris/releases/download/${AUDIVERIS_VERSION}/${AUDIVERIS_DEB}" \
+  && echo "${AUDIVERIS_SHA256}  ${AUDIVERIS_DEB}" | sha256sum -c - \
+  && dpkg-deb -x "${AUDIVERIS_DEB}" / \
+  && ln -s /opt/audiveris/bin/Audiveris /usr/local/bin/audiveris \
+  && rm "${AUDIVERIS_DEB}"
+
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \
   chown -R node:node /usr/local/share

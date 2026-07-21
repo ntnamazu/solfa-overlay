@@ -44,6 +44,28 @@ npm run build
 
 詳細は [開発ガイドライン](docs/development-guidelines.md) を参照してください。
 
+### OMR エンジン（Audiveris）の用意
+
+PDF 取り込み（OMR）を実際に動かすには、実行時に **Audiveris**（同梱 JRE でヘッドレス実行）が必要です。未用意のまま取り込むと「Audiveris が見つかりません」という案内が表示されます。次の 2 通りのどちらかで用意してください（どちらも効果は同じです）。
+
+**ルートA: 自前で調達する（基本）**
+
+1. [Audiveris](https://github.com/Audiveris/audiveris/releases) をインストールする（本プロジェクトは **5.6.1** で検証済み。テストフィクスチャも同版）。
+2. 実行ファイルを PATH に通す（コマンド名 `audiveris` で起動できる状態にする）か、環境変数 `SOLFA_AUDIVERIS_PATH` に実行ファイルの絶対パスを設定する。
+
+   ```bash
+   # 例: PATH を通さず場所だけ指定する場合
+   export SOLFA_AUDIVERIS_PATH=/opt/audiveris/bin/Audiveris
+   npm run dev
+   ```
+
+**ルートB: Dev Container を使う（手軽に試す）**
+
+- `.devcontainer` で開く／リビルドすると、Audiveris 5.6.1（＋同梱 JRE21）が同梱された状態でコンテナが起動します。追加のインストールや `SOLFA_AUDIVERIS_PATH` の設定は不要で、そのまま `npm run dev` で OMR まで動きます。
+- 既に起動中のコンテナに後から反映する場合は、VS Code の「Dev Containers: Rebuild Container」でイメージを再ビルドしてください。
+
+> どちらの経路も最終的に「`audiveris` が実行できる状態」を作るための手段です。配布版アプリでは Audiveris を同梱するため、この用意は不要になります（開発時のみの手順）。
+
 ## 実装状況
 
 - [x] プロジェクト基盤（TypeScript strict / ESLint レイヤー境界 / Vitest / CI）
