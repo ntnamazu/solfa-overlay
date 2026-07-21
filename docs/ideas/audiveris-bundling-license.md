@@ -61,6 +61,38 @@ AGPL ＝ GPLv3 ＋ ネットワーク条項。本アプリは**ローカル完�
 6. **アプリ本体と同梱物の関係を明示**: 「アプリ本体＝（選択したライセンス）／同梱 Audiveris＝AGPL-3.0（別プログラム）」と示し、mere aggregation の意図を明確化。
    - 現状 `THIRD_PARTY_LICENSE` はテンプレ由来の MIT（Generative Agents）。公開前にアプリ本体のライセンス方針を確定する。
 
+## 5.5 コード署名の実務メモ（Windows `.exe` / macOS）
+
+配布物の「有料・手間」の正体。**署名は配布の必須条件ではなく**、OS の警告を消し信頼を得るためのもの。個人スケールでは当面不要。
+
+### Windows: SmartScreen と署名
+- **署名しなくても `.exe` は作れて配れる（無料）**。electron-builder でビルドした未署名インストーラをそのまま配布可能。
+- 未署名/新顔アプリは **Microsoft Defender SmartScreen**（評判ベースの防御。ウイルススキャンではない）が青い全画面警告（「Windows によって PC が保護されました／発行元: 不明な発行元」）を出す。ユーザーは `[詳細情報]→[実行]` で突破できる。
+- 警告を消すにはコード署名証明書が要る。2ランクある:
+
+  | 種類 | 正式名 | SmartScreen 挙動 | 相場（年額・変動） |
+  |---|---|---|---|
+  | **OV** | Organization Validation | 最初は警告が出る。DL 実績で"評判"が育つと消える | 約 $150〜400 |
+  | **EV** | Extended Validation | 新顔でも警告が出にくい（即・評判獲得）※ | 約 $300〜700+ |
+
+  ※ EV の「即・警告ゼロ」は長年の定説だが、近年 Microsoft は評判を証明書ごとの実績で判断する方向に運用変更したとの報告があり、昔ほど確実な保証ではない（要最新確認）。
+
+### なぜ有料・なぜ手間か
+- 証明書＝CA（DigiCert / Sectigo / SSL.com 等）による**身元保証（デジタル印鑑証明）**。本人/組織確認・電話確認・失効管理の対価。
+- **2023年6月〜、秘密鍵はハードウェア保管必須**（CA/Browser Forum ベースライン要件、FIPS 140-2 Level 2 相当）。`.pfx` を CI に置く旧来の自動署名は不可に → **USBトークン郵送** か **クラウド署名サービス**が必要。
+- **今どきの最安・自動化しやすい道 = Azure Trusted Signing**（旧 Azure Code Signing、2024 GA）: 月 約 $9.99、クラウドHSM込み、USBトークン不要で CI から署名可。**ただし当初は「3年以上の事業実績がある組織」向けで、個人開発者の受付は後追い整備中 → 申込時に最新の対応可否を要確認**。
+- **個人の壁**: 証明書は基本的に法人（登記された事業体）前提。EV はほぼ組織必須、OV も個人取得は審査が厳しく通りにくい。
+
+### 署名する場合のフロー（electron-builder 前提）
+1. electron-builder で `.exe`（NSIS）をビルド → 2. 署名手段を用意（USBトークン版証明書 or Azure Trusted Signing。審査・郵送で数日〜数週間）→ 3. electron-builder の署名設定に紐付け → 4. ビルド時に signtool が署名を焼き込む → 5.（OV は評判育成を待つ）→ 6. 署名済み `.exe` を配布。
+
+### macOS（参考）
+- **Apple Developer Program（年 $99）**加入 → `notarytool` で Apple に公証申請 → スキャン通過で公証チケットを `staple` → しないと Gatekeeper が起動を止める。Windows の評判制と違い年会費固定の制度化された仕組み。
+
+### 本プロジェクトの当面の方針
+- **当面は「署名しない」で十分**（自分＋合唱仲間スケール）。README に SmartScreen 突破手順（`[詳細情報]→[実行]`）を明記して補う。
+- 広く配る規模になったら Azure Trusted Signing（個人対応可否を確認）or 個人 OV を検討。年 $150 以上＋審査ハードルを踏まえ、規模が要求してから着手する。
+
 ## 6. 次アクションの候補（今やるなら小さく）
 
 - `scripts/fetch-resources.ts` の骨組みだけ先に作り、**内蔵パスでの Audiveris 起動を1回通す**ミニ検証（配布まで行かずとも「同梱パスで動く」確証が得られる）。
@@ -71,3 +103,7 @@ AGPL ＝ GPLv3 ＋ ネットワーク条項。本アプリは**ローカル完�
 - Audiveris 公式: https://audiveris.org/
 - ライセンス正式決定: `docs/repository-structure.md`（resources/ 節）
 - 実行制御の実装: `src/main/omr/OmrRunner.ts` / `src/main/omr/audiverisCommand.ts`
+- Microsoft Defender SmartScreen（評判ベース）: Microsoft Learn の SmartScreen 解説
+- Azure Trusted Signing（クラウド署名・料金）: Microsoft Learn の Trusted Signing ドキュメント
+- 秘密鍵ハードウェア保管の要件: CA/Browser Forum Code Signing Baseline Requirements（2023年改定）
+- macOS 公証: Apple Developer「Notarizing macOS software before distribution」
