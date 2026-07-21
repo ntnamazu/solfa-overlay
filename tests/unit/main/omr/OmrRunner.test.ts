@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { strToU8, zipSync } from 'fflate';
 import { describe, expect, it, vi } from 'vitest';
-import { OmrRunError } from '../../../../src/main/omr/errors';
+import { AudiverisNotFoundError, OmrRunError } from '../../../../src/main/omr/errors';
 import type { ChildLike, SpawnFn } from '../../../../src/main/omr/OmrRunner';
 import { OmrRunner } from '../../../../src/main/omr/OmrRunner';
 import type { OmrProgress } from '../../../../src/shared/types/OmrProgress';
@@ -121,6 +121,97 @@ describe('OmrRunner', () => {
     await expect(new OmrRunner({ spawn }).run('/in/score.pdf', () => {})).rejects.toThrow(
       /起動に失敗/,
     );
+  });
+
+  it('error イベントが ENOENT なら AudiverisNotFoundError（案内メッセージ付き）にする', async () => {
+    const child = new FakeChild();
+    const spawn: SpawnFn = () => {
+      setTimeout(() => {
+        const error: NodeJS.ErrnoException = new Error('spawn audiveris ENOENT');
+        error.code = 'ENOENT';
+        child.emit('error', error);
+      }, 0);
+      return child;
+    };
+    const promise = new OmrRunner({ spawn }).run('/in/score.pdf', () => {});
+    await expect(promise).rejects.toBeInstanceOf(AudiverisNotFoundError);
+    // インストール／環境変数／Dev Container の導線に言及していること
+    await expect(promise).rejects.toThrow(/インストール/);
+    await expect(promise).rejects.toThrow(/SOLFA_AUDIVERIS_PATH/);
+    await expect(promise).rejects.toThrow(/Dev Container/);
+  });
+
+  it('同期 spawn 例外が ENOENT なら AudiverisNotFoundError にする', async () => {
+    const spawn: SpawnFn = () => {
+      const error: NodeJS.ErrnoException = new Error('spawn audiveris ENOENT');
+      error.code = 'ENOENT';
+      throw error;
+    };
+    await expect(new OmrRunner({ spawn }).run('/in/score.pdf', () => {})).rejects.toBeInstanceOf(
+      AudiverisNotFoundError,
+    );
+  });
+
+  it('ENOENT 以外の error イベントは従来の OmrRunError のまま（誤診断しない）', async () => {
+    const child = new FakeChild();
+    const spawn: SpawnFn = () => {
+      setTimeout(() => {
+        const error: NodeJS.ErrnoException = new Error('EACCES');
+        error.code = 'EACCES';
+        child.emit('error', error);
+      }, 0);
+      return child;
+    };
+    const promise = new OmrRunner({ spawn }).run('/in/score.pdf', () => {});
+    await expect(promise).rejects.toThrow(/Audiveris の実行/);
+    await expect(promise).rejects.not.toBeInstanceOf(AudiverisNotFoundError);
+  });
+
+  it('audiverisPath 未指定時は SOLFA_AUDIVERIS_PATH を実行ファイルに使う', async () => {
+    const commands: string[] = [];
+    const child = new FakeChild();
+    const spawn: SpawnFn = (cmd, args) => {
+      commands.push(cmd);
+      setTimeout(() => {
+        const dir = outputDirOf(args);
+        writeFileSync(join(dir, 'score.omr'), makeOmr());
+        writeFileSync(join(dir, 'score.mvt1.mxl'), makeMxl());
+        child.emit('close', 0);
+      }, 0);
+      return child;
+    };
+    vi.stubEnv('SOLFA_AUDIVERIS_PATH', '/opt/audiveris/bin/Audiveris');
+    try {
+      await new OmrRunner({ spawn }).run('/in/score.pdf', () => {});
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(commands[0]).toBe('/opt/audiveris/bin/Audiveris');
+  });
+
+  it('明示の audiverisPath は SOLFA_AUDIVERIS_PATH より優先される', async () => {
+    const commands: string[] = [];
+    const child = new FakeChild();
+    const spawn: SpawnFn = (cmd, args) => {
+      commands.push(cmd);
+      setTimeout(() => {
+        const dir = outputDirOf(args);
+        writeFileSync(join(dir, 'score.omr'), makeOmr());
+        writeFileSync(join(dir, 'score.mvt1.mxl'), makeMxl());
+        child.emit('close', 0);
+      }, 0);
+      return child;
+    };
+    vi.stubEnv('SOLFA_AUDIVERIS_PATH', '/env/audiveris');
+    try {
+      await new OmrRunner({ spawn, audiverisPath: '/explicit/audiveris' }).run(
+        '/in/score.pdf',
+        () => {},
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+    expect(commands[0]).toBe('/explicit/audiveris');
   });
 
   it('.omr が出力されなければ OmrRunError にする', async () => {

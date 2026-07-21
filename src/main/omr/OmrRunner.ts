@@ -6,8 +6,19 @@ import type { OmrArtifacts } from '../../domain/score/ScoreModelBuilder';
 import type { OmrProgress } from '../../shared/types/OmrProgress';
 import type { OmrRawArtifacts } from '../../shared/types/OmrRawArtifacts';
 import { buildAudiverisArgs, buildAudiverisEnv, parseProgressLine } from './audiverisCommand';
-import { OmrRunError } from './errors';
+import { AudiverisNotFoundError, OmrRunError } from './errors';
 import { assembleArtifacts } from './omrArchive';
+
+/** Audiveris が見つからないとき（ENOENT）に UI へ出す、行動可能な案内メッセージ */
+const AUDIVERIS_NOT_FOUND_MESSAGE =
+  'Audiveris が見つかりません。Audiveris をインストールして PATH を通すか、環境変数 ' +
+  'SOLFA_AUDIVERIS_PATH に実行ファイルのパスを設定してください。手軽に試すには Dev Container ' +
+  'での起動もできます（README 参照）。';
+
+/** spawn 失敗が「実行ファイル不在（ENOENT）」かを判定する */
+function isNotFound(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT';
+}
 
 /**
  * 子プロセスの最小インターフェース（node:child_process の ChildProcess の必要部分だけ）
@@ -54,8 +65,11 @@ export class OmrRunner {
 
   constructor(deps?: { spawn?: SpawnFn; audiverisPath?: string }) {
     this.spawn = deps?.spawn ?? DEFAULT_SPAWN;
-    // 同梱 Audiveris のパスは配布時に解決する。既定はコマンド名（PATH 解決）
-    this.audiverisPath = deps?.audiverisPath ?? 'audiveris';
+    // 解決順: 明示指定 → 環境変数 SOLFA_AUDIVERIS_PATH → 既定のコマンド名（PATH 解決）。
+    // 自前調達（任意の場所に install）と devcontainer 同梱（PATH の audiveris）の
+    // どちらのルートでも同じ入口で場所を指定できるようにする。配布時は
+    // 同梱バイナリの絶対パスを明示指定して差し替える。
+    this.audiverisPath = deps?.audiverisPath ?? process.env.SOLFA_AUDIVERIS_PATH ?? 'audiveris';
   }
 
   /**
@@ -113,7 +127,13 @@ export class OmrRunner {
           shell: false, // ユーザー入力を引数配列で渡す（シェル経由を禁止）
         });
       } catch (cause) {
-        reject(new OmrRunError('Audiveris の起動に失敗しました', { cause }));
+        // Node は環境により、実行ファイル不在（ENOENT）を同期例外／非同期 error
+        // イベントのどちらでも出し得るため、ここでも不在を判定して案内へ振り分ける
+        if (isNotFound(cause)) {
+          reject(new AudiverisNotFoundError(AUDIVERIS_NOT_FOUND_MESSAGE, { cause }));
+        } else {
+          reject(new OmrRunError('Audiveris の起動に失敗しました', { cause }));
+        }
         return;
       }
       this.child = child;
@@ -134,7 +154,13 @@ export class OmrRunner {
       });
 
       child.on('error', (error) => {
-        reject(new OmrRunError('Audiveris の実行でエラーが発生しました', { cause: error }));
+        // 実行ファイル不在（ENOENT）は「エンジン未搭載」＝インストール/パス設定で直る問題。
+        // 汎用の実行エラーと区別し、行動可能な案内を返す
+        if (isNotFound(error)) {
+          reject(new AudiverisNotFoundError(AUDIVERIS_NOT_FOUND_MESSAGE, { cause: error }));
+        } else {
+          reject(new OmrRunError('Audiveris の実行でエラーが発生しました', { cause: error }));
+        }
       });
 
       child.on('close', (code) => {
