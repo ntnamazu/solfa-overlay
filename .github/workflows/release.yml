@@ -1,0 +1,44 @@
+# タグ作成時: Audiveris 同梱の Windows インストーラ（未署名）を生成し GitHub Releases に添付する。
+#
+# - 配布対象は Windows のみ（mac/linux はスコープ外）。Windows ランナーなら fetch-resources の
+#   MSI 展開（msiexec /a）が成立する。
+# - 署名はしない（docs/ideas/audiveris-bundling-license.md の方針）。electron-builder には
+#   証明書を渡さないため未署名のまま生成される。
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # GitHub Releases への添付に必要
+
+jobs:
+  build-win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # Audiveris(+同梱JRE) を resources/audiveris/win/ に用意（MSI DL→SHA-256検証→展開）
+      - run: npm run fetch-resources
+
+      # electron-vite build → electron-builder（未署名 NSIS）で dist/*.exe を生成
+      - run: npm run dist:win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solfa-overlay-win
+          path: dist/*.exe
+
+      - name: Attach installer to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.exe

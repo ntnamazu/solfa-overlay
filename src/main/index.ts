@@ -6,6 +6,8 @@ import type { IpcContract } from '../shared/ipc/contract';
 import type { OmrProgress } from '../shared/types/OmrProgress';
 import { ProjectSession } from './ProjectSession';
 import { createProjectHandlers } from './ipc/projectHandlers';
+import { OmrRunner } from './omr/OmrRunner';
+import { resolveBundledAudiverisPath } from './omr/resolveBundledAudiverisPath';
 
 // Linux コンテナ（devcontainer 等）では GPU が使えず、ウィンドウが白画面になる
 // ことがあるため、開発実行時のみソフトウェアレンダリングに切り替える
@@ -62,7 +64,20 @@ function broadcastProgress(progress: OmrProgress): void {
  * モジュールスコープに置くのは、終了時に保留中の自動保存を書き切る必要があるため。
  * ハンドラ登録関数のローカルに閉じ込めると、`before-quit` から到達できない
  */
-const session = new ProjectSession();
+// 配布パッケージでは同梱 Audiveris の絶対パスを解決して OmrRunner へ渡す。
+// 開発時（非パッケージ）は undefined になり、OmrRunner 既定の解決チェーン
+// （SOLFA_AUDIVERIS_PATH → PATH の audiveris）にそのまま委ねる。
+const bundledAudiverisPath = resolveBundledAudiverisPath({
+  isPackaged: app.isPackaged,
+  resourcesPath: process.resourcesPath,
+  platform: process.platform,
+});
+const session = new ProjectSession({
+  runner:
+    bundledAudiverisPath !== undefined
+      ? new OmrRunner({ audiverisPath: bundledAudiverisPath })
+      : undefined,
+});
 
 function registerIpcHandlers(): void {
   handleIpc(IPC_CHANNELS.appGetVersion, () => app.getVersion());

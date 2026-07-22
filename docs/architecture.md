@@ -34,7 +34,7 @@
 | Vitest            | 最新安定版 | ユニット/統合テスト | TypeScript ネイティブ・高速。SolfaEngine 等の純粋ロジックのテストに十分                                                                                    |
 | Playwright        | 最新安定版 | E2Eテスト           | Electron アプリの起動〜操作〜出力検証を自動化できる                                                                                                        |
 | ESLint + Prettier | 最新安定版 | 静的解析・整形      | 開発ガイドラインで規約を定義                                                                                                                               |
-| electron-builder  | 最新安定版 | パッケージング      | JRE＋Audiveris の同梱（extraResources）と3OSのインストーラ生成                                                                                             |
+| electron-builder  | 最新安定版 | パッケージング      | JRE＋Audiveris の同梱（extraResources）と3OSのインストーラ生成（現状は Windows 未署名のみ実装済み。mac/linux は将来対応。詳細は repository-structure.md）  |
 
 ## アーキテクチャパターン
 

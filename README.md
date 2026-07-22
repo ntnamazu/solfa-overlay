@@ -66,6 +66,36 @@ PDF 取り込み（OMR）を実際に動かすには、実行時に **Audiveris*
 
 > どちらの経路も最終的に「`audiveris` が実行できる状態」を作るための手段です。配布版アプリでは Audiveris を同梱するため、この用意は不要になります（開発時のみの手順）。
 
+## 配布版のビルド（Windows）
+
+Audiveris（＋同梱 JRE）を同梱した **Windows 用インストーラ（`.exe`）** を生成できます。**ビルドは Windows 実機で行ってください**（MSI の展開と NSIS インストーラ生成に Windows が必要なため。macOS/Linux 向けビルドは現状スコープ外です）。
+
+```powershell
+# 1. 依存インストール（lockfile に従う）
+npm ci
+
+# 2. 同梱 Audiveris を用意（MSI をダウンロード→SHA-256 検証→resources/audiveris/win/ へ展開）
+npm run fetch-resources
+
+# 3. Windows インストーラを生成（electron-vite build → electron-builder --win）
+npm run dist:win
+# → dist/ に未署名の .exe（NSIS インストーラ）が生成されます
+```
+
+- 取得する Audiveris は **5.6.1 に固定**（URL・SHA-256 を `scripts/fetch-resources.ts` に固定）。テストフィクスチャと同版です。
+- 同梱物のライセンス表記は [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)（Audiveris＝AGPL-3.0／同梱 JRE＝GPLv2+Classpath Exception）を参照してください。インストーラにも同梱されます。
+
+### ⚠️ SmartScreen 警告について（未署名アプリの導入手順）
+
+本アプリは**コード署名をしていません**（自分＋合唱仲間で使う小規模配布のため。署名証明書は有料かつ個人取得のハードルが高く、規模が要求してから検討する方針です）。
+
+そのため、初めて `.exe` を実行すると **Microsoft Defender SmartScreen** が青い全画面の警告を出すことがあります（「Windows によって PC が保護されました／発行元: 不明な発行元」）。これはウイルス検出ではなく、**まだ実績（評判）のない新しいアプリ**に対する保護です。次の手順で実行できます:
+
+1. 警告画面の **「詳細情報」** をクリックする。
+2. 表示された **「実行」** ボタンをクリックする。
+
+> 配布元（信頼できる入手経路）から取得したことを確認したうえで実行してください。判断根拠と署名を導入する場合の選択肢は [`docs/ideas/audiveris-bundling-license.md`](docs/ideas/audiveris-bundling-license.md)「5.5 コード署名の実務メモ」にまとめてあります。
+
 ## 実装状況
 
 - [x] プロジェクト基盤（TypeScript strict / ESLint レイヤー境界 / Vitest / CI）
@@ -75,3 +105,4 @@ PDF 取り込み（OMR）を実際に動かすには、実行時に **Audiveris*
 - [ ] OmrRunner（Audiveris 統合: zip(.omr/.mxl) 展開・ヘッドレス実行・実 Victoria 楽譜フィクスチャ）
 - [ ] 確認画面（StructureConfirm / ClefKeyConfirm）
 - [ ] Editor（注釈修正UI）・PDF出力
+- [x] 配布ビルド基盤（Audiveris 同梱: `fetch-resources` / Windows 未署名 `.exe`: electron-builder / `release.yml`。実ビルドは Windows 実機で検証）

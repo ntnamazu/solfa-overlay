@@ -1,7 +1,7 @@
 # アイデアメモ: Audiveris 同梱配布とライセンス（AGPL-3.0）の判断根拠
 
 - 記録日: 2026-07-21
-- ステータス: 調査・方針メモ（実装は将来のリリース準備時）
+- ステータス: 調査・方針メモ。**Windows 向けの同梱＋未署名 `.exe` ビルドは実装済み**（2026-07-22、`.steering/20260722-audiveris-bundling-win-build/`。`scripts/fetch-resources.ts`／`electron-builder.yml`／`release.yml`／`THIRD_PARTY_LICENSES.md`）。mac/linux 配布と署名は本メモの方針どおり将来対応
 - 発案者: Nobuhiro Takaichi
 - 位置づけ: 壁打ち成果物・技術調査メモ。**正式な決定の一行は [repository-structure.md](../repository-structure.md) の「resources/ (同梱リソース)」節にある**（AGPL-3.0 のため別プロセス実行を維持し、公開前に同梱条件を確認）。本メモはその「なぜ」と「配布前にやること」を補完する（二重管理を避けるため、正式決定は repository-structure 側を正とする）。
 

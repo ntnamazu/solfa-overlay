@@ -12,6 +12,7 @@
     "src/shared/**/*",
     "tests/unit/**/*",
     "tests/integration/**/*",
+    "scripts/**/*.ts",
     "electron.vite.config.ts",
     "vitest.config.ts"
   ],

@@ -9,6 +9,8 @@ coverage/
 # ビルド時ダウンロードで取得する同梱バイナリ
 resources/audiveris/
 resources/jre/
+# fetch-resources のダウンロードキャッシュ（MSI 等）
+resources/.cache/
 
 # ログ・OS固有ファイル
 *.log

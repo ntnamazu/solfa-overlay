@@ -1,0 +1,53 @@
+# electron-builder 設定（Windows 未署名インストーラの生成）
+#
+# 方針（docs/ideas/audiveris-bundling-license.md）:
+# - 当面は署名しない（自分＋合唱仲間スケール）。win.certificate 系は設定しない。
+#   未署名のため SmartScreen 警告が出るが、README の [詳細情報]→[実行] 手順で補う。
+# - Audiveris(+同梱JRE) は extraResources として同梱する（asar の外＝spawn できる実体）。
+#   ビルド前に `npm run fetch-resources` で resources/audiveris/win/ を用意しておくこと。
+# - 配布対象は Windows のみ（mac/linux はスコープ外）。
+appId: com.solfa-overlay.app
+productName: Solfa Overlay
+directories:
+  buildResources: build
+  output: dist
+
+# 既定の全包含から、実行時に不要な開発用ファイルを除外する。
+# node_modules の本番依存は electron-builder が自動同梱する（dev 依存は自動除外）。
+# resources/ は extraResources で別途同梱するため、asar への二重取り込みを避けて除外する。
+files:
+  - '!**/.vscode/**'
+  - '!src/**'
+  - '!tests/**'
+  - '!docs/**'
+  - '!scripts/**'
+  - '!resources/**'
+  - '!.steering/**'
+  - '!.github/**'
+  - '!.claude/**'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!vitest.config.ts'
+  - '!eslint.config.mjs'
+  # THIRD_PARTY_LICENSES.md は extraResources 経由で同梱するため asar からは除外（二重同梱回避）
+  - '!{README.md,CLAUDE.md,THIRD_PARTY_LICENSE,THIRD_PARTY_LICENSES.md}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{.gitignore,.prettierrc,.prettierignore,.editorconfig}'
+
+# 同梱リソース（asar 外・インストール先の resources/ 直下に配置）
+extraResources:
+  - from: resources/audiveris/win
+    to: audiveris/win
+    filter:
+      - '**/*'
+  # AGPL-3.0 等の同梱物ライセンス表記を配布物に同梱する（THIRD_PARTY_LICENSES.md）
+  - from: THIRD_PARTY_LICENSES.md
+    to: THIRD_PARTY_LICENSES.md
+
+win:
+  target:
+    - nsis
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

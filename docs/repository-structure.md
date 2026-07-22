@@ -271,11 +271,13 @@ tests/fixtures/
 
 **配置ファイル**:
 
-- `audiveris/`: Audiveris 一式（バージョン固定。更新は回帰手順必須）
-- `jre/<platform>/`: OS別の同梱JRE
+- `audiveris/<platform>/`: Audiveris 一式（バージョン固定。更新は回帰手順必須）。Windows は `audiveris/win/`（`Audiveris.exe`＋`app/`＋`runtime/`）
+- `jre/<platform>/`: OS別の同梱JRE（**Windows では未使用**）
 - `fonts/`: 階名描画用フォント（小サイズ判読性で選定したもの。再配布可能なライセンスに限る）
 
-**注意**: 大容量バイナリ（Audiveris/JRE）はリポジトリにコミットせず、ビルド時ダウンロードスクリプト（`scripts/fetch-resources.ts`。取得先のバージョン・ハッシュ固定で再現性を担保）で取得する。Git LFS は採用しない（ストレージ・帯域の無料枠制約と clone コスト増を避ける）
+**注意**: 大容量バイナリ（Audiveris/JRE）はリポジトリにコミットせず、ビルド時ダウンロードスクリプト（`scripts/fetch-resources.ts`。取得先のバージョン・ハッシュ固定で再現性を担保）で取得する。Git LFS は採用しない（ストレージ・帯域の無料枠制約と clone コスト増を避ける）。ダウンロード物（MSI 等）は `resources/.cache/`（gitignore 対象）にキャッシュする
+
+**Windows の JRE 二重同梱回避**: Windows 版 Audiveris の配布物（`Audiveris-5.6.1-windows-x86_64.msi`）は jpackage 製で Java ランタイムを内包する。そのため Windows では `resources/jre/` を別立てせず、Audiveris 同梱の `runtime/` をそのまま使う（`scripts/fetch-resources.ts` が MSI を SHA-256 固定で取得・展開して `resources/audiveris/win/` に配置）
 
 **ライセンス表記**: 同梱物のライセンス全文と入手元をルートの `THIRD_PARTY_LICENSES.md` に集約し、配布物（インストーラ）にも同梱する。Audiveris は AGPL-3.0 のため、別プロセス実行（ファイルパス渡しのみ）の構成を維持したうえで、公開リリース前に同梱・再配布の条件を確認することを必須とする（JRE・フォントも同様に表記する）
 
@@ -406,7 +408,7 @@ shared (型・定数)      shared (型・定数)
 .github/
 └── workflows/
     ├── ci.yml               # push/PRごと: lint → typecheck → test（開発ガイドライン「品質自動化」に対応。E2E は develop/main への PR のみ）
-    └── release.yml          # タグ作成時: fetch-resources.ts → electron-builder で3OSのインストーラを生成し GitHub Releases に添付
+    └── release.yml          # タグ作成時: fetch-resources.ts → electron-builder でインストーラを生成し GitHub Releases に添付（現状 Windows 未署名のみ。mac/linux は将来対応）
 ```
 
 **注意**: ビルド成果物（インストーラ）はリポジトリにコミットせず、GitHub Releases で配布する。PR検証用の一時成果物は Actions アーティファクト（保持期限つき）を使う
@@ -417,7 +419,7 @@ shared (型・定数)      shared (型・定数)
 
 - `node_modules/`
 - `dist/` / `out/`（ビルド成果物）
-- `resources/audiveris/` / `resources/jre/`（`scripts/fetch-resources.ts` で取得するためコミットしない）
+- `resources/audiveris/` / `resources/jre/` / `resources/.cache/`（`scripts/fetch-resources.ts` で取得・キャッシュするためコミットしない）
 - `*.log`
 - `.DS_Store`
 - `*.solfaproj` / `*.solfaproj.bak*`（手元の検証用プロジェクトファイル。著作権のある楽譜を含み得るため必ず除外）
