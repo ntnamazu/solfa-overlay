@@ -8,7 +8,10 @@
 
 ### 名称
 
-**Solfa Overlay（仮称）** - 合唱楽譜PDFへの移動ド階名自動付与アプリ
+**Solfa Overlay** - 合唱楽譜PDFへの移動ド階名自動付与アプリ
+
+> 名称は 2026-07-26 に正式決定した（決定の経緯と商標調査の結果は
+> [ideas/naming-and-trademark.md](ideas/naming-and-trademark.md)）。
 
 ### プロダクトコンセプト
 

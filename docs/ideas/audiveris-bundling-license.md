@@ -59,7 +59,12 @@ AGPL ＝ GPLv3 ＋ ネットワーク条項。本アプリは**ローカル完�
 4. **Audiveris を改変したら、その改変は AGPL で公開義務**が発生 → 改変は避けるのが吉。
 5. **JRE のライセンスも別途表記**: Temurin/Adoptium 等は通常 **GPLv2＋Classpath Exception**（AGPL ではない）で再配布可。同梱物ごとに入手元とライセンスを列挙。
 6. **アプリ本体と同梱物の関係を明示**: 「アプリ本体＝（選択したライセンス）／同梱 Audiveris＝AGPL-3.0（別プログラム）」と示し、mere aggregation の意図を明確化。
-   - 現状 `THIRD_PARTY_LICENSE` はテンプレ由来の MIT（Generative Agents）。公開前にアプリ本体のライセンス方針を確定する。
+   - **✅ 対応済み（2026-07-26）**: アプリ本体のライセンスを **MIT** に確定し、`LICENSE` を追加した（`package.json` の
+     `license` も `MIT` へ更新）。`THIRD_PARTY_LICENSES.md` の「アプリ本体（Solfa Overlay）のライセンス」節に、
+     構成要素ごとのライセンス一覧と、**再配布時に同梱 Audiveris 部分へ AGPL-3.0 の条件が及ぶ**旨を明記した。
+     作業記録は `.steering/20260726-v0.1.0-public-release-prep/`。
+   - なお `THIRD_PARTY_LICENSE`（末尾 S なし）はテンプレ由来の MIT（Generative Agents）で、開発用の足場に関する表記。
+     実行時に同梱されるバイナリを扱う `THIRD_PARTY_LICENSES.md`（末尾 S あり）とは別物なので混同しないこと。
 
 ## 5.5 コード署名の実務メモ（Windows `.exe` / macOS）
 

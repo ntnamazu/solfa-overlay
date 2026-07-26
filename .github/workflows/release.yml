@@ -38,7 +38,10 @@ jobs:
           name: solfa-overlay-win
           path: dist/*.exe
 
+      # 下書きで作る。タグ push の時点では Release は公開されず、リリースノートを
+      # 整えてから GitHub 上で「Publish release」する運用にする。
       - name: Attach installer to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.exe
+          draft: true

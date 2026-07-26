@@ -4,7 +4,7 @@
   "description": "合唱楽譜PDFへの移動ド階名自動付与アプリ（Solfa Overlay）",
   "private": true,
   "main": "./out/main/index.js",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "electron-vite build",

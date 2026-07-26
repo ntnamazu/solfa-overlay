@@ -24,7 +24,8 @@ project-root/
 │   ├── jre/               # 同梱JRE（OS別）
 │   └── fonts/             # 階名描画用フォント
 ├── docs/                  # プロジェクトドキュメント（6つの永続ドキュメント）
-│   └── ideas/             # 着想メモ（PRD前の入力）
+│   ├── ideas/             # 着想メモ（PRD前の入力）
+│   └── assets/            # README 用の画像素材（PDのみ・配布物には含めない）
 ├── scripts/               # ビルド・開発補助スクリプト
 ├── .github/
 │   └── workflows/         # CI/CD定義（品質チェック・リリースパッケージング）
@@ -264,6 +265,12 @@ tests/fixtures/
 - `development-guidelines.md`: 開発ガイドライン
 - `glossary.md`: 用語集
 - `ideas/`: PRD以前の着想メモ（`solfa-annotation-app.md`）
+- `assets/`: README に掲載する画像素材（階名付与の Before/After 等）
+
+> `assets/` に置ける楽譜素材は、`development-guidelines.md`「テストデータの著作権ルール」と同じく
+> **パブリックドメインのもののみ**。README への掲載は公衆送信にあたり、私的使用の例外が及ばないため、
+> 購入譜のスキャンやその出力を置いてはならない。掲載時は出典（作曲者・曲名・IMSLP 番号）を明記する。
+> なお `electron-builder.yml` の `files` で `docs/**` を除外しているため、配布物には含まれない。
 
 ### resources/ (同梱リソース)
 
