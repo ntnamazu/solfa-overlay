@@ -31,6 +31,11 @@ jobs:
       - run: npm run fetch-resources
 
       # electron-vite build → electron-builder（未署名 NSIS）で dist/*.exe を生成
+      #
+      # dist:win には `--publish never` を付けている。electron-builder は git タグがあると
+      # 暗黙に GitHub へ publish しようとし、GH_TOKEN 未設定で失敗するため
+      # （v27 では暗黙の publish は廃止予定）。Release への添付は下の
+      # softprops/action-gh-release が担当するので、ここでは生成だけを行う。
       - run: npm run dist:win
 
       - uses: actions/upload-artifact@v4
