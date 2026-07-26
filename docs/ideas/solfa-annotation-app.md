@@ -94,10 +94,18 @@
 
 ### 概要
 
-Victoria《O magnum mysterium》（IMSLP #19716、Nancho Alvarez 版、パブリックドメイン、3ページ）を題材に、パイプライン全行程を実装・実行した。**「4. パイプライン構成」の設計がそのまま端から端まで動くことを実証**。
+Victoria《O magnum mysterium》（IMSLP #19716、Nancho Alvarez 版、3ページ）を題材に、パイプライン全行程を実装・実行した。**「4. パイプライン構成」の設計がそのまま端から端まで動くことを実証**。
+
+> ⚠️ **ライセンスの訂正（2026-07-26）**: この記述は当初「パブリックドメイン」としていたが**誤り**だった。
+> **楽曲**（Victoria・1611年没）は PD だが、**題材にした版**（Nancho Alvarez 編・2008）は
+> **CC BY-NC-SA 3.0** である。帰属表示は [`tests/fixtures/victoria/README.md`](../../tests/fixtures/victoria/README.md)
+> および [`THIRD_PARTY_LICENSES.md`](../../THIRD_PARTY_LICENSES.md)「テスト用素材」節を参照。
 
 - 題材の特性: SATB・調号♯1（La基準で do=G、主音Aは「l」）・ムジカ・フィクタの臨時記号多数・テノールはオクターブ下ト音記号・左端に原典記譜のインチピット小譜表あり
 - 成果物: `tmp/solfa-proto/` — `solfa_proto.py`（解析・階名計算）、`overlay_pdf.py`（PDF合成）、`annotations.json`（注釈レイヤーの中間データ）、`O_Magnum_Mysterium_solfa.pdf`（完成品）
+  - **このうちリポジトリに含まれるのは `*.py` のみ**。`annotations.json` と `O_Magnum_Mysterium_solfa.pdf`、
+    および題材の原本 PDF は、上記ライセンス（CC BY-NC-SA 3.0）の素材そのもの・その翻案物にあたるため
+    `.gitignore` で除外している（2026-07-26）。手元での再現には IMSLP から原本を取得すること。
 - デモ（画像＋オーバーレイの検証ページ）: https://claude.ai/code/artifact/68dc56cd-465f-4c23-8e88-003faf07c22f
 
 ### 定量結果

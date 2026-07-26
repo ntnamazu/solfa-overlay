@@ -101,3 +101,37 @@ MIT が適用されるのはアプリ本体のみであり、同梱物へは及�
 
 判断根拠の詳細は `docs/ideas/audiveris-bundling-license.md`「5. 公開配布時のチェックリスト」を参照。
 
+---
+
+## テスト用素材（配布物には含まれません）
+
+本リポジトリの `tests/fixtures/` には、OMR の回帰テスト用に第三者の楽譜から生成したデータを
+含んでいます。**これらは配布版インストーラには一切含まれません**（リポジトリ内にのみ存在します）が、
+リポジトリを clone・fork する場合には以下のライセンスが関係します。
+
+| 素材 | 楽曲 | 版・編集者 | ライセンス |
+| --- | --- | --- | --- |
+| `tests/fixtures/victoria/` | Tomás Luis de Victoria《O magnum mysterium》（1611年没・PD） | **Nancho Alvarez 編（2008）**<br>IMSLP #19716 (PMLP46230) | **CC BY-NC-SA 3.0** |
+| `tests/fixtures/divisi/` | William Reed《The Message of the Angels》 | 1910年 Oliver Ditson Co. 出版 | **Public Domain** |
+| `tests/fixtures/synthetic-mini/` | （合成データ・楽曲ではない） | 本プロジェクトが作成 | MIT（本体と同じ） |
+
+### Victoria フィクスチャの帰属表示
+
+- **編集者**: Nancho Alvarez（2008）
+- **出典**: <https://imslp.org/wiki/O_magnum_mysterium_(Victoria,_Tom%C3%A1s_Luis_de)>（IMSLP #19716）
+- **ライセンス**: Creative Commons Attribution-NonCommercial-ShareAlike 3.0
+  <https://creativecommons.org/licenses/by-nc-sa/3.0/>
+- **改変の内容**: 上記の版を Audiveris で OMR にかけ、記号データ（`.omr` / `.mxl`）を抽出したもの。
+  楽譜そのもの（原本 PDF）および階名を重ねた出力 PDF は、リポジトリに含めていません。
+
+### ⚠️ NC（非営利）条項について
+
+Victoria フィクスチャには **NC（非営利）条項**が付きます。したがって、**本リポジトリ全体が
+商用利用可能というわけではありません**。
+
+- アプリ本体のコード（`src/` 由来）は MIT であり、商用利用を含めて自由に利用できます
+- ただし `tests/fixtures/victoria/` のデータを**商用目的で利用することはできません**
+- 商用利用を前提とする場合は、当該フィクスチャを PD 版（IMSLP #63573 / #63649 の Proske 版、
+  #107866 / #412831 の Pedrell 版など）へ差し替えてください（回帰値の再測定が必要です）
+
+素材追加時のルールは `docs/development-guidelines.md`「テストデータの著作権ルール」を参照。

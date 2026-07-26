@@ -984,7 +984,7 @@ score.solfaproj/
 
 ### 統合テスト
 
-- 検証済み題材（Victoria《O magnum mysterium》= パブリックドメイン）の実 Audiveris 出力を固定入力とし、パース→照合を回帰テスト化する（実測値: matched 295小節・808音・クロスチェック不一致0・skipped 1小節。正確な期待値と根拠は `tests/fixtures/victoria/README.md` を正とする。数値は Audiveris バージョンに依存するため、更新時はフィクスチャ再生成と差分レビューを行う）
+- 検証済み題材（Victoria《O magnum mysterium》。**楽曲は PD だが版は CC BY-NC-SA 3.0**。帰属表示は `tests/fixtures/victoria/README.md`）の実 Audiveris 出力を固定入力とし、パース→照合を回帰テスト化する（実測値: matched 295小節・808音・クロスチェック不一致0・skipped 1小節。正確な期待値と根拠は `tests/fixtures/victoria/README.md` を正とする。数値は Audiveris バージョンに依存するため、更新時はフィクスチャ再生成と差分レビューを行う）
 - OMR→照合→階名→PDF出力の全パイプライン結合は、後続フェーズ（階名結線・PDF出力）実装時に拡張する
 - プロジェクトファイルの保存→再読込の同一性
 

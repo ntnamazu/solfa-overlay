@@ -19,3 +19,12 @@ resources/.cache/
 # 手元の検証用プロジェクトファイル（著作権のある楽譜を含み得るため必ず除外）
 *.solfaproj
 *.solfaproj.bak*
+
+# 検証用に置いた楽譜PDFと、そこから生成した出力・注釈データ
+#
+# tmp/ の楽譜は IMSLP 由来で、**楽曲は PD でも楽譜（版）は CC BY-NC-SA 等**のことがある
+# （実例: IMSLP #19716 は Nancho Alvarez 編・CC BY-NC-SA 3.0）。原本の再配布は MIT を掲げる
+# 本リポジトリと整合せず、階名を重ねた出力は ShareAlike が及ぶ翻案物になるため、
+# どちらもコミットしない。プロトタイプの自作スクリプト（*.py）は対象外＝追跡を続ける。
+tmp/**/*.pdf
+tmp/solfa-proto/annotations.json

@@ -5,12 +5,22 @@ Phase 1 時点では大量の小節が skipped になり「構造誤分割のた
 commit したが、**Phase 2（BookStructureResolver）の事前調査でその推定は誤りだったことが判明した**。
 本 README は真因と現在の実測値を記録する。
 
-## 出典・著作権
+## 出典・著作権（帰属表示）
 
-- 楽曲: William Reed《The Message of the Angels》（Copyright 1919・作曲者ベースでも 70 年超過・
-  IMSLP 表記 **Public Domain**）
-- 出典: IMSLP #175782 <https://imslp.org/wiki/The_Message_of_the_Angels_(Reed%2C_William)>
-- 開発ガイドライン「テストデータの著作権ルール」（PD のみ commit 可）に適合。
+- 楽曲: William Reed《The Message of the Angels》
+- 出典: IMSLP <https://imslp.org/wiki/The_Message_of_the_Angels_(Reed%2C_William)>
+  - フィクスチャ取得時のファイル番号は **#175782**。ただし 2026-07-26 の再確認時点で、
+    同ページ上のファイル番号は **#954369**（Cypressdome アップロード・2025/2/5）に置き換わっていた。
+    IMSLP はファイルを差し替えることがあるため、番号ではなくページ URL を正とする。
+- **ライセンス: Public Domain**（IMSLP 表記）
+  - 根拠: 初版は **1910 年・Oliver Ditson Co.（ボストン）出版**。米国では 1929 年以前の出版物は
+    著作権が消滅しており、PD であることが確定している。作曲者ベースでも保護期間を超過。
+- 開発ガイドライン「テストデータの著作権ルール」に適合（PD のため帰属表示の義務はないが、
+  出所の追跡可能性のため上記を記録する）。
+
+> 📌 同じ `tests/fixtures/` でも [victoria](../victoria/README.md) の素材は **PD ではなく
+> CC BY-NC-SA 3.0** である。素材ごとにライセンスが異なるため、
+> [`THIRD_PARTY_LICENSES.md`](../../../THIRD_PARTY_LICENSES.md)「テスト用素材」節に一覧がある。
 
 ## 構成ファイル
 

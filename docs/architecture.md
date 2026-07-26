@@ -208,9 +208,10 @@ Renderer → ファイルシステム  (NG)
 
 ### 統合テスト
 
-- **方法**: パブリックドメイン楽譜（Victoria《O magnum mysterium》）の実 Audiveris 5.6.1 成果物を
+- **方法**: Victoria《O magnum mysterium》の実 Audiveris 5.6.1 成果物を
   フィクスチャとして同梱し、パース→照合を回帰テスト化（実測値: matched 295小節・808音・
   クロスチェック不一致0・skipped 1小節。根拠は `tests/fixtures/victoria/README.md`）。
+  **楽曲は PD だが、素材にした版（Nancho Alvarez 編）は CC BY-NC-SA 3.0**（帰属表示は同 README）。
   数値は Audiveris バージョンに依存するため、更新時はフィクスチャ再生成と差分レビューを行う。
 - **divisi 回帰**: SSAATTBB divisi 曲（PD・20ページ8パート）の実成果物も同梱し、
   BookStructureResolver による構造解決後の実測値（matched 1029小節・3500音・skipped 135・
