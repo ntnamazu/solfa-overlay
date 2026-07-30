@@ -29,6 +29,18 @@ function setup(overrides: Partial<Parameters<typeof Home>[0]> = {}) {
 }
 
 describe('Home', () => {
+  it('見出しの直後に「今すべきこと」を 1 文置く', () => {
+    stubApi();
+    setup();
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.nextElementSibling?.textContent).toContain('まず楽譜のPDFを取り込んで');
+  });
+
+  it('操作できない環境では、存在しないボタンを案内しない', () => {
+    setup(); // api なし＝ブラウザプレビュー
+    expect(screen.queryByText(/まず楽譜のPDFを取り込んで/)).toBeNull();
+  });
+
   it('Electron 外ではプレビュー表示にし、操作を出さない（押しても何も起きない導線を作らない）', () => {
     setup();
     expect(screen.getByText(/ブラウザプレビュー/)).toBeDefined();

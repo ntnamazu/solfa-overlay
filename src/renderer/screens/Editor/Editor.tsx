@@ -6,6 +6,7 @@ import type {
 import type { AnnotationIssue, PageInfoIssue } from '../../../shared/types/Issues';
 import type { Project } from '../../../shared/types/Project';
 import type { Measure } from '../../../shared/types/ScoreModel';
+import { partDisplayName } from '../../labels/scoreLabels';
 
 /**
  * Editor 画面（画面遷移図の Editor）
@@ -66,10 +67,14 @@ export function Editor({
   const unresolved = annotationIssues.filter((issue) => issue.kind === 'placementUnresolved');
   const orphans = annotationIssues.filter((issue) => issue.kind === 'orphanAnnotation');
   const noteCount = score?.measures.reduce((sum, measure) => sum + measure.notes.length, 0) ?? 0;
+  // 同じ画面の 2 つの一覧が同じパートを別の名前で呼ぶと、行同士を対応付けられなくなる
+  const partNames = new Map(score?.parts.map((part) => [part.id, part.name]) ?? []);
 
   return (
     <main>
       <h1>階名の確認と出力</h1>
+      {/* 全画面共通ルール: h1 の直下に「あなたが今すべきこと」を 1 文置く */}
+      <p>階名を見て問題がなければ、「注釈付きPDFを出力」で楽譜を書き出してください。</p>
 
       <section>
         <h2>概要</h2>
@@ -99,7 +104,7 @@ export function Editor({
               <tbody>
                 {preview.map((row) => (
                   <tr key={`${row.partId}-${row.measureIndex}`}>
-                    <td>{row.partName}</td>
+                    <td>{partDisplayName(row.partId, row.partName)}</td>
                     <td>{row.measureIndex + 1}</td>
                     <td>{row.syllables.join(' ')}</td>
                   </tr>
@@ -117,7 +122,8 @@ export function Editor({
           <ul>
             {skipped.slice(0, SKIPPED_LIST_LIMIT).map((measure) => (
               <li key={`${measure.partId}-${measure.index}`}>
-                {measure.partId} の {measure.index + 1} 小節目
+                {partDisplayName(measure.partId, partNames.get(measure.partId))}の{' '}
+                {measure.index + 1} 小節目
               </li>
             ))}
           </ul>

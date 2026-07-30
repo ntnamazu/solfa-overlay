@@ -29,6 +29,8 @@ export function OmrProgress({ progress, onCancel, canceling }: OmrProgressProps)
   return (
     <main>
       <h1>楽譜を認識しています</h1>
+      {/* 全画面共通ルール: h1 の直下に「あなたが今すべきこと」を 1 文置く */}
+      <p>終わるまでお待ちください（時間がかかりすぎるときは中止できます）。</p>
       <p>{PHASE_LABELS[phase]}</p>
 
       {sheet !== null && (

@@ -35,6 +35,12 @@ describe('OmrProgress', () => {
     expect(screen.getByText(label)).toBeDefined();
   });
 
+  it('見出しの直後に「今すべきこと」を 1 文置く', () => {
+    setup();
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.nextElementSibling?.textContent).toContain('お待ちください');
+  });
+
   it('進捗が届く前でも起動中として表示する（無言の空画面を出さない）', () => {
     setup({ progress: null });
     expect(screen.getByText('Audiveris を起動しています…')).toBeDefined();

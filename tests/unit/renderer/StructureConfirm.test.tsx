@@ -27,18 +27,42 @@ function setup(overrides: Partial<Parameters<typeof StructureConfirm>[0]> = {}) 
 }
 
 describe('StructureConfirm', () => {
-  it('問題がなければその旨を示し、先へ進める', async () => {
-    const props = setup({ issues: [] });
-    expect(screen.getByText('構造の問題は見つかりませんでした。')).toBeDefined();
+  it('見出しの直後に「今すべきこと」を 1 文置く', () => {
+    setup();
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.nextElementSibling?.textContent).toContain('楽譜と見比べて');
+  });
 
-    await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
+  it('内部の語彙（譜表・システム）を画面に出さない', () => {
+    setup({
+      issues: [
+        measureCountIssue,
+        {
+          kind: 'inconsistentSystemStaffCount',
+          movementIndex: 0,
+          pageIndex: 2,
+          staffCounts: [1, 4],
+        },
+      ],
+    });
+    const text = screen.getByRole('main').textContent ?? '';
+    expect(text).not.toContain('譜表');
+    expect(text).not.toContain('システム');
+  });
+
+  it('問題がなければ「このまま進めます」と言い切り、先へ進める', async () => {
+    const props = setup({ issues: [] });
+    expect(screen.getByText(/このまま進めます/)).toBeDefined();
+    expect(screen.getByText(/そのまま次へ進んでください/)).toBeDefined();
+
+    await userEvent.click(screen.getByRole('button', { name: '音部記号と調の確認へ' }));
     expect(props.onNext).toHaveBeenCalled();
   });
 
   it('段の小節数のズレは位置と両方の値を示す', () => {
     setup();
-    expect(screen.getByText(/5ページ 2段目の小節数が食い違います/)).toBeDefined();
-    expect(screen.getByText(/楽譜 5 \/ 出力 4/)).toBeDefined();
+    expect(screen.getByText(/5ページ 2段目の小節数が合いません/)).toBeDefined();
+    expect(screen.getByText(/元の楽譜 5 小節 \/ 読み取り 4 小節/)).toBeDefined();
   });
 
   it('小節数を入力して離れると判断を通知する', async () => {
@@ -106,7 +130,52 @@ describe('StructureConfirm', () => {
     expect((screen.getByLabelText('5ページ 2段目の小節数') as HTMLInputElement).value).toBe('7');
   });
 
-  it('直せない問題には入力欄を出さない（直せないのに触らせない）', () => {
+  it('直せない問題は折りたたんだメモに送り、入力欄を出さない（直せないのに触らせない）', () => {
+    setup({
+      issues: [
+        {
+          kind: 'inconsistentSystemStaffCount',
+          movementIndex: 0,
+          pageIndex: 2,
+          staffCounts: [1, 1, 1, 1, 4, 4],
+        },
+      ],
+    });
+
+    expect(screen.getByText(/直す必要のあるところは見つかりませんでした/)).toBeDefined();
+    expect(screen.queryByRole('spinbutton')).toBeNull();
+    expect(screen.getByText(/読み取りで気になった点（1 件・入力欄では直せません）/)).toBeDefined();
+  });
+
+  it('直せる項目が無くても、報告だけの問題があれば「目を通して」と促す', () => {
+    setup({
+      issues: [{ kind: 'pageCorrespondenceMismatch', bookPageCount: 20, artifactPageCount: 18 }],
+    });
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.nextElementSibling?.textContent).toContain('目を通してから進んでください');
+    expect(heading.nextElementSibling?.textContent).not.toContain('そのまま次へ進んでください');
+  });
+
+  it('段ごとのパート数の不揃いはインチピットに言及し、進んでよいことまで書く', () => {
+    setup({
+      issues: [
+        {
+          kind: 'inconsistentSystemStaffCount',
+          movementIndex: 0,
+          pageIndex: 2,
+          staffCounts: [1, 1, 1, 1, 4, 4],
+        },
+      ],
+    });
+    const text = screen.getByRole('listitem').textContent ?? '';
+    expect(text).toContain('3ページ目');
+    expect(text).toContain('1 / 1 / 1 / 1 / 4 / 4 パート');
+    expect(text).toContain('インチピット');
+    expect(text).toContain('そのまま進めて問題ありません');
+  });
+
+  it('インチピットの形でないパート数のズレに「そのまま進めてよい」と書かない', () => {
+    // (8, 9) は 1 パートずれ＝段の検出失敗。インチピットの説明を当てると害になる
     setup({
       issues: [
         {
@@ -117,14 +186,30 @@ describe('StructureConfirm', () => {
         },
       ],
     });
-    expect(screen.getByText(/3ページ目で段ごとの譜表数が不揃いです（8, 9）/)).toBeDefined();
-    expect(screen.queryByRole('spinbutton')).toBeNull();
+    const text = screen.getByRole('listitem').textContent ?? '';
+    expect(text).toContain('8 / 9 パート');
+    expect(text).not.toContain('インチピット');
+    expect(text).not.toContain('そのまま進めて問題ありません');
+    expect(text).toContain('段の区切りを読み違えている可能性');
+  });
+
+  it('直せる項目と読み取りのメモを分けて示す', () => {
+    setup({
+      issues: [
+        measureCountIssue,
+        { kind: 'pageCorrespondenceMismatch', bookPageCount: 20, artifactPageCount: 18 },
+      ],
+    });
+
+    expect(screen.getByRole('heading', { name: '直していただきたいところ（1 件）' })).toBeDefined();
+    expect(screen.getAllByRole('row')).toHaveLength(2); // ヘッダ + 訂正できる 1 件のみ
+    expect(screen.getByText(/ページの対応が取れません/)).toBeDefined();
   });
 
   it.each([
     [
       { kind: 'movementCountMismatch', omrMovementCount: 2, musicXmlCount: 1 } as StructureIssue,
-      /曲の分割数/,
+      /曲の分かれ方/,
     ],
     [
       {
@@ -133,7 +218,7 @@ describe('StructureConfirm', () => {
         omrPageCount: 20,
         xmlPageCount: 19,
       } as StructureIssue,
-      /ページ数/,
+      /ページ数が合いません/,
     ],
     [
       {
@@ -143,7 +228,7 @@ describe('StructureConfirm', () => {
         omrSystemCount: 4,
         xmlSystemCount: 3,
       } as StructureIssue,
-      /段数/,
+      /段数が合いません/,
     ],
     [
       {
@@ -193,7 +278,7 @@ describe('StructureConfirm', () => {
     setup({ busy: true });
     expect(screen.getByLabelText('5ページ 2段目の小節数').hasAttribute('disabled')).toBe(true);
     expect(
-      screen.getByRole('button', { name: '音部記号・調の確認へ' }).hasAttribute('disabled'),
+      screen.getByRole('button', { name: '音部記号と調の確認へ' }).hasAttribute('disabled'),
     ).toBe(true);
   });
 });

@@ -67,7 +67,7 @@ afterEach(() => {
 /** Home → OMR → 構造確認 まで進める */
 async function advanceToStructure() {
   await userEvent.click(await screen.findByRole('button', { name: 'PDFを取り込む' }));
-  await screen.findByRole('heading', { name: '譜表構造の確認' });
+  await screen.findByRole('heading', { name: '楽譜の構成の確認' });
 }
 
 describe('App', () => {
@@ -164,7 +164,7 @@ describe('App', () => {
     render(<App />);
 
     await userEvent.click(await screen.findByRole('button', { name: 'プロジェクトを開く' }));
-    await screen.findByRole('heading', { name: '譜表構造の確認' });
+    await screen.findByRole('heading', { name: '楽譜の構成の確認' });
     expect(api.openProject).toHaveBeenCalledWith('/scores/song.solfaproj');
   });
 
@@ -189,7 +189,7 @@ describe('App', () => {
     render(<App />);
 
     await advanceToStructure();
-    await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
+    await userEvent.click(screen.getByRole('button', { name: '音部記号と調の確認へ' }));
     expect(screen.getByRole('heading', { name: '音部記号と調の確認' })).toBeDefined();
   });
 
@@ -219,13 +219,16 @@ describe('App', () => {
     render(<App />);
 
     await advanceToStructure();
-    await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
-    await userEvent.selectOptions(screen.getByLabelText('P6 の音部記号（検出: ALTO）'), 'TREBLE');
+    await userEvent.click(screen.getByRole('button', { name: '音部記号と調の確認へ' }));
+    const clefSelect = screen.getByLabelText(
+      '上から6番目のパートの音部記号（読み取り: アルト記号（ハ音記号・第3線））',
+    );
+    await userEvent.selectOptions(clefSelect, 'TREBLE');
 
     expect(api.setClefCorrections).toHaveBeenCalledWith({ 'clef-P6-ALTO': 'TREBLE' });
     // Main が返した結果をそのまま反映する（Renderer 側で状態を組み立て直さない）
     await waitFor(() => {
-      expect(screen.queryByRole('status')).toBeNull();
+      expect(screen.getByRole('status').textContent).toContain('すべて確認できています');
     });
   });
 
@@ -234,7 +237,7 @@ describe('App', () => {
     render(<App />);
 
     await advanceToStructure();
-    await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
+    await userEvent.click(screen.getByRole('button', { name: '音部記号と調の確認へ' }));
     await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
 
     await waitFor(() => {
@@ -249,7 +252,7 @@ describe('App', () => {
     render(<App />);
 
     await advanceToStructure();
-    await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
+    await userEvent.click(screen.getByRole('button', { name: '音部記号と調の確認へ' }));
     await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
 
     await waitFor(() => {
@@ -268,7 +271,7 @@ describe('App', () => {
     render(<App />);
 
     await advanceToStructure();
-    await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
+    await userEvent.click(screen.getByRole('button', { name: '音部記号と調の確認へ' }));
     await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
 
     await waitFor(() => {
@@ -283,7 +286,7 @@ describe('App', () => {
     render(<App />);
 
     await advanceToStructure();
-    await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
+    await userEvent.click(screen.getByRole('button', { name: '音部記号と調の確認へ' }));
     await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
 
     // 承認自体は成功しているため Editor へ進むが、保存の失敗は理由付きで表示し続ける
@@ -309,7 +312,7 @@ describe('App', () => {
     /** Home → 構造確認 → 音部記号確認 → 承認 → Editor まで進める */
     async function advanceToEditor() {
       await advanceToStructure();
-      await userEvent.click(screen.getByRole('button', { name: '音部記号・調の確認へ' }));
+      await userEvent.click(screen.getByRole('button', { name: '音部記号と調の確認へ' }));
       await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
       await screen.findByRole('heading', { name: '階名の確認と出力' });
     }
