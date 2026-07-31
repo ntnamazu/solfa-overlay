@@ -170,12 +170,19 @@ npm run dist:win
 
 ### リリース手順
 
-`v` から始まるタグを push すると、GitHub Actions（[`release.yml`](.github/workflows/release.yml)）が Windows ランナーでインストーラをビルドし、**下書き状態の** GitHub Release に添付します。リリースノートを整えてから公開してください。
+バージョン番号の出どころは **`package.json` の `version` ただ 1 つ**です。アプリ画面の「バージョン: x.y.z」表示（`app.getVersion()` 経由）・インストーラのファイル名（`Solfa Overlay Setup x.y.z.exe`）・exe のファイルプロパティは、すべてこの値から生成されます。**タグを打つ前に `package.json` を上げてください。**
+
+`npm version` を使うと、`package.json` / `package-lock.json` の更新・コミット・`v` 付きタグの作成までが一括で行われます。
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+npm version patch        # 0.1.0 → 0.1.1（minor / major も可）
+                         # → package.json 更新 + コミット + タグ v0.1.1 を生成
+git push --follow-tags   # コミットとタグをまとめて push
 ```
+
+`v` から始まるタグを push すると、GitHub Actions（[`release.yml`](.github/workflows/release.yml)）が Windows ランナーでインストーラをビルドし、**下書き状態の** GitHub Release に添付します。リリースノートを整えてから公開してください。
+
+タグ名と `package.json` の `version` が食い違っている場合、ワークフローは**ビルドを始める前に失敗します**（バージョン表記のズレた配布物を作らないためのガード）。失敗したら `package.json` を直し、タグを打ち直してください。
 
 ## ドキュメント
 

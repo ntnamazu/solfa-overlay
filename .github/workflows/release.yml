@@ -25,6 +25,29 @@ jobs:
           node-version: 24
           cache: npm
 
+      # タグ名と package.json の version が食い違ったまま配布物を作らないためのガード。
+      #
+      # 画面表示のバージョン（app.getVersion() → Home 画面）・インストーラ名
+      # （`${productName} Setup ${version}.exe`）・exe のファイルプロパティは、いずれも
+      # package.json の version が唯一の情報源。タグは release.yml の起動条件でしかなく、
+      # 両者を同期する仕組みは無いため、ここで一致を検証する。
+      #
+      # 重い fetch-resources（MSI の DL・展開）と dist:win の前に置いて、早く落とす。
+      #
+      # タグ名は攻撃者が任意の文字列を作れるため、github.ref_name のテンプレート補間を
+      # run: に直接埋め込まず、GitHub が用意する環境変数 GITHUB_REF_NAME 経由で参照する
+      # （スクリプトインジェクション対策）。
+      - name: タグと package.json の version 一致を検証
+        shell: bash # windows-latest の既定は PowerShell のため明示する
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::タグ($GITHUB_REF_NAME) と package.json の version($PKG_VERSION) が一致しません。package.json を更新してからタグを打ち直してください。"
+            exit 1
+          fi
+          echo "バージョン一致を確認: $PKG_VERSION"
+
       - run: npm ci
 
       # Audiveris(+同梱JRE) を resources/audiveris/win/ に用意（MSI DL→SHA-256検証→展開）
