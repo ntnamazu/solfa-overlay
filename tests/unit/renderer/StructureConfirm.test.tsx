@@ -152,7 +152,7 @@ describe('StructureConfirm', () => {
       issues: [{ kind: 'pageCorrespondenceMismatch', bookPageCount: 20, artifactPageCount: 18 }],
     });
     const heading = screen.getByRole('heading', { level: 1 });
-    expect(heading.nextElementSibling?.textContent).toContain('目を通してから進んでください');
+    expect(heading.nextElementSibling?.textContent).toContain('目を通してから次へ進んでください');
     expect(heading.nextElementSibling?.textContent).not.toContain('そのまま次へ進んでください');
   });
 
@@ -201,7 +201,7 @@ describe('StructureConfirm', () => {
       ],
     });
 
-    expect(screen.getByRole('heading', { name: '直していただきたいところ（1 件）' })).toBeDefined();
+    expect(screen.getByRole('heading', { name: '直すところ（1 件）' })).toBeDefined();
     expect(screen.getAllByRole('row')).toHaveLength(2); // ヘッダ + 訂正できる 1 件のみ
     expect(screen.getByText(/ページの対応が取れません/)).toBeDefined();
   });

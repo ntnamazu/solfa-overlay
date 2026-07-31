@@ -78,7 +78,12 @@ for domain in \
     "pypi.org" \
     "files.pythonhosted.org" \
     "bootstrap.pypa.io" \
-    "imslp.org"; do
+    "imslp.org" \
+    "vitals.ubie.life" \
+    "smarthr.design" \
+    "design.digital.go.jp" \
+    "learn.microsoft.com" \
+    "developer.apple.com"; do
     echo "Resolving $domain..."
     ips=$(dig +noall +answer A "$domain" | awk '$4 == "A" {print $5}')
     if [ -z "$ips" ]; then
