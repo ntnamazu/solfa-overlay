@@ -1,6 +1,6 @@
 {
   "name": "solfa-overlay",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "合唱楽譜PDFへの移動ド階名自動付与アプリ（Solfa Overlay）",
   "private": true,
   "main": "./out/main/index.js",
