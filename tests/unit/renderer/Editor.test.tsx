@@ -38,6 +38,12 @@ function setup(overrides: Partial<Parameters<typeof Editor>[0]> = {}) {
 }
 
 describe('Editor', () => {
+  it('見出しの直後に「今すべきこと」を 1 文置く', () => {
+    setup();
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.nextElementSibling?.textContent).toContain('注釈付きPDFを出力');
+  });
+
   it('階名プレビューをパート・小節・階名列で示す', () => {
     setup();
 
@@ -161,7 +167,26 @@ describe('Editor', () => {
       });
 
       expect(screen.getByRole('heading', { name: /階名が付かなかった小節（1 件）/ })).toBeDefined();
-      expect(screen.getByText('P1 の 5 小節目')).toBeDefined();
+      // プレビュー表と同じ呼び方をする（違う名前だと行同士を対応付けられない）
+      const texts = screen.getAllByRole('listitem').map((item) => item.textContent);
+      expect(texts).toContain('Sopranoの 5 小節目');
+    });
+
+    it('パート名のない楽譜でも内部 ID を出さない', () => {
+      // MusicXmlParser は <part-name> が無いと name に partId をそのまま入れる
+      setup({
+        project: project({
+          score: score({
+            parts: [{ id: 'P1', name: 'P1', staves: [] }],
+            measures: [{ partId: 'P1', index: 4, status: 'skipped', notes: [] }],
+          }),
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+        preview: [{ partId: 'P1', partName: 'P1', measureIndex: 0, syllables: ['do'] }],
+      });
+
+      expect(screen.getByRole('main').textContent).not.toContain('P1');
+      expect(screen.getAllByText(/上から1番目のパート/).length).toBeGreaterThan(0);
     });
 
     it('配置を調整できなかった注釈の件数を示す', () => {

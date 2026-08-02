@@ -36,6 +36,14 @@ export function Home({ onImportPdf, onOpenProject, errorMessage, busy }: HomePro
   return (
     <main>
       <h1>Solfa Overlay</h1>
+      {/*
+        全画面共通ルール: h1 の直下に「あなたが今すべきこと」を 1 文置く。
+        操作できない環境（Electron 外）で存在しないボタンを案内しないよう、
+        できることが実際にあるときだけ出す
+      */}
+      {api !== null && (
+        <p>まず楽譜のPDFを取り込んでください（前回の続きなら「プロジェクトを開く」からどうぞ）。</p>
+      )}
       <p>合唱楽譜PDFへの移動ド階名自動付与アプリ</p>
 
       {api === null ? (

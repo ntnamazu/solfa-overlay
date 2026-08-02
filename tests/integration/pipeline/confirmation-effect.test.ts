@@ -77,9 +77,18 @@ describe('確認フローの効果（divisi: SSAATTBB）', () => {
     expect(new Set(keys).size).toBe(items.length);
   });
 
-  it('影響の大きい項目から並ぶ（ユーザーが上から直せば効果が最大化する）', () => {
-    const counts = items.map((item) => item.mismatchCount);
-    expect(counts).toEqual([...counts].sort((a, b) => b - a));
+  it('楽譜順（パート番号の自然順）に並ぶ。不一致件数は並びに影響しない', () => {
+    const keys = items.map((item) => {
+      const number = Number.parseInt(item.partId?.slice(1) ?? '0', 10);
+      return [number, item.detected] as const;
+    });
+
+    // P10 以降を含む 17 パートの楽譜。localeCompare だと P10 が P2 より前に来る
+    expect(keys).toEqual([...keys].sort((a, b) => a[0] - b[0] || a[1].localeCompare(b[1])));
+    // 実データでは不一致 402 件の項目が中ほどに現れる（件数順ではないことの実証）
+    expect(items.map((item) => item.mismatchCount)).not.toEqual(
+      [...items.map((item) => item.mismatchCount)].sort((a, b) => b - a),
+    );
   });
 
   it('ALTO 誤検出は 41 段あり、1 項目の訂正がその全段へ及ぶ', () => {
