@@ -28,6 +28,36 @@ const RAW: OmrRawArtifacts = {
   movements: [readFixture('IMSLP19716.mvt1.mxl'), readFixture('IMSLP19716.mvt2.mxl')],
 };
 
+/**
+ * オブジェクトグラフを再帰的に凍結する
+ *
+ * `ARTIFACTS` を全テストで共有するための安全装置。凍結したまま全テストが通ることが、
+ * そのまま「解析側は成果物を読むだけで書き換えていない」ことの実行時の証明になる。
+ * TypedArray は要素を持つと `Object.freeze` が投げるため対象から外す
+ */
+function deepFreeze<T>(value: T, seen = new Set<unknown>()): T {
+  if (value === null || typeof value !== 'object' || ArrayBuffer.isView(value) || seen.has(value)) {
+    return value;
+  }
+  seen.add(value);
+  Object.freeze(value);
+  for (const property of Object.values(value)) {
+    deepFreeze(property, seen);
+  }
+  return value;
+}
+
+/**
+ * 擬似 OMR 実行器が返す成果物（モジュール読み込み時に 1 度だけ組み立てる）
+ *
+ * `assembleArtifacts` は zip 展開と XML パースで 1 回あたり約 400ms かかる。入力 `RAW` は
+ * 不変で、かつ `assembleArtifacts` は副作用のない純粋関数（`omrArchive` の宣言どおり）のため、
+ * テストごとに作り直しても**必ず同じ結果**にしかならない。本ファイルの検証対象は
+ * パイプラインの呼び出し順序とユーザー判断の保持であり、組み立て自体の正しさは
+ * domain 側の単体テストが担うため、ここでは 1 度組み立てたものを使い回す
+ */
+const ARTIFACTS = deepFreeze(assembleArtifacts(RAW));
+
 /** 常に同じ成果物を返す擬似 OMR 実行器 */
 class FakeRunner implements OmrRunnerLike {
   canceled = false;
@@ -37,7 +67,7 @@ class FakeRunner implements OmrRunnerLike {
     this.calls += 1;
     onProgress({ phase: 'starting', sheet: null, totalSheets: null, message: '' });
     onProgress({ phase: 'completed', sheet: null, totalSheets: null, message: '' });
-    return Promise.resolve({ artifacts: assembleArtifacts(RAW), raw: RAW });
+    return Promise.resolve({ artifacts: ARTIFACTS, raw: RAW });
   }
 
   cancel(): void {
@@ -269,12 +299,18 @@ describe('ProjectSession', () => {
 
       auto.setKeyRegionDecisions([{ measureIndex: 0, mode: 'minor' }]);
 
-      const reopened = new ProjectSession({ runner: new FakeRunner() });
-      const saved = await waitUntil(async () => {
-        const { project } = await reopened.open(path);
-        return project.keyRegionDecisions.length === 1;
-      });
+      // 保存の発生は世代バックアップの出現で見る。`save` は書き込み前に直前版を bak1 へ
+      // 退避するため（ProjectStore.save → rotateBackups）、本体がある状態での次の保存では
+      // bak1 が必ず現れる。`open` で待つと 1 回ごとに .omr の展開が走って桁違いに遅く、
+      // CI ではテスト自体がタイムアウトしていた
+      const saved = await waitUntil(async () =>
+        (await readdir(directory)).includes('song.solfaproj.bak1'),
+      );
       expect(saved).toBe(true);
+
+      // 「保存が起きた」だけでは中身の保証がないため、確定後に 1 度だけ開いて内容を確かめる
+      const reopened = new ProjectSession({ runner: new FakeRunner() });
+      expect((await reopened.open(path)).project.keyRegionDecisions).toHaveLength(1);
     });
 
     it('保存先が未確定なら自動保存しない（どこへ書けばよいか決まっていない）', async () => {
