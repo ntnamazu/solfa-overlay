@@ -199,6 +199,69 @@ class ProjectFileError extends Error {
 - Renderer の CSP（`default-src 'self'`）を緩和しない（外部リソース読込の遮断を維持する）
 - `shell.openExternal` 等でユーザー提供の URL を開かない
 
+## タスク管理（Issue と Projects）
+
+### 役割分担
+
+| 置き場所                   | 書くこと                                           |
+| -------------------------- | -------------------------------------------------- |
+| `docs/`                    | 何を作るか（永続ドキュメント）                     |
+| GitHub Issue / Projects    | やることの一覧と、その優先度・着手順（バックログ） |
+| `.steering/[日付]-[名前]/` | 着手した 1 件をどう進めるか（計画と作業記録）      |
+
+- Issue は **1 つのステアリングで完結できる大きさ**に切る
+- それより大きい作業は親 Issue を立て、分割した Issue をサブ Issue としてぶら下げる（例: Phase 6 の #14 と #4〜#6）
+
+### 依存関係（blocked by）
+
+**ハード依存だけを `blocked by` で表す。** 判定基準は「先行する Issue が未完了のままでは、着手または完了ができないか」である。
+
+| 関係の種類 | 例                                                   | 表し方                 |
+| ---------- | ---------------------------------------------------- | ---------------------- |
+| ハード依存 | 楽譜プレビュー（#4）がないと注釈編集（#5）を作れない | Issue の `blocked by`  |
+| 推奨順     | 小さい #7 を肩慣らしとして #4 より先にやる           | Projects の並び順      |
+| ついで     | #5 で Editor を触るときに #8 も直すと効率がよい      | Issue 本文に文章で書く |
+
+推奨順や「ついで」まで `blocked by` にしない。着手できる Issue まで Blocked と表示され、本当に止まっている Issue を見分けられなくなるため。
+
+```bash
+gh issue edit 5 --add-blocked-by 4      # #5 は #4 に blocked by
+gh issue edit 14 --add-sub-issue 4,5,6  # #14 の下に #4〜#6 をぶら下げる
+```
+
+### 優先度（Priority）
+
+Projects の `Priority` フィールド（単一選択）で表す。
+
+| 値          | 意味                                   |
+| ----------- | -------------------------------------- |
+| `P0-high`   | 必須。これがないと v1 として成立しない |
+| `P1-medium` | 重要。v1 に入れたい                    |
+| `P2-low`    | できれば。v1 以降でもよい              |
+
+- 機能の Issue は、PRD の機能要件の優先度（P0〜P2）をそのまま引き継ぐ
+- 機能以外の Issue（不具合・CI・ドキュメント等）は、利用者への影響と放置したときのリスクで同じ尺度に当てはめる
+- 値の表記に `-high` などを付けているのは、数字の大小と優先度の高低の対応を読み違えないためである
+
+**Priority は重要度であり、着手順ではない。** 着手順は Projects の並び順で表す（次節）。
+
+### 着手順と状態（Status）
+
+- `Status` は `Todo` / `In Progress` / `Done` の 3 つとする
+- **`Todo` の中の並び順を着手順とする。** いちばん上が次に着手する Issue である
+- 優先度や順序を変えたときは、判断と理由を該当 Issue に記録する（例: フィードバックを待たずに Phase 6 の優先度を上げた判断は #4 に記録している）
+
+### 着手から完了までの流れ
+
+1. Projects の `Todo` の先頭から Issue を選び、`Status` を `In Progress` にする
+2. ステアリングを作成し、`requirements.md` の冒頭に対象の Issue 番号を書く
+3. 実装し、PR の「関連Issue」に `Closes #[Issue番号]` を書く
+4. Issue がクローズされたら `Status` を `Done` にする（Projects の自動化で設定できる）
+
+**`Closes` で Issue が自動でクローズされるのは、デフォルトブランチ（`main`）向けの PR だけである。**
+`develop` 向けの PR ではキーワードが無視される（[GitHub Docs: Linking a pull request to an issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)）。
+`develop` へマージした時点で完了とするなら、Issue は手動でクローズする。
+
 ## Git運用ルール
 
 ### ブランチ戦略
