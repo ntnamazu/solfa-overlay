@@ -255,12 +255,19 @@ Projects の `Priority` フィールド（単一選択）で表す。
 
 1. Projects の `Todo` の先頭から Issue を選び、`Status` を `In Progress` にする
 2. ステアリングを作成し、`requirements.md` の冒頭に対象の Issue 番号を書く
-3. 実装し、PR の「関連Issue」に `Closes #[Issue番号]` を書く
-4. Issue がクローズされたら `Status` を `Done` にする（Projects の自動化で設定できる）
+3. 実装し、PR の「関連Issue」に Issue 番号を書く（書き方は下記）
+4. PR をマージしたら Issue をクローズし、`Status` を `Done` にする（クローズ時に `Done` へ移す設定は Projects の自動化でできる）
 
-**`Closes` で Issue が自動でクローズされるのは、デフォルトブランチ（`main`）向けの PR だけである。**
-`develop` 向けの PR ではキーワードが無視される（[GitHub Docs: Linking a pull request to an issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)）。
-`develop` へマージした時点で完了とするなら、Issue は手動でクローズする。
+**関連 Issue の書き方は、PR の向き先で変える。**
+`Closes` などのキーワードで Issue が自動でクローズされるのは、デフォルトブランチ（`main`）向けの PR だけである。
+それ以外のブランチ向けの PR ではキーワードが無視される（[GitHub Docs: Linking a pull request to an issue](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/linking-a-pull-request-to-an-issue)）。
+
+| PR の向き先                 | 書き方                | Issue のクローズ         |
+| --------------------------- | --------------------- | ------------------------ |
+| `develop`（通常）           | `Refs #[Issue番号]`   | マージ後に手動でクローズ |
+| `main`（hotfix などの例外） | `Closes #[Issue番号]` | マージで自動クローズ     |
+
+`develop` 向けの PR に `Closes` を書かない。自動でクローズされると誤解しやすく、実際には何も起きないため。
 
 ## Git運用ルール
 
@@ -273,16 +280,32 @@ Projects の `Priority` フィールド（単一選択）で表す。
 - `feature/[機能名]`: 新機能開発（例: `feature/solfa-engine`）
 - `fix/[修正内容]`: バグ修正
 - `refactor/[対象]`: リファクタリング
+- `docs/[対象]`: ドキュメントのみの変更
+- `chore/[対象]`: ビルド・CI・開発環境などの変更
+- `hotfix/[修正内容]`: リリース後の致命的なバグの緊急修正（例外。下記「hotfix」を参照）
 
 **フロー**:
 
 ```
-main
-  └─ develop
+main                       … リリースはここでタグを打つ
+  ├─ hotfix/xxx            … 例外。main から切って main へマージし、develop にも取り込む
+  └─ develop               … 一定量たまったら main へマージする
       ├─ feature/solfa-engine
-      ├─ feature/clef-confirm-ui
-      └─ fix/omr-cancel-leak
+      ├─ fix/omr-cancel-leak
+      └─ docs/task-management-guidelines
 ```
+
+**基本は `develop` へマージする。** 作業ブランチは `develop` から切り、PR も `develop` へ向ける。
+`develop` の変更が一定量たまったら `develop` を `main` へマージし、`main` でリリースする
+（バージョンの上げ方とタグの打ち方は README「リリース手順」を正とする）。
+
+**hotfix**（例外）:
+
+リリース後に致命的なバグが見つかり、`develop` にたまっている未リリースの変更を待たずに直す必要があるときだけ使う。
+
+1. `main` から `hotfix/[修正内容]` を切る
+2. 修正の PR を `main` へ向けてマージし、リリースする
+3. **同じ修正を `develop` にも取り込む**（`main` を `develop` へマージする）。取り込まないと、次に `develop` を `main` へマージしたときに修正が失われる
 
 ### コミットメッセージ規約
 
@@ -346,8 +369,10 @@ feat(solfa): La基準短調の度数計算を実装
 
 ## 関連Issue
 
-Closes #[Issue番号]
+Refs #[Issue番号]
 ```
+
+- 「関連Issue」は、`develop` 向けなら `Refs`、`main` 向けなら `Closes` で書く（「タスク管理」節の「着手から完了までの流れ」を参照）
 
 **レビュープロセス**:
 
