@@ -19,6 +19,7 @@ export const IPC_CHANNELS = {
   projectSetSettings: 'project:setSettings',
   projectCompleteConfirmation: 'project:completeConfirmation',
   projectExportPdf: 'project:exportPdf',
+  projectGetSourcePdf: 'project:getSourcePdf',
 } as const;
 
 /** Main → Renderer の一方向イベント（`webContents.send`） */

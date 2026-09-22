@@ -56,17 +56,28 @@ export interface SolfaFonts {
   bold: TextMetrics;
 }
 
+/** 出力PDFが対応する書体の総称ファミリ名（CSS の総称名と同じ綴り） */
+export type GenericFontFamily = 'sans-serif' | 'serif' | 'monospace';
+
 /** CSS 風の総称ファミリ名 → 標準14フォント */
-const FONT_FAMILIES: Readonly<Record<string, { regular: StandardFonts; bold: StandardFonts }>> = {
+const FONT_FAMILIES: Readonly<
+  Record<GenericFontFamily, { regular: StandardFonts; bold: StandardFonts }>
+> = {
   'sans-serif': { regular: StandardFonts.Helvetica, bold: StandardFonts.HelveticaBold },
   serif: { regular: StandardFonts.TimesRoman, bold: StandardFonts.TimesRomanBold },
   monospace: { regular: StandardFonts.Courier, bold: StandardFonts.CourierBold },
 };
 
-const DEFAULT_FAMILY = FONT_FAMILIES['sans-serif'] as {
-  regular: StandardFonts;
-  bold: StandardFonts;
-};
+/**
+ * 設定のフォント名を総称ファミリ名へ正規化する
+ *
+ * 未知の名前は既定（sans-serif）へ落とす。画面プレビューもこの結果を使い、
+ * **出力PDFと画面で書体の落とし先が食い違わない**ようにする
+ */
+export function genericFontFamily(fontFamily: string): GenericFontFamily {
+  const key = fontFamily.trim().toLowerCase();
+  return key === 'serif' || key === 'monospace' ? key : 'sans-serif';
+}
 
 /**
  * 設定のフォント名を標準14フォントへ解決する
@@ -78,7 +89,7 @@ export function resolveFontFamily(fontFamily: string): {
   regular: StandardFonts;
   bold: StandardFonts;
 } {
-  return FONT_FAMILIES[fontFamily.trim().toLowerCase()] ?? DEFAULT_FAMILY;
+  return FONT_FAMILIES[genericFontFamily(fontFamily)];
 }
 
 /**

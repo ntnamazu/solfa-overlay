@@ -112,6 +112,8 @@ export function createProjectHandlers(
 
     exportPdf: (outPath: string): Promise<IpcResult<ExportSummary>> =>
       attemptAsync(() => session.exportPdf(outPath)),
+
+    getSourcePdf: (): IpcResult<Uint8Array> => attempt(() => session.sourcePdfBytes()),
   };
 }
 

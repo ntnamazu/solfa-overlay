@@ -31,6 +31,19 @@ export interface OmrStaff {
   clefKind: string | null;
   /** 符頭列（x 昇順） */
   heads: OmrHead[];
+  /**
+   * 譜線の縦範囲（最上線〜最下線の y）
+   *
+   * Editor の楽譜プレビューでスキップ小節をハイライトする範囲に使う。
+   * 譜線の座標が無い・読めない譜表では付かない（推測の範囲を描かない）
+   */
+  extent?: OmrStaffExtent;
+}
+
+/** 譜表の縦範囲（300dpi 画像ピクセル） */
+export interface OmrStaffExtent {
+  top: number;
+  bottom: number;
 }
 
 export interface OmrHead {
@@ -141,6 +154,27 @@ function parseIntAttr(element: XmlElement, name: string): number | null {
   return Number.isNaN(value) ? null : value;
 }
 
+/**
+ * 譜表の縦範囲を譜線の座標から求める
+ *
+ * 譜線は `<lines><line><point x y/>…` の折れ線で、傾き・たわみがあるため
+ * 全点の y の最小・最大を採る。y は小数で出力される（例: `422.1`）
+ */
+function parseStaffExtent(staffElement: XmlElement): OmrStaffExtent | null {
+  let top = Number.POSITIVE_INFINITY;
+  let bottom = Number.NEGATIVE_INFINITY;
+  for (const line of find(staffElement, 'lines')?.children ?? []) {
+    for (const point of findAll(line, 'point')) {
+      const y = Number.parseFloat(attr(point, 'y') ?? '');
+      if (Number.isFinite(y)) {
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y);
+      }
+    }
+  }
+  return top <= bottom ? { top, bottom } : null;
+}
+
 function parseSystem(systemElement: XmlElement): OmrSystem {
   const stacks: OmrStack[] = [];
   for (const stackElement of findAll(systemElement, 'stack')) {
@@ -193,11 +227,13 @@ function parseSystem(systemElement: XmlElement): OmrSystem {
       if (staffId === null) {
         continue;
       }
+      const extent = parseStaffExtent(staffElement);
       staves.push({
         partId: `P${partId}`,
         staffId,
         clefKind: staffClef.get(staffId) ?? null,
         heads: (headsByStaff.get(staffId) ?? []).slice().sort((a, b) => a.x - b.x),
+        ...(extent === null ? {} : { extent }),
       });
     }
   }

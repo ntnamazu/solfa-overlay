@@ -95,6 +95,39 @@ describe('parseSheetXml', () => {
     expect(() => parseSheetXml('<sheet><page></sheet>')).toThrowError(ScoreParseError);
   });
 
+  it('譜線の座標から譜表の縦範囲を求める（傾き・小数を含む全点の最小〜最大）', () => {
+    const xml = `<?xml version="1.0"?>
+<sheet number="1">
+  <page>
+    <system>
+      <stack left="100" right="500"/>
+      <part id="1">
+        <staff id="11">
+          <lines>
+            <line><point x="100" y="421"/><point x="300" y="422.1"/><point x="500" y="420.5"/></line>
+            <line><point x="100" y="438"/><point x="500" y="439"/></line>
+            <line><point x="100" y="489"/><point x="500" y="490.5"/></line>
+          </lines>
+        </staff>
+        <staff id="12">
+          <lines>
+            <line><point x="100" y="abc"/></line>
+          </lines>
+        </staff>
+      </part>
+    </system>
+  </page>
+</sheet>`;
+    const staves = parseSheetXml(xml).pages[0]?.systems[0]?.staves ?? [];
+    expect(staves[0]?.extent).toEqual({ top: 420.5, bottom: 490.5 });
+    // 数値として読める点が 1 つもなければ範囲を付けない（推測で描かない）
+    expect(staves[1]?.extent).toBeUndefined();
+  });
+
+  it('譜線の要素が無い譜表には縦範囲を付けない', () => {
+    expect(sheet.pages[0]?.systems[0]?.staves[0]?.extent).toBeUndefined();
+  });
+
   it('数値でない属性・id 欠落・座標欠落の要素を無視して部分結果を返す', () => {
     const xml = `<?xml version="1.0"?>
 <sheet number="1">
