@@ -72,6 +72,15 @@ export function snapshot(overrides: Partial<ProjectSnapshot> = {}): ProjectSnaps
     pageIssues: [],
     annotationIssues: [],
     preview: [],
+    scorePreview: {
+      style: {
+        fontFamily: 'sans-serif',
+        fontSizePt: 8,
+        diatonicColor: '#8b0000',
+        chromaticColor: '#6a0dad',
+      },
+      pages: [],
+    },
     unmatchedCorrections: [],
     ...overrides,
   };

@@ -1,6 +1,7 @@
 import { regenerateAnnotations } from '../domain/annotations/AnnotationManager';
 import { renderOverlay } from '../domain/render/OverlayRenderer';
 import { buildPageInfos } from '../domain/render/pageInfo';
+import { buildScorePreview } from '../domain/render/scorePreview';
 import { BookStructureResolver } from '../domain/score/BookStructureResolver';
 import type { StructureIssue } from '../domain/score/BookStructureResolver';
 import type { BookPageRef, PageGeometry } from '../domain/score/OmrSheetParser';
@@ -11,6 +12,7 @@ import { buildConfirmationItems, mergeCorrections } from '../domain/score/confir
 import { KeyRegionBuilder } from '../domain/solfa/KeyRegionBuilder';
 import type { KeyRegionIssue } from '../domain/solfa/KeyRegionBuilder';
 import { SolfaEngine, applyDegrees } from '../domain/solfa/SolfaEngine';
+import { DEFAULT_SETTINGS } from '../shared/constants/DEFAULT_SETTINGS';
 import type { SolfaPreviewRow } from '../shared/ipc/contract';
 import type { AnnotationIssue, PageInfoIssue, RenderIssue } from '../shared/types/Issues';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
@@ -19,6 +21,7 @@ import type { OmrRawArtifacts } from '../shared/types/OmrRawArtifacts';
 import type { Project } from '../shared/types/Project';
 import type { ProjectSettings } from '../shared/types/ProjectSettings';
 import type { ScoreModel } from '../shared/types/ScoreModel';
+import type { ScorePreview } from '../shared/types/ScorePreview';
 import type { StructureDecision } from '../shared/types/StructureDecision';
 import { ProjectStore } from '../storage/ProjectStore';
 import { writeExportPdf } from '../storage/writeExportPdf';
@@ -54,6 +57,8 @@ export interface SessionSnapshot {
   annotationIssues: AnnotationIssue[];
   /** Editor の階名プレビュー（先頭の一定小節まで） */
   preview: SolfaPreviewRow[];
+  /** Editor の楽譜プレビューに重ねる内容（注釈・スキップ小節・配置警告） */
+  scorePreview: ScorePreview;
   /**
    * 対象が見つからず適用されなかった訂正
    *
@@ -100,6 +105,22 @@ export interface OmrRunnerLike {
   cancel(): void;
 }
 
+/**
+ * 解析前の楽譜プレビュー（重ねるものなし）
+ *
+ * スナップショットはプロジェクトを開いて解析した後にしか作られないため実際には返らないが、
+ * `preview` の初期値 `[]` と同じく、フィールドを null 許容にせずに済ませるために置く
+ */
+const EMPTY_SCORE_PREVIEW: ScorePreview = {
+  style: {
+    fontFamily: 'sans-serif',
+    fontSizePt: DEFAULT_SETTINGS.fontSizePt,
+    diatonicColor: DEFAULT_SETTINGS.diatonicColor,
+    chromaticColor: DEFAULT_SETTINGS.chromaticColor,
+  },
+  pages: [],
+};
+
 export class ProjectSession {
   private readonly store: ProjectStore;
   private readonly runner: OmrRunnerLike;
@@ -127,6 +148,8 @@ export class ProjectSession {
   private pageIssues: PageInfoIssue[] = [];
   /** Editor の階名プレビュー（承認時にも同じ内容を返せるよう保持する） */
   private preview: SolfaPreviewRow[] = [];
+  /** Editor の楽譜プレビュー（`preview` と同じく承認時にも返せるよう保持する） */
+  private scorePreview: ScorePreview = EMPTY_SCORE_PREVIEW;
   private pendingSave: ReturnType<typeof setTimeout> | null = null;
   /**
    * 進行中の保存（直列化用）
@@ -488,6 +511,14 @@ export class ProjectSession {
       annotationIssues,
     };
     this.preview = buildPreview(score, project.settings, this.engine);
+    this.scorePreview = buildScorePreview({
+      score,
+      omrPages: omr.artifacts.pages,
+      pages: project.pages,
+      annotations,
+      annotationIssues,
+      settings: project.settings,
+    });
     return this.snapshot(this.lastIssues);
   }
 
@@ -504,8 +535,20 @@ export class ProjectSession {
       ...issues,
       pageIssues: this.pageIssues,
       preview: this.preview,
+      scorePreview: this.scorePreview,
       unmatchedCorrections: this.unmatched,
     };
+  }
+
+  /**
+   * 元PDF のバイト列を返す（Editor の楽譜プレビュー用）
+   *
+   * スナップショットに入れないのは、数十MBの PDF を訂正のたびに送り直さないため
+   * （元PDF はセッション中に変わらない）。**パスを受け取らない**のは、IPC を任意ファイルの
+   * 読み出し口にしないため（開いているプロジェクトの PDF しか返せない）
+   */
+  sourcePdfBytes(): Uint8Array {
+    return this.require().sourcePdf;
   }
 
   /**

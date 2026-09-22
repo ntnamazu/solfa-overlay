@@ -497,6 +497,7 @@ describe('ProjectSession', () => {
       ['setKeyRegionDecisions', () => session.setKeyRegionDecisions([])],
       ['completeConfirmation', () => session.completeConfirmation()],
       ['exportPdf', () => session.exportPdf('/tmp/x.pdf')],
+      ['sourcePdfBytes', () => session.sourcePdfBytes()],
     ])('%s はプロジェクト未オープンを明示的に拒否する', async (_name, run) => {
       // 同期で throw する操作と Promise を返す操作が混在するため、両方を同じ形で受ける
       await expect((async () => run())()).rejects.toThrow(/開かれていません/);
@@ -566,6 +567,55 @@ describe('ProjectSession', () => {
       // 注釈自体は作られる（衝突回避なしで置かれ、その旨も報告される）
       expect(snapshot.project.annotations.length).toBeGreaterThan(0);
       expect(snapshot.annotationIssues.some((i) => i.kind === 'missingPageGeometry')).toBe(true);
+    });
+  });
+
+  describe('楽譜プレビュー', () => {
+    it('注釈を元PDFのページごとにまとめて返す（4 Audiveris ページ → 3 ページ）', async () => {
+      const snapshot = await session.importPdf(pdfPath, () => {});
+      const { pages } = snapshot.scorePreview;
+
+      expect(pages.map((page) => page.sourcePageIndex)).toEqual([0, 1, 2]);
+      // 出力PDFに描く注釈（階名を持つ音符と 1:1）がすべて画面にも載る
+      const shown = pages.reduce((sum, page) => sum + page.annotations.length, 0);
+      expect(shown).toBe(snapshot.project.annotations.length);
+    });
+
+    it('スキップ小節の位置を返す（Victoria の 1 小節）', async () => {
+      const snapshot = await session.importPdf(pdfPath, () => {});
+      const skipped = snapshot.project.score?.measures.filter((m) => m.status === 'skipped');
+      const regions = snapshot.scorePreview.pages.flatMap((page) => page.skippedMeasures);
+
+      expect(regions.map((region) => [region.partId, region.measureIndex])).toEqual(
+        skipped?.map((measure) => [measure.partId, measure.index]),
+      );
+    });
+
+    it('設定を変えると重ねる文字が切り替わる（PDF を再取得せずに描き変えられる）', async () => {
+      const imported = await session.importPdf(pdfPath, () => {});
+      const changed = session.setSettings({
+        ...imported.project.settings,
+        syllableSystem: 'tonicSolfa',
+      });
+
+      const tonicSolfa = new Set(
+        Object.values(TONIC_SOLFA_TABLE).flatMap((row) => Object.values(row)),
+      );
+      const texts = changed.scorePreview.pages.flatMap((page) =>
+        page.annotations.map((item) => item.text),
+      );
+      expect(texts.length).toBeGreaterThan(0);
+      expect(texts.every((text) => tonicSolfa.has(text))).toBe(true);
+    });
+
+    it('承認しても楽譜プレビューを失わない（承認は解析を流し直さない）', async () => {
+      const imported = await session.importPdf(pdfPath, () => {});
+      expect(session.completeConfirmation().scorePreview).toEqual(imported.scorePreview);
+    });
+
+    it('元PDF のバイト列をそのまま返す', async () => {
+      await session.importPdf(pdfPath, () => {});
+      expect(session.sourcePdfBytes()).toEqual(new Uint8Array(readFileSync(pdfPath)));
     });
   });
 

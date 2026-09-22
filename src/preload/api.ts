@@ -39,6 +39,8 @@ export interface SolfaOverlayApi {
   completeConfirmation(): Promise<IpcResult<ProjectSnapshot>>;
   /** 注釈付きPDFを書き出す（承認前は失敗する） */
   exportPdf(outPath: string): Promise<IpcResult<ExportSummary>>;
+  /** 開いているプロジェクトの元PDF（楽譜プレビュー用） */
+  getSourcePdf(): Promise<IpcResult<Uint8Array>>;
 
   /**
    * OMR の進捗を購読する
