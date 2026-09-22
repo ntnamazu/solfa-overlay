@@ -8,6 +8,7 @@ import type {
 } from '../shared/ipc/contract';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress as OmrProgressData } from '../shared/types/OmrProgress';
+import type { ProjectSettings } from '../shared/types/ProjectSettings';
 import type { StructureDecision } from '../shared/types/StructureDecision';
 import { getApi } from './api';
 import { ClefKeyConfirm } from './screens/ClefKeyConfirm/ClefKeyConfirm';
@@ -150,6 +151,23 @@ export function App() {
     [api, accept],
   );
 
+  const changeSettings = useCallback(
+    async (settings: ProjectSettings) => {
+      if (api === null) {
+        return;
+      }
+      setBusy(true);
+      const result = await api.setSettings(settings);
+      setBusy(false);
+      if (accept(result)) {
+        // 出力済みのPDFは切り替え前の表記のまま。「出力しました」を残すと、
+        // そのファイルが新しい表記で書かれていると誤解される
+        setExportSummary(null);
+      }
+    },
+    [api, accept],
+  );
+
   const approve = useCallback(async () => {
     if (api === null) {
       return;
@@ -261,6 +279,7 @@ export function App() {
         unmatchedCorrections={snapshot.unmatchedCorrections}
         exportSummary={exportSummary}
         onExportPdf={() => void exportPdf()}
+        onChangeSettings={(settings) => void changeSettings(settings)}
         onBackToConfirm={() => {
           setScreen('clefKey');
         }}

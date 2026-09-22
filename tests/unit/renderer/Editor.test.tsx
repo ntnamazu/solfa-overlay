@@ -29,6 +29,7 @@ function setup(overrides: Partial<Parameters<typeof Editor>[0]> = {}) {
     unmatchedCorrections: [],
     exportSummary: null,
     onExportPdf: vi.fn(),
+    onChangeSettings: vi.fn(),
     onBackToConfirm: vi.fn(),
     busy: false,
     ...overrides,
@@ -97,6 +98,37 @@ describe('Editor', () => {
 
     expect(screen.getByText('照合できた音符: 1')).toBeDefined();
     expect(screen.getByText('注釈: 1')).toBeDefined();
+  });
+
+  describe('階名の表記', () => {
+    it('階名プレビューの直前に置く（切り替えた結果がすぐ下で見える）', () => {
+      setup();
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+      expect(headings.indexOf('階名の表記')).toBe(headings.indexOf('階名プレビュー') - 1);
+    });
+
+    it('プロジェクトの設定を選択状態で表示し、切り替えを設定全体で渡す', async () => {
+      const props = setup();
+      const tonicSolfa = screen.getByRole('radio', { name: 'Tonic sol-fa 略記（d r m f s l t）' });
+
+      expect(
+        screen.getByRole<HTMLInputElement>('radio', { name: 'コダーイ式（do re mi fa so la ti）' })
+          .checked,
+      ).toBe(true);
+      await userEvent.click(tonicSolfa);
+      expect(props.onChangeSettings).toHaveBeenCalledExactlyOnceWith({
+        ...props.project.settings,
+        syllableSystem: 'tonicSolfa',
+      });
+    });
+
+    it('処理中は切り替えられない', async () => {
+      const props = setup({ busy: true });
+      await userEvent.click(
+        screen.getByRole('radio', { name: 'Do基準（短調の主音を do と読む）' }),
+      );
+      expect(props.onChangeSettings).not.toHaveBeenCalled();
+    });
   });
 
   describe('PDF出力', () => {
