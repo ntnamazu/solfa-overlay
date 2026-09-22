@@ -116,6 +116,16 @@
 - 検証の提案対応: `ScorePage` のリサイズ追従（`ResizeObserver`）、`OverlayRenderer.ts` に直接埋め込まれていた NUL バイトを `\u0000` エスケープへ置換
   （develop 由来。git がファイルをバイナリ扱いし差分レビューができなかった。実行時の値は同じ）
 
+**PR 作成後に見つかった不具合**:
+
+- Sibelius から「PDF に印刷」（PScript5）で作った楽譜で、プレビューの音符・音部記号がすべて字形なしの四角になった
+  （出力PDFは正常）。原因は pdfjs-dist v6 の **modern ビルド**が、埋め込み TrueType（Opus / OpusSpecial）を作り直す処理で
+  `Math.sumPrecise` をポリフィルなしで呼び、Electron 41 の Chromium に無いため `TypeError` で落ちていたこと。
+  **legacy ビルド**（core-js のポリフィル同梱）へ切り替えて対処した。ユーザーが DevTools の Console で警告を見つけて確定した
+- 調査中、Node での再現に legacy ビルドを使っていたため正常に見え、原因を「フォントの登録段階」と一度誤って推定した。
+  **再現環境は本番と同じビルドにそろえる**こと
+- スキャンPDF（画像）や埋め込みのない標準フォントは TrueType の作り直しを通らないため、Victoria などでは発覚しなかった
+
 ### 学んだこと
 
 **技術的な学び**:
@@ -142,3 +152,4 @@
 - #5（注釈編集）では `ScorePreviewAnnotation.id`（= 注釈 id）を SVG 要素のクリックから引いて編集対象にできる
 - #6（転調点）では `ScorePreviewPage` にマーカー配列を足し、同じ SVG レイヤーへ描く
 - PR は `develop` 向けのため `Refs #4` と書く
+- pdfjs-dist を更新するときは、埋め込み TrueType を含むベクターPDF（楽譜ソフトの書き出し）でも実機で表示を確かめる。自動テストに使える権利のはっきりした素材を用意できると望ましい

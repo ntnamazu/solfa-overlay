@@ -1,4 +1,4 @@
-import type { PDFPageProxy } from 'pdfjs-dist';
+import type { PDFPageProxy } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 /**
  * 元PDF の読み込みとページ描画（PDF.js の薄い包み）
@@ -52,9 +52,13 @@ export function isRenderCancelled(error: unknown): boolean {
  * PDF.js には**バイト列だけ**を渡し、URL からの読み込みは使わない（ネットワーク経路を持たない）
  */
 export const loadPdfWithPdfjs: PdfLoader = async (bytes) => {
+  // **legacy ビルドを使う**。modern ビルドは最新ブラウザ向けで、Electron の Chromium に
+  // まだ無い機能をポリフィルなしで呼ぶ。実際に v6 の modern ビルドは埋め込み TrueType の
+  // 作り直しで `Math.sumPrecise` を呼んで落ち、Sibelius 製 PDF の音符（Opus フォント）が
+  // すべて字形なしの四角になった。legacy ビルドは core-js のポリフィルを同梱している
   const [pdfjs, worker] = await Promise.all([
-    import('pdfjs-dist'),
-    import('pdfjs-dist/build/pdf.worker.min.mjs?url'),
+    import('pdfjs-dist/legacy/build/pdf.mjs'),
+    import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'),
   ]);
   pdfjs.GlobalWorkerOptions.workerSrc = worker.default;
 
