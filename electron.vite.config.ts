@@ -44,8 +44,14 @@ function relaxCspForDev(): Plugin {
  * - `wasm/`: スキャン楽譜に多い JBIG2 / JPEG2000 のデコーダ（wasm と、失敗時に使う JS 版）。
  *   pdfjs v6 はこれを `wasmUrl` から読むため、無いとスキャンPDFの画像が描けない
  * - `standard_fonts/`: PDF に埋め込まれていない標準フォントの代替字形
+ * - `cmaps/`: 埋め込みのない CJK フォント（日本語の曲名・歌詞など）が参照する Adobe の定義済み CMap。
+ *   無いとそのフォントの読み込みに失敗し、該当する文字が描かれない
  */
-const PDFJS_ASSET_DIRS = { wasm: 'wasm', standard_fonts: 'standard_fonts' } as const;
+const PDFJS_ASSET_DIRS = {
+  wasm: 'wasm',
+  standard_fonts: 'standard_fonts',
+  cmaps: 'cmaps',
+} as const;
 
 /**
  * 配らないファイル
@@ -64,6 +70,7 @@ const PDFJS_CONTENT_TYPES: Record<string, string> = {
   '.mjs': 'text/javascript',
   '.pfb': 'application/octet-stream',
   '.ttf': 'font/ttf',
+  '.bcmap': 'application/octet-stream',
 };
 
 /** `pdfjs/<dir>/<file>` の一覧（公開パスと実体のパス） */

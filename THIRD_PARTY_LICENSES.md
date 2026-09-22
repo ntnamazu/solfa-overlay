@@ -83,6 +83,7 @@ Editor 画面で元PDFを表示するために、Mozilla の **PDF.js**（npm �
 | JPEG 2000 デコーダ（`openjpeg.wasm` / `openjpeg_nowasm_fallback.js`） | `out/renderer/pdfjs/wasm/` | BSD-2-Clause（OpenJPEG。`LICENSE_OPENJPEG`）＋ PDF.js によるビルド部分（`LICENSE_PDFJS_OPENJPEG`） | © Université catholique de Louvain (UCL) ほか / © Mozilla Foundation |
 | ICC カラー変換（`qcms_bg.wasm`） | `out/renderer/pdfjs/wasm/` | MIT（qcms。`LICENSE_QCMS`）＋ PDF.js によるビルド部分（`LICENSE_PDFJS_QCMS`） | © Mozilla Corporation / © Marti Maria |
 | 標準フォントの代替字形（`Foxit*.pfb`） | `out/renderer/pdfjs/standard_fonts/` | BSD-3-Clause（PDFium 由来。`LICENSE_FOXIT`） | © PDFium Authors |
+| 定義済み CMap（`*.bcmap`。埋め込みのない CJK フォント用） | `out/renderer/pdfjs/cmaps/` | BSD-3-Clause（Adobe。`LICENSE`） | © Adobe Systems Incorporated |
 
 - **プロジェクト**: <https://mozilla.github.io/pdf.js/> / <https://github.com/mozilla/pdf.js>
 - **Apache License 2.0 全文**: <https://www.apache.org/licenses/LICENSE-2.0>

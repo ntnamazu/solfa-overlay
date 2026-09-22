@@ -1,3 +1,5 @@
+import type { PDFPageProxy } from 'pdfjs-dist';
+
 /**
  * 元PDF の読み込みとページ描画（PDF.js の薄い包み）
  *
@@ -65,15 +67,24 @@ export const loadPdfWithPdfjs: PdfLoader = async (bytes) => {
     data: bytes.slice(),
     wasmUrl: assetUrl('wasm'),
     standardFontDataUrl: assetUrl('standard_fonts'),
+    // 埋め込みのない CJK フォント（日本語の曲名・歌詞）の文字コード対応表
+    cMapUrl: assetUrl('cmaps'),
+    cMapPacked: true,
     // 埋め込みのない Helvetica / Arial の代替字形（LiberationSans）は同梱しないため、
     // OS のフォントで代替させる（`local()` 参照でありネットワークは使わない）
     useSystemFonts: true,
   });
-  const document_ = await loadingTask.promise;
-
-  const pages = await Promise.all(
-    Array.from({ length: document_.numPages }, (_, index) => document_.getPage(index + 1)),
-  );
+  let pages: PDFPageProxy[];
+  try {
+    const document_ = await loadingTask.promise;
+    pages = await Promise.all(
+      Array.from({ length: document_.numPages }, (_, index) => document_.getPage(index + 1)),
+    );
+  } catch (error) {
+    // 呼び出し側はハンドルを受け取れず destroy できないため、ここで worker を止める
+    void loadingTask.destroy();
+    throw error;
+  }
   const pageSizes = pages.map((page) => {
     const viewport = page.getViewport({ scale: 1 });
     return { widthPt: viewport.width, heightPt: viewport.height };
