@@ -98,7 +98,11 @@ project-root/
 - `labels/`: 内部値を画面表示用の日本語にする対応表と純関数（`scoreLabels.ts`）。
   **UIに出す文字列の正はここ**に置く（用語集と二重管理するとズレる）。`shared/` は型と定数のみ＝
   実装ロジックを置けないため、UIレイヤー側に持つ
-- `viewer/`: PDF.js によるページ描画と注釈オーバーレイ表示
+- `viewer/`: PDF.js によるページ描画と注釈オーバーレイ表示（Editor の楽譜プレビュー）
+  - `pdfDocument.ts`: PDF.js の薄い包み（`PdfLoader` / `PdfDocumentHandle`）。`pdfjs-dist` は動的 import し、
+    画面部品は PDF.js の API に直接触れない（画面テストでは擬似ローダーを注入する）
+  - `ScoreViewer.tsx` / `ScorePage.tsx`: ページの並びと 1 ページ分の描画（キャンバス＋SVG の重ね描き）
+  - `useNearViewport.ts`: 画面の近くにあるページだけを描く遅延描画のフック
 - `state/`: UI状態管理（プロジェクトの編集状態はIPC越しにMainが正とする）
 
 **命名規則**:
@@ -121,7 +125,7 @@ project-root/
 - `score/`: `ScoreModelBuilder.ts`, `MusicXmlParser.ts`, `OmrSheetParser.ts`, `BookStructureResolver.ts`（段ごとの小節番号アンカーの確定）, `structureAnchors.ts`（確定構造から通し小節番号の基準値を求める純粋関数。照合と調文脈生成が共有する）
 - `solfa/`: `SolfaEngine.ts`, `syllableTables.ts`（コダーイ式/Tonic sol-fa の文字列化表）, `KeyRegionBuilder.ts`（調号から調文脈を自動生成）, `keyTable.ts`（調号→主音の対応表）
 - `annotations/`: `AnnotationManager.ts`（注釈の生成・編集と手動修正の保全）, `placementResolver.ts`（衝突回避。候補位置の梯子と一様格子による近傍索引）
-- `render/`: `OverlayRenderer.ts`（注釈付きPDFのバイト列生成）, `coordinateTransform.ts`（.omr px → PDF pt。y 軸反転と軸ごとの縮尺）, `pageInfo.ts`（Audiveris ページと元PDFページの対応づけ）, `fontMetrics.ts`（標準14フォントの寸法計測と描けない文字の置換。**配置と描画が同じ関数で測る**ための共通の入口）
+- `render/`: `OverlayRenderer.ts`（注釈付きPDFのバイト列生成）, `scorePreview.ts`（Editor の楽譜プレビューに重ねる内容の構築。元PDFページ単位・pt 左上原点）, `annotationContent.ts`（注釈の表示文字列・変化音の判定・色の正規化。**出力PDFとプレビューが同じ関数で決める**ための共通の入口）, `coordinateTransform.ts`（.omr px → PDF pt。y 軸反転と軸ごとの縮尺）, `pageInfo.ts`（Audiveris ページと元PDFページの対応づけ）, `fontMetrics.ts`（標準14フォントの寸法計測と描けない文字の置換。**配置と描画が同じ関数で測る**ための共通の入口）
 
 **命名規則**:
 

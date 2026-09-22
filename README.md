@@ -77,7 +77,8 @@
 - [x] 階名の付与と PDF 出力（元の版面に重ね書き）
 - [x] 配布ビルド基盤（Audiveris 同梱: `fetch-resources` / Windows 未署名 `.exe`: electron-builder / `release.yml`）
 - [x] 階名表記の切り替えUI（Editor画面で音節体系: コダーイ式 / Tonic sol-fa 略記、短調の基準: La基準 / Do基準を切り替え可能）
-- [ ] **注釈の手動編集と、元PDFへの重ね表示によるプレビュー**（現在は階名をテキストの一覧で確認する形式です）
+- [x] 楽譜プレビュー（Editor画面で元PDFに階名を重ねて表示。スキップ小節の黄色ハイライトと一覧からのジャンプ、配置を調整できなかった階名の警告表示）
+- [ ] **注釈の手動編集と、転調点の指定**（現在は楽譜プレビューで確認のみ。修正は出力後に手で行う形式です）
 
 > 現在のバージョンは `0.1.0` です。取り込みから出力までは一通り動作しますが、UI には改善の余地があります。使ってみた感想や不具合の報告を [Issues](https://github.com/ntnamazu/solfa-overlay/issues) でお寄せいただけると助かります。
 
@@ -90,7 +91,7 @@
 ## ライセンス
 
 - **アプリ本体**: [MIT License](LICENSE)
-- **同梱コンポーネント**: 配布版には OMR エンジン **Audiveris**（AGPL-3.0）と Java ランタイム（GPLv2 + Classpath Exception）を同梱しています。各コンポーネントのライセンス・入手元・対応ソースの提供方法は [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) を参照してください。
+- **同梱コンポーネント**: 配布版には OMR エンジン **Audiveris**（AGPL-3.0）と Java ランタイム（GPLv2 + Classpath Exception）、画面上の楽譜表示に使う **PDF.js**（Apache-2.0）を同梱しています。各コンポーネントのライセンス・入手元・対応ソースの提供方法は [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) を参照してください。
 
 > ⚠️ 本体が MIT であることは、**同梱物のライセンス条件を緩めるものではありません**。インストーラを再配布する場合、同梱された Audiveris 部分については AGPL-3.0 の条件に従う必要があります。
 

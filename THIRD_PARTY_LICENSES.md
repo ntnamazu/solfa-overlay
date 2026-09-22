@@ -69,6 +69,31 @@ Audiveris の app-image には、OCR エンジン **Tesseract**（Apache License
 
 ---
 
+## PDF.js（画面上の楽譜表示）
+
+Editor 画面で元PDFを表示するために、Mozilla の **PDF.js**（npm パッケージ `pdfjs-dist`）を
+アプリ本体（`app.asar` 内の `out/renderer/`）に同梱しています。PDF.js 本体のコードは Renderer の
+バンドルに取り込まれ、実行時に読む資産は `out/renderer/pdfjs/` に**upstream のファイルをそのまま**
+配置しています（各ライセンス全文のファイルも同じ場所に同梱されます）。
+
+| 同梱物 | 配置 | ライセンス | 著作権 |
+| --- | --- | --- | --- |
+| PDF.js 本体・worker（`pdf.mjs` / `pdf.worker.min.mjs`） | `out/renderer/assets/` | Apache License 2.0 | © Mozilla Foundation |
+| JBIG2 デコーダ（`jbig2.wasm` / `jbig2_nowasm_fallback.js`） | `out/renderer/pdfjs/wasm/` | BSD-3-Clause（PDFium 由来。`LICENSE_JBIG2`）＋ Apache-2.0（PDF.js によるビルド部分。`LICENSE_PDFJS_JBIG2`） | © The PDFium Authors / © Mozilla Foundation |
+| JPEG 2000 デコーダ（`openjpeg.wasm` / `openjpeg_nowasm_fallback.js`） | `out/renderer/pdfjs/wasm/` | BSD-2-Clause（OpenJPEG。`LICENSE_OPENJPEG`）＋ PDF.js によるビルド部分（`LICENSE_PDFJS_OPENJPEG`） | © Université catholique de Louvain (UCL) ほか / © Mozilla Foundation |
+| ICC カラー変換（`qcms_bg.wasm`） | `out/renderer/pdfjs/wasm/` | MIT（qcms。`LICENSE_QCMS`）＋ PDF.js によるビルド部分（`LICENSE_PDFJS_QCMS`） | © Mozilla Corporation / © Marti Maria |
+| 標準フォントの代替字形（`Foxit*.pfb`） | `out/renderer/pdfjs/standard_fonts/` | BSD-3-Clause（PDFium 由来。`LICENSE_FOXIT`） | © PDFium Authors |
+
+- **プロジェクト**: <https://mozilla.github.io/pdf.js/> / <https://github.com/mozilla/pdf.js>
+- **Apache License 2.0 全文**: <https://www.apache.org/licenses/LICENSE-2.0>
+- `pdfjs-dist` に含まれる次のファイルは**同梱していません**:
+  - `LiberationSans-*.ttf`（GPLv2 ＋フォント例外）: 埋め込みのない Helvetica / Arial の代替字形としてのみ使われるため、
+    同梱せず OS のフォントで代替しています
+  - `quickjs-eval.*`（PDF 内 JavaScript の実行用）: 楽譜の表示に不要なため
+- PDF.js には楽譜PDFのバイト列だけを渡し、ネットワーク経由の読み込みは使いません（楽譜由来データの外部送信禁止）
+
+---
+
 ## アプリ本体（Solfa Overlay）のライセンス
 
 本アプリ本体は **MIT License** です。全文は [`LICENSE`](LICENSE) を参照してください。
@@ -87,6 +112,7 @@ Audiveris の app-image には、OCR エンジン **Tesseract**（Apache License
 | 同梱 Audiveris | AGPL-3.0-or-later |
 | 同梱 Java ランタイム（Audiveris 内包） | GPLv2 + Classpath Exception |
 | Audiveris 内包の第三者コンポーネント（Tesseract 等） | 各コンポーネントの表記に従う |
+| PDF.js と同梱資産（`out/renderer/` 内） | Apache-2.0 ほか（上記「PDF.js」節の表） |
 
 両者が別個のプログラムである根拠は、上記「アプリ本体との関係（mere aggregation）」節のとおりです
 （別プロセス実行・コマンドライン引数とファイル入出力のみでの連携）。
