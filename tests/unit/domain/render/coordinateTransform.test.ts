@@ -4,6 +4,7 @@ import {
   pxPerPt,
   toMediaBoxPoint,
   toPdfPoint,
+  toPreviewPoint,
 } from '../../../../src/domain/render/coordinateTransform';
 import type { PageInfo } from '../../../../src/shared/types/Project';
 
@@ -104,5 +105,23 @@ describe('pxPerPt', () => {
 
   it('変換できないページでは null', () => {
     expect(pxPerPt({ ...VICTORIA_PAGE, widthPt: 0 })).toBeNull();
+  });
+});
+
+describe('toPreviewPoint', () => {
+  it('y を反転せず、画像の上端をページ上端（y=0）へ写す', () => {
+    expect(toPreviewPoint(VICTORIA_PAGE, 0, 0)).toEqual({ x: 0, y: 0 });
+    expect(toPreviewPoint(VICTORIA_PAGE, 2480, 3507)?.y).toBeCloseTo(841.89, 6);
+  });
+
+  it('縦横を別々に縮尺し、toPdfPoint と上下反転の関係になる', () => {
+    const preview = toPreviewPoint(VICTORIA_PAGE, 1240, 1000);
+    const pdf = toPdfPoint(VICTORIA_PAGE, anchor(1240, 1000));
+    expect(preview?.x).toBeCloseTo(pdf?.x ?? Number.NaN, 6);
+    expect(preview?.y).toBeCloseTo(841.89 - (pdf?.y ?? Number.NaN), 6);
+  });
+
+  it('変換できないページでは null（NaN の座標を画面へ渡さない）', () => {
+    expect(toPreviewPoint({ ...VICTORIA_PAGE, omrImageHeightPx: 0 }, 1, 1)).toBeNull();
   });
 });
