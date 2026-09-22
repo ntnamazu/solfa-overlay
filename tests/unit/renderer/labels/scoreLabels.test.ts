@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { isKnownClefKind } from '../../../../src/domain/score/clefTable';
+import { KODALY_TABLE, TONIC_SOLFA_TABLE } from '../../../../src/domain/solfa/syllableTables';
 import {
   LABELED_CLEF_KINDS,
+  MINOR_BASIS_OPTIONS,
+  SYLLABLE_SYSTEM_OPTIONS,
   clefCheckStatus,
   clefCheckStatusLabel,
   clefLabel,
@@ -13,6 +16,7 @@ import {
   partLabel,
   staffCoverageLabel,
 } from '../../../../src/renderer/labels/scoreLabels';
+import { DEFAULT_SETTINGS } from '../../../../src/shared/constants/DEFAULT_SETTINGS';
 import { SELECTABLE_CLEF_KINDS } from '../../../../src/shared/types/Confirmation';
 import { confirmationItem } from '../fixtures';
 
@@ -217,5 +221,39 @@ describe('countAllSystems', () => {
 
   it('確認項目が空なら 0', () => {
     expect(countAllSystems([])).toBe(0);
+  });
+});
+
+describe('SYLLABLE_SYSTEM_OPTIONS / MINOR_BASIS_OPTIONS', () => {
+  it.each([
+    [
+      '音節体系',
+      SYLLABLE_SYSTEM_OPTIONS,
+      ['kodaly', 'tonicSolfa'],
+      DEFAULT_SETTINGS.syllableSystem,
+    ],
+    ['短調の基準', MINOR_BASIS_OPTIONS, ['la', 'do'], DEFAULT_SETTINGS.minorBasis],
+  ])('%s の選択肢は全値を 1 度ずつ持ち、既定値が先頭にある', (_name, options, all, fallback) => {
+    const values: string[] = options.map((option) => option.value);
+    expect([...values].sort()).toEqual([...all].sort());
+    expect(values[0]).toBe(fallback);
+  });
+
+  it.each([
+    ['kodaly', KODALY_TABLE],
+    ['tonicSolfa', TONIC_SOLFA_TABLE],
+  ] as const)('%s の表示名に添える音節は、文字列化表の幹音と一致する', (system, table) => {
+    const label = SYLLABLE_SYSTEM_OPTIONS.find((option) => option.value === system)?.label;
+    const diatonic = Object.values(table)
+      .map((row) => row[0])
+      .join(' ');
+    expect(label).toContain(`（${diatonic}）`);
+  });
+
+  it('表示名に内部識別子を出さない', () => {
+    const labels = [...SYLLABLE_SYSTEM_OPTIONS, ...MINOR_BASIS_OPTIONS].map((o) => o.label);
+    for (const label of labels) {
+      expect(label).not.toMatch(/kodaly|tonicSolfa/);
+    }
   });
 });

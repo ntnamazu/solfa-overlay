@@ -1,5 +1,5 @@
-import { PDFDocument } from 'pdf-lib';
-import { describe, expect, it } from 'vitest';
+import { PDFDocument, PDFPage } from 'pdf-lib';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   OverlayRenderer,
   parseHexColor,
@@ -8,6 +8,7 @@ import {
 import { DEFAULT_SETTINGS } from '../../../../src/shared/constants/DEFAULT_SETTINGS';
 import type { Annotation } from '../../../../src/shared/types/Annotation';
 import type { PageInfo, Project } from '../../../../src/shared/types/Project';
+import type { SyllableSystem } from '../../../../src/shared/types/ProjectSettings';
 import type { NoteEvent } from '../../../../src/shared/types/ScoreModel';
 import type { SolfaDegree } from '../../../../src/shared/types/SolfaDegree';
 
@@ -125,6 +126,46 @@ describe('renderOverlay', () => {
 
     expect(result.drawnCount).toBe(1);
     expect(result.issues).toEqual([]);
+  });
+
+  describe('音節体系に応じた文字列で描く', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    // 下げた 7 度はコダーイ式 te / Tonic sol-fa 略記 ta（両者で母音の規則が違う）
+    it.each<[SyllableSystem, string[]]>([
+      ['kodaly', ['do', 'te']],
+      ['tonicSolfa', ['d', 'ta']],
+    ])('%s では %j と描く', async (syllableSystem, expected) => {
+      const drawText = vi.spyOn(PDFPage.prototype, 'drawText');
+      const project = makeProject({
+        score: {
+          parts: [{ id: 'P1', name: 'Soprano', staves: [] }],
+          systems: [],
+          measures: [
+            {
+              partId: 'P1',
+              index: 0,
+              status: 'matched',
+              notes: [
+                note('n1', { degree: 1, alteration: 0 }),
+                note('n2', { degree: 7, alteration: -1 }),
+              ],
+            },
+          ],
+        },
+        annotations: [
+          annotation(),
+          annotation({ id: 'solfa-n2', noteId: 'n2', anchor: { pageIndex: 0, x: 1400, y: 1753 } }),
+        ],
+        settings: { ...DEFAULT_SETTINGS, syllableSystem },
+      });
+
+      await renderOverlay({ sourcePdf: await makePdf(), project });
+
+      expect(drawText.mock.calls.map(([text]) => text)).toEqual(expected);
+    });
   });
 
   it('deleted の注釈は描かない', async () => {

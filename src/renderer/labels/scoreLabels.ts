@@ -1,5 +1,6 @@
 import type { ConfirmationItem } from '../../shared/types/Confirmation';
 import { UNKNOWN_CLEF } from '../../shared/types/Confirmation';
+import type { MinorBasis, SyllableSystem } from '../../shared/types/ProjectSettings';
 import type { StaffRef } from '../../shared/types/ScoreModel';
 
 /**
@@ -216,3 +217,45 @@ export function countSystems(staffRefs: readonly StaffRef[]): number {
 export function countAllSystems(items: readonly ConfirmationItem[]): number {
   return countSystems(items.flatMap((item) => item.staffRefs));
 }
+
+/** 設定の選択肢 1 つ（内部値と表示名） */
+export interface SettingOption<T extends string> {
+  value: T;
+  label: string;
+}
+
+/**
+ * 音節体系の表示名
+ *
+ * 名前（「コダーイ式」「Tonic sol-fa」）を知らなくても選べるよう、**実際の音節を添える**。
+ * 並べる音節は幹音の do〜ti（`syllableTables` の変位 0 の列）と一致させる。
+ * `Record` にしているのは、型に値が増えたときに表示名の書き漏れを型検査で検出するため
+ */
+const SYLLABLE_SYSTEM_LABELS: Readonly<Record<SyllableSystem, string>> = {
+  kodaly: 'コダーイ式（do re mi fa so la ti）',
+  tonicSolfa: 'Tonic sol-fa 略記（d r m f s l t）',
+};
+
+/**
+ * 短調の基準の表示名
+ *
+ * 「La基準」「Do基準」は合唱の現場でそのまま通じる呼び名のため残し、
+ * 何を基準にするのか（短調の主音を何と読むか）を括弧で補う
+ */
+const MINOR_BASIS_LABELS: Readonly<Record<MinorBasis, string>> = {
+  la: 'La基準（短調の主音を la と読む）',
+  do: 'Do基準（短調の主音を do と読む）',
+};
+
+/** 表示順（既定値を先頭に置く。既定値は `DEFAULT_SETTINGS` を正とする） */
+const SYLLABLE_SYSTEM_ORDER: readonly SyllableSystem[] = ['kodaly', 'tonicSolfa'];
+const MINOR_BASIS_ORDER: readonly MinorBasis[] = ['la', 'do'];
+
+/** 音節体系の選択肢（画面の表示順） */
+export const SYLLABLE_SYSTEM_OPTIONS: readonly SettingOption<SyllableSystem>[] =
+  SYLLABLE_SYSTEM_ORDER.map((value) => ({ value, label: SYLLABLE_SYSTEM_LABELS[value] }));
+
+/** 短調の基準の選択肢（画面の表示順） */
+export const MINOR_BASIS_OPTIONS: readonly SettingOption<MinorBasis>[] = MINOR_BASIS_ORDER.map(
+  (value) => ({ value, label: MINOR_BASIS_LABELS[value] }),
+);

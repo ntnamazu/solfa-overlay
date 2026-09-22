@@ -369,6 +369,78 @@ describe('App', () => {
       expect(screen.queryByText(/件の階名を出力しました/)).toBeNull();
     });
 
+    describe('階名の表記の切り替え', () => {
+      const TONIC_SOLFA = 'Tonic sol-fa 略記（d r m f s l t）';
+      const KODALY = 'コダーイ式（do re mi fa so la ti）';
+
+      /** Main が Tonic sol-fa 略記で解析し直した結果 */
+      const switched = () => {
+        const base = approved();
+        return {
+          ...base,
+          project: {
+            ...base.project,
+            settings: { ...base.project.settings, syllableSystem: 'tonicSolfa' as const },
+          },
+          preview: [{ partId: 'P1', partName: 'Soprano', measureIndex: 0, syllables: ['d', 'r'] }],
+        };
+      };
+
+      it('切り替えを Main へ送り、返ってきた結果で描き直す', async () => {
+        const { api } = stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(approved())),
+          setSettings: vi.fn().mockResolvedValue(ok(switched())),
+        });
+        render(<App />);
+
+        await advanceToEditor();
+        await userEvent.click(screen.getByRole('radio', { name: TONIC_SOLFA }));
+
+        expect(api.setSettings).toHaveBeenCalledWith({
+          ...approved().project.settings,
+          syllableSystem: 'tonicSolfa',
+        });
+        expect(await screen.findByText('d r')).toBeDefined();
+        expect(screen.getByRole<HTMLInputElement>('radio', { name: TONIC_SOLFA }).checked).toBe(
+          true,
+        );
+      });
+
+      it('切り替えると直前の出力結果の表示を消す（出力済みのPDFは古い表記のため）', async () => {
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(approved())),
+          setSettings: vi.fn().mockResolvedValue(ok(switched())),
+        });
+        render(<App />);
+
+        await advanceToEditor();
+        await userEvent.click(screen.getByRole('button', { name: '注釈付きPDFを出力' }));
+        await screen.findByText(/件の階名を出力しました/);
+        await userEvent.click(screen.getByRole('radio', { name: TONIC_SOLFA }));
+
+        await screen.findByText('d r');
+        expect(screen.queryByText(/件の階名を出力しました/)).toBeNull();
+      });
+
+      it('失敗したら理由を示し、選択は元の表記のまま', async () => {
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(approved())),
+          setSettings: vi
+            .fn()
+            .mockResolvedValue(fail('プロジェクトが開かれていません', 'unexpected')),
+        });
+        render(<App />);
+
+        await advanceToEditor();
+        await userEvent.click(screen.getByRole('radio', { name: TONIC_SOLFA }));
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert').textContent).toBe('プロジェクトが開かれていません');
+        });
+        expect(screen.getByRole<HTMLInputElement>('radio', { name: KODALY }).checked).toBe(true);
+      });
+    });
+
     it('確認画面へ戻れる', async () => {
       stubApi({ completeConfirmation: vi.fn().mockResolvedValue(ok(approved())) });
       render(<App />);

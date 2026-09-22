@@ -5,8 +5,10 @@ import type {
 } from '../../../shared/ipc/contract';
 import type { AnnotationIssue, PageInfoIssue } from '../../../shared/types/Issues';
 import type { Project } from '../../../shared/types/Project';
+import type { ProjectSettings } from '../../../shared/types/ProjectSettings';
 import type { Measure } from '../../../shared/types/ScoreModel';
 import { partDisplayName } from '../../labels/scoreLabels';
+import { SolfaNotationSettings } from './SolfaNotationSettings';
 
 /**
  * Editor 画面（画面遷移図の Editor）
@@ -29,6 +31,8 @@ export interface EditorProps {
   /** 直近の出力結果（未出力なら null） */
   exportSummary: ExportSummary | null;
   onExportPdf: () => void;
+  /** 階名の表記（音節体系・短調の基準）を切り替える。設定全体を渡す */
+  onChangeSettings: (settings: ProjectSettings) => void;
   onBackToConfirm: () => void;
   busy: boolean;
 }
@@ -58,6 +62,7 @@ export function Editor({
   unmatchedCorrections,
   exportSummary,
   onExportPdf,
+  onChangeSettings,
   onBackToConfirm,
   busy,
 }: EditorProps) {
@@ -85,6 +90,13 @@ export function Editor({
           <li>スキップ小節: {skipped.length}</li>
         </ul>
       </section>
+
+      {/* 切り替えた結果がすぐ下のプレビューで見えるよう、プレビューの直前に置く */}
+      <SolfaNotationSettings
+        settings={project.settings}
+        onChange={onChangeSettings}
+        disabled={busy}
+      />
 
       <section>
         <h2>階名プレビュー</h2>

@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectSession } from '../../../src/main/ProjectSession';
 import type { OmrRunnerLike } from '../../../src/main/ProjectSession';
 import { assembleArtifacts } from '../../../src/main/omr/omrArchive';
+import { TONIC_SOLFA_TABLE } from '../../../src/domain/solfa/syllableTables';
 import { ProjectStore } from '../../../src/storage/ProjectStore';
+import type { Annotation } from '../../../src/shared/types/Annotation';
 import type { OmrProgress } from '../../../src/shared/types/OmrProgress';
 import type { OmrRawArtifacts } from '../../../src/shared/types/OmrRawArtifacts';
 
@@ -564,6 +566,93 @@ describe('ProjectSession', () => {
       // 注釈自体は作られる（衝突回避なしで置かれ、その旨も報告される）
       expect(snapshot.project.annotations.length).toBeGreaterThan(0);
       expect(snapshot.annotationIssues.some((i) => i.kind === 'missingPageGeometry')).toBe(true);
+    });
+  });
+
+  describe('階名の表記の切り替え（setSettings）', () => {
+    it('音節体系を切り替えるとプレビューの階名が Tonic sol-fa 略記になる', async () => {
+      const before = await session.importPdf(pdfPath, () => {});
+      const after = session.setSettings({
+        ...before.project.settings,
+        syllableSystem: 'tonicSolfa',
+      });
+
+      const tonicSolfa = new Set(
+        Object.values(TONIC_SOLFA_TABLE).flatMap((row) => Object.values(row)),
+      );
+      const syllables = after.preview.flatMap((row) => row.syllables);
+      expect(syllables.length).toBeGreaterThan(0);
+      expect(syllables.every((syllable) => syllable === '?' || tonicSolfa.has(syllable))).toBe(
+        true,
+      );
+      // 行（パート×小節）の並びは表記に依存しない
+      expect(after.preview.map((row) => [row.partId, row.measureIndex])).toEqual(
+        before.preview.map((row) => [row.partId, row.measureIndex]),
+      );
+    });
+
+    it('切り替えた設定は自動保存され、開き直しても維持される', async () => {
+      const imported = await session.importPdf(pdfPath, () => {});
+      const path = join(directory, 'song.solfaproj');
+      await session.save(path);
+
+      const settings = {
+        ...imported.project.settings,
+        syllableSystem: 'tonicSolfa' as const,
+        minorBasis: 'do' as const,
+      };
+      session.setSettings(settings);
+      await session.flushPendingSave();
+
+      const reopened = new ProjectSession({ runner: new FakeRunner() });
+      expect((await reopened.open(path)).project.settings).toEqual(settings);
+    });
+
+    it('切り替えても手動注釈・削除フラグ・手動の文字上書きが保全される', async () => {
+      await session.importPdf(pdfPath, () => {});
+      const path = join(directory, 'song.solfaproj');
+      await session.save(path);
+
+      // 注釈を編集する UI（#5）はまだないため、プロジェクトファイルへ直接仕込む
+      const store = new ProjectStore();
+      const archive = await store.load(path);
+      const [hidden, overwritten, ...rest] = archive.project.annotations;
+      const manual: Annotation = {
+        id: 'manual-1',
+        layer: 'solfa',
+        anchor: { pageIndex: 0, x: 10, y: 10 },
+        noteId: null,
+        text: 'la',
+        origin: 'manual',
+        deleted: false,
+      };
+      await store.save(
+        path,
+        {
+          ...archive.project,
+          annotations: [
+            { ...hidden!, deleted: true },
+            { ...overwritten!, text: 'ソ' },
+            ...rest,
+            manual,
+          ],
+        },
+        archive.sourcePdf,
+        archive.omr,
+      );
+
+      const reopened = new ProjectSession({ runner: new FakeRunner() });
+      const opened = await reopened.open(path);
+      const after = reopened.setSettings({
+        ...opened.project.settings,
+        syllableSystem: 'tonicSolfa',
+      });
+      await reopened.flushPendingSave();
+
+      const byId = new Map(after.project.annotations.map((a) => [a.id, a]));
+      expect(byId.get('manual-1')).toEqual(manual);
+      expect(byId.get(hidden!.id)?.deleted).toBe(true);
+      expect(byId.get(overwritten!.id)?.text).toBe('ソ');
     });
   });
 
