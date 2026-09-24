@@ -1,5 +1,10 @@
+import type { MouseEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
-import type { ScorePreviewPage, ScorePreviewStyle } from '../../shared/types/ScorePreview';
+import type {
+  ScorePreviewAnnotation,
+  ScorePreviewPage,
+  ScorePreviewStyle,
+} from '../../shared/types/ScorePreview';
 import type { PdfDocumentHandle, PdfPageSize } from './pdfDocument';
 import { isRenderCancelled } from './pdfDocument';
 import { useNearViewport } from './useNearViewport';
@@ -21,6 +26,8 @@ const SKIPPED_STROKE = '#f9a825';
 /** 一覧からジャンプしてきた小節は枠を濃くして、どれを指しているか分かるようにする */
 const FOCUSED_STROKE = '#e65100';
 const WARNING_FILL = '#ff8f00';
+/** 選んだ階名・書き足す位置の印（スキップ小節の黄・警告の橙・階名の赤紫と見分けられる青） */
+const SELECTION_STROKE = '#1565c0';
 
 /** キャンバスの表示幅が測れないとき（レイアウト前）の仮の幅（CSS px） */
 const FALLBACK_WIDTH_PX = 800;
@@ -28,6 +35,21 @@ const FALLBACK_WIDTH_PX = 800;
 /** スキップ小節を DOM 上で一意に指すキー（ジャンプ先の検索に使う） */
 export function regionKey(partId: string, measureIndex: number): string {
   return `${partId}:${measureIndex}`;
+}
+
+/**
+ * 楽譜の上で押したもの（編集の対象）
+ *
+ * 座標は SVG と同じページのポイント座標（左上原点）。Main がこれを `.omr` の座標へ戻す
+ */
+export type ScorePick =
+  | { kind: 'annotation'; sourcePageIndex: number; annotation: ScorePreviewAnnotation }
+  | { kind: 'point'; sourcePageIndex: number; x: number; y: number };
+
+/** 書き足す位置（ページのポイント座標） */
+export interface ScorePoint {
+  x: number;
+  y: number;
 }
 
 export interface ScorePageProps {
@@ -40,6 +62,12 @@ export interface ScorePageProps {
   style: ScorePreviewStyle;
   /** 強調表示するスキップ小節（`regionKey`） */
   focusedRegion: string | null;
+  /** 楽譜の上を押したとき（省略時は読み取り専用） */
+  onPick?: (pick: ScorePick) => void;
+  /** 選択中の階名の id */
+  selectedAnnotationId?: string | null;
+  /** このページで書き足そうとしている位置 */
+  pendingPoint?: ScorePoint | null;
 }
 
 export function ScorePage({
@@ -49,6 +77,9 @@ export function ScorePage({
   overlay,
   style,
   focusedRegion,
+  onPick,
+  selectedAnnotationId = null,
+  pendingPoint = null,
 }: ScorePageProps) {
   const frame = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -94,6 +125,42 @@ export function ScorePage({
   }, [near, document, pageIndex, size.widthPt, widthPx]);
 
   const pageNumber = pageIndex + 1;
+  const editable = onPick !== undefined;
+  // 重ねるものが無いページにも、編集できるなら SVG を置く（階名の無いページにも書き足せるように）
+  const widthPt = overlay?.widthPt ?? size.widthPt;
+  const heightPt = overlay?.heightPt ?? size.heightPt;
+  const annotations = overlay?.annotations ?? [];
+
+  /**
+   * 押した位置を編集の対象へ直す
+   *
+   * 注釈は 1 ページ数百あるため要素ごとにハンドラを付けず、SVG の 1 か所で受ける。
+   * 押した要素（またはその祖先）が `data-annotation` を持てば、その階名を選ぶ
+   */
+  const handleClick = (event: MouseEvent<SVGSVGElement>) => {
+    if (onPick === undefined) {
+      return;
+    }
+    const target = event.target instanceof Element ? event.target : null;
+    const annotationId = target?.closest('[data-annotation]')?.getAttribute('data-annotation');
+    const annotation =
+      annotationId == null ? undefined : annotations.find((item) => item.id === annotationId);
+    if (annotation !== undefined) {
+      onPick({ kind: 'annotation', sourcePageIndex: pageIndex, annotation });
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) {
+      return; // レイアウト前は位置を決められない
+    }
+    onPick({
+      kind: 'point',
+      sourcePageIndex: pageIndex,
+      x: ((event.clientX - rect.left) / rect.width) * widthPt,
+      y: ((event.clientY - rect.top) / rect.height) * heightPt,
+    });
+  };
+
   return (
     <figure style={{ margin: '0 0 24px' }}>
       <figcaption>{pageNumber} ページ</figcaption>
@@ -114,15 +181,22 @@ export function ScorePage({
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
           />
         )}
-        {overlay !== undefined && (
+        {(overlay !== undefined || editable) && (
           <svg
             role="img"
             aria-label={`${pageNumber} ページの階名`}
-            viewBox={`0 0 ${overlay.widthPt} ${overlay.heightPt}`}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+            viewBox={`0 0 ${widthPt} ${heightPt}`}
+            onClick={editable ? handleClick : undefined}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              cursor: editable ? 'crosshair' : undefined,
+            }}
           >
             {/* 件数が少なくジャンプ先にもなるため、スキップ小節と警告は常に描く */}
-            {overlay.skippedMeasures.map((region) => {
+            {overlay?.skippedMeasures.map((region) => {
               const key = regionKey(region.partId, region.measureIndex);
               const focused = key === focusedRegion;
               return (
@@ -144,24 +218,35 @@ export function ScorePage({
             })}
             {/* 注釈は数が多い（1 ページ数百）ため、画面の近くにあるページだけ描く */}
             {near &&
-              overlay.annotations.map((annotation) => (
-                <text
-                  key={annotation.id}
-                  x={annotation.x}
-                  y={annotation.y}
-                  fontFamily={style.fontFamily}
-                  fontSize={style.fontSizePt}
-                  // 変化音は色と太字の両方で区別する（モノクロ印刷と同じ考え方）
-                  fontWeight={annotation.chromatic ? 'bold' : 'normal'}
-                  fill={annotation.chromatic ? style.chromaticColor : style.diatonicColor}
-                >
-                  {annotation.text}
-                </text>
-              ))}
-            {overlay.placementWarnings.map((marker) => (
+              annotations.map((annotation) => {
+                const selected = annotation.id === selectedAnnotationId;
+                return (
+                  <text
+                    key={annotation.id}
+                    data-annotation={annotation.id}
+                    x={annotation.x}
+                    y={annotation.y}
+                    fontFamily={style.fontFamily}
+                    fontSize={style.fontSizePt}
+                    // 変化音は色と太字の両方で区別する（モノクロ印刷と同じ考え方）
+                    fontWeight={annotation.chromatic ? 'bold' : 'normal'}
+                    fill={annotation.chromatic ? style.chromaticColor : style.diatonicColor}
+                    // 選んだ階名は縁取りと下線で示す（文字の色は出力PDFと同じまま）
+                    stroke={selected ? SELECTION_STROKE : undefined}
+                    strokeWidth={selected ? style.fontSizePt * 0.08 : undefined}
+                    textDecoration={selected ? 'underline' : undefined}
+                    style={editable ? { cursor: 'pointer' } : undefined}
+                  >
+                    {annotation.text}
+                  </text>
+                );
+              })}
+            {overlay?.placementWarnings.map((marker) => (
               <g
                 key={marker.annotationId}
                 data-warning={marker.annotationId}
+                // 印を押しても、その階名を選べるようにする
+                data-annotation={marker.annotationId}
                 // 注釈の文字に重ならないよう、左上に小さく置く
                 transform={`translate(${marker.x - style.fontSizePt * 0.6} ${marker.y - style.fontSizePt})`}
               >
@@ -179,6 +264,21 @@ export function ScorePage({
                 </text>
               </g>
             ))}
+            {pendingPoint !== null && (
+              // 書き足す位置の印（十字）。押した点が書き足す文字の中心になる
+              <g
+                data-pending-point=""
+                transform={`translate(${pendingPoint.x} ${pendingPoint.y})`}
+                stroke={SELECTION_STROKE}
+                strokeWidth={style.fontSizePt * 0.1}
+                pointerEvents="none"
+              >
+                <title>ここに階名を書き足します</title>
+                <circle r={style.fontSizePt * 0.6} fill="none" />
+                <line x1={-style.fontSizePt} x2={style.fontSizePt} />
+                <line y1={-style.fontSizePt} y2={style.fontSizePt} />
+              </g>
+            )}
           </svg>
         )}
       </div>

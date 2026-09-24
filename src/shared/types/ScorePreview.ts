@@ -53,6 +53,10 @@ export interface ScorePreviewAnnotation {
   text: string;
   /** 半音変化した階名か（色と太字で区別する） */
   chromatic: boolean;
+  /** 自動で付いた階名か、ユーザーが書き足した階名か（編集パネルの操作の出し分けに使う） */
+  origin: 'auto' | 'manual';
+  /** 自動で付いた階名の文字をユーザーが書き換えているか（「自動の階名に戻す」を出す） */
+  textOverridden: boolean;
 }
 
 /** スキップ小節のハイライト範囲（小節の横範囲 × パートの譜表の縦範囲） */

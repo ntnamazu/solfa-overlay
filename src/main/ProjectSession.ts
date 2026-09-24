@@ -1,4 +1,8 @@
-import { regenerateAnnotations } from '../domain/annotations/AnnotationManager';
+import { randomUUID } from 'node:crypto';
+import {
+  applyAnnotationEdit,
+  regenerateAnnotations,
+} from '../domain/annotations/AnnotationManager';
 import { renderOverlay } from '../domain/render/OverlayRenderer';
 import { buildPageInfos } from '../domain/render/pageInfo';
 import { buildScorePreview } from '../domain/render/scorePreview';
@@ -14,6 +18,7 @@ import type { KeyRegionIssue } from '../domain/solfa/KeyRegionBuilder';
 import { SolfaEngine, applyDegrees } from '../domain/solfa/SolfaEngine';
 import { DEFAULT_SETTINGS } from '../shared/constants/DEFAULT_SETTINGS';
 import type { SolfaPreviewRow } from '../shared/ipc/contract';
+import type { AnnotationEdit } from '../shared/types/Annotation';
 import type { AnnotationIssue, PageInfoIssue, RenderIssue } from '../shared/types/Issues';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress } from '../shared/types/OmrProgress';
@@ -160,12 +165,21 @@ export class ProjectSession {
    */
   private saveChain: Promise<unknown> = Promise.resolve();
   private readonly autoSaveDelayMs: number;
+  /** 手動注釈の id を発行する（テストで決定的な値に差し替える） */
+  private readonly newAnnotationId: () => string;
 
-  constructor(deps?: { store?: ProjectStore; runner?: OmrRunnerLike; autoSaveDelayMs?: number }) {
+  constructor(deps?: {
+    store?: ProjectStore;
+    runner?: OmrRunnerLike;
+    autoSaveDelayMs?: number;
+    newAnnotationId?: () => string;
+  }) {
     this.store = deps?.store ?? new ProjectStore();
     this.runner = deps?.runner ?? new OmrRunner();
     // アーキテクチャ設計書「プロジェクト自動保存」の 300ms デバウンス
     this.autoSaveDelayMs = deps?.autoSaveDelayMs ?? 300;
+    // 自動注釈（`solfa-<noteId>`）と衝突しない接頭辞を付ける
+    this.newAnnotationId = deps?.newAnnotationId ?? (() => `manual-${randomUUID()}`);
   }
 
   /** 現在開いているプロジェクトファイルのパス（未保存なら null） */
@@ -360,6 +374,29 @@ export class ProjectSession {
     this.unmatched = [];
     // 設定は「何を確認したか」を変えないため承認は無効化しない
     this.project = { ...project, settings };
+    return this.analyzeAndSave();
+  }
+
+  /**
+   * 楽譜プレビューからの注釈の編集を適用して解析し直す（F-5）
+   *
+   * 解析を流し直すのは、書き足した手動注釈を自動注釈が避ける配置（`regenerateAnnotations`）と、
+   * プレビュー・出力PDF・再読み込み後の結果を**同じ経路**で決めるため。注釈列だけを差し替えて
+   * プレビューを作ると、画面と再読み込み後で自動注釈の位置が食い違う
+   *
+   * 承認は無効化しない（注釈の編集は「音部記号・調の確認」の対象を変えない。`setSettings` と同じ）。
+   * 訂正ではないため、適用されなかった訂正の報告もそのまま残す
+   *
+   * @throws AnnotationEditError 適用できない編集の場合（注釈列は変更しない）
+   */
+  editAnnotation(edit: AnnotationEdit): SessionSnapshot {
+    const { project } = this.require();
+    const annotations = applyAnnotationEdit(project.annotations, edit, {
+      pages: project.pages,
+      settings: project.settings,
+      newId: this.newAnnotationId,
+    });
+    this.project = { ...project, annotations };
     return this.analyzeAndSave();
   }
 
