@@ -6,6 +6,7 @@ import type {
   RenderIssue,
   StructureIssue,
 } from '../types/Issues';
+import type { AnnotationEdit } from '../types/Annotation';
 import type { KeyRegionDecision } from '../types/KeyRegion';
 import type { Project } from '../types/Project';
 import type { ProjectSettings } from '../types/ProjectSettings';
@@ -146,4 +147,6 @@ export interface IpcContract {
   [IPC_CHANNELS.projectExportPdf]: (outPath: string) => Promise<IpcResult<ExportSummary>>;
   /** 開いているプロジェクトの元PDF（楽譜プレビュー用）。パスは受け取らない */
   [IPC_CHANNELS.projectGetSourcePdf]: () => IpcResult<Uint8Array>;
+  /** 楽譜プレビューからの注釈の編集（F-5）。適用して解析し直した結果を返す */
+  [IPC_CHANNELS.projectEditAnnotation]: (edit: AnnotationEdit) => IpcResult<ProjectSnapshot>;
 }

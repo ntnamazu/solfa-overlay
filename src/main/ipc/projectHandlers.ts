@@ -5,6 +5,7 @@ import type {
   IpcResult,
   ProjectSnapshot,
 } from '../../shared/ipc/contract';
+import type { AnnotationEdit } from '../../shared/types/Annotation';
 import type { KeyRegionDecision } from '../../shared/types/KeyRegion';
 import type { OmrProgress } from '../../shared/types/OmrProgress';
 import type { Project } from '../../shared/types/Project';
@@ -114,6 +115,9 @@ export function createProjectHandlers(
       attemptAsync(() => session.exportPdf(outPath)),
 
     getSourcePdf: (): IpcResult<Uint8Array> => attempt(() => session.sourcePdfBytes()),
+
+    editAnnotation: (edit: AnnotationEdit): IpcResult<ProjectSnapshot> =>
+      attempt(() => session.editAnnotation(edit)),
   };
 }
 

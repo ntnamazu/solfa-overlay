@@ -43,10 +43,10 @@
 
 ## フェーズ3: セッションと IPC
 
-- [ ] `ProjectSession.editAnnotation` を実装する（id 生成の差し替え口を含む）
-- [ ] `ProjectSession.editAnnotation` のテストを書く（プレビュー反映・承認維持・再解析後の保全・保存→再読み込み）
-- [ ] IPC チャネル・契約・ハンドラ・preload・Main の登録を追加する
-- [ ] `projectHandlers.editAnnotation` のテストを書く
+- [x] `ProjectSession.editAnnotation` を実装する（id 生成の差し替え口を含む）
+- [x] `ProjectSession.editAnnotation` のテストを書く（プレビュー反映・承認維持・再解析後の保全・保存→再読み込み）
+- [x] IPC チャネル・契約・ハンドラ・preload・Main の登録を追加する
+- [x] `projectHandlers.editAnnotation` のテストを書く
 
 ## フェーズ4: Renderer
 
