@@ -628,6 +628,25 @@ describe('Editor', () => {
       expect(input().value).toBe('ta');
     });
 
+    it('入力欄の初期値は表示用に置換する前の文字にする（開いただけで ♯ を # へ書き換えない）', async () => {
+      const props = await setupEditable({
+        project: project({
+          score: score(),
+          annotations: [autoAnnotation, { ...manualAnnotation, text: 'do♯' }],
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+
+      // 楽譜の上は出力PDFと同じく置換後の文字（'ta' の位置に 'do#' が出ている想定）
+      await userEvent.click(screen.getByText('ta'));
+      expect(input().value).toBe('do♯');
+      // 置換前の文字のままなら確定できない（保存済みの文字を変えない）
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '書き換える' }).disabled).toBe(
+        true,
+      );
+      expect(props.onEditAnnotation).not.toHaveBeenCalled();
+    });
+
     it('処理中は楽譜を押しても選べない', async () => {
       await setupEditable({ busy: true });
       await userEvent.click(screen.getByText('do'));

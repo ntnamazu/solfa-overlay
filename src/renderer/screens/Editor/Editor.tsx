@@ -139,7 +139,14 @@ export function Editor({
     selection?.kind === 'annotation' ? previewAnnotations.get(selection.id) : undefined;
   const target: AnnotationEditTarget | null =
     selectedAnnotation !== undefined
-      ? { kind: 'annotation', annotation: selectedAnnotation }
+      ? {
+          kind: 'annotation',
+          annotation: selectedAnnotation,
+          // 保存されている置換前の文字（自動の階名で上書きが無ければ表示中の階名）
+          editableText:
+            project.annotations.find((item) => item.id === selectedAnnotation.id)?.text ??
+            selectedAnnotation.text,
+        }
       : selection?.kind === 'point'
         ? { kind: 'point' }
         : null;

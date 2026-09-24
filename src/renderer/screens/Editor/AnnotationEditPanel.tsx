@@ -13,7 +13,18 @@ import type { ScorePreviewAnnotation } from '../../../shared/types/ScorePreview'
 
 /** 編集の対象（楽譜の上で押したもの） */
 export type AnnotationEditTarget =
-  { kind: 'annotation'; annotation: ScorePreviewAnnotation } | { kind: 'point' };
+  | {
+      kind: 'annotation';
+      annotation: ScorePreviewAnnotation;
+      /**
+       * 入力欄の初期値にする**置換前の**文字
+       *
+       * `annotation.text` は描けない文字を置換した表示用の文字列（`♯` → `#` など）であり、
+       * それを初期値にすると、開いて確定しただけで保存済みの文字が置換後の文字へ書き換わる
+       */
+      editableText: string;
+    }
+  | { kind: 'point' };
 
 export interface AnnotationEditPanelProps {
   /** 編集の対象（何も選んでいなければ null） */
@@ -54,7 +65,7 @@ export function AnnotationEditPanel({
   onUndoRemove,
   onClose,
 }: AnnotationEditPanelProps) {
-  const initial = target?.kind === 'annotation' ? target.annotation.text : '';
+  const initial = target?.kind === 'annotation' ? target.editableText : '';
   const [text, setText] = useState(initial);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => {
@@ -118,7 +129,8 @@ export function AnnotationEditPanel({
               maxLength={MANUAL_TEXT_MAX_LENGTH}
               placeholder="例: do, fi, ta"
               onChange={(event) => {
-                setText(event.target.value);
+                // maxLength は UTF-16 の単位で数えるため、Main の検証と同じく文字（コードポイント）単位で切る
+                setText([...event.target.value].slice(0, MANUAL_TEXT_MAX_LENGTH).join(''));
               }}
               disabled={busy}
             />
