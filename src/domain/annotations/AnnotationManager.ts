@@ -1,3 +1,4 @@
+import { MANUAL_TEXT_MAX_LENGTH } from '../../shared/constants/MANUAL_TEXT_MAX_LENGTH';
 import type { Annotation, AnnotationEdit } from '../../shared/types/Annotation';
 import type { AnnotationIssue } from '../../shared/types/Issues';
 import type { PageInfo } from '../../shared/types/Project';
@@ -253,14 +254,6 @@ export function removeAnnotation(annotations: readonly Annotation[], id: string)
     ? annotations.filter((annotation) => annotation.id !== id)
     : updateAnnotation(annotations, id, { deleted: true });
 }
-
-/**
- * 手動で書く階名の文字数の上限
- *
- * 階名は長くても `do#` 程度で、楽譜の余白に収まる長さでなければ判読できない。
- * 上限が無いと貼り付けた長文が譜面を横切り、出力PDFを台無しにする
- */
-export const MANUAL_TEXT_MAX_LENGTH = 16;
 
 /** 注釈の編集に要る文脈（位置の逆変換と文字の寸法、新しい id の発行） */
 export interface AnnotationEditContext {

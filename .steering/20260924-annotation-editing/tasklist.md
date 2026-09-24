@@ -50,12 +50,12 @@
 
 ## フェーズ4: Renderer
 
-- [ ] `ScorePage` / `ScoreViewer` に選択・位置指定（`onPick`）と選択表示を足す
-- [ ] `ScoreViewer` のテストを追加する（注釈を押す・空いた位置を押す・重ねるものが無いページ）
-- [ ] `AnnotationEditPanel` を実装する
-- [ ] `Editor` にパネルと選択状態・削除の取り消しを結線し、案内文を更新する
-- [ ] `Editor` のテストを追加する（追加・書き換え・削除・自動に戻す・元に戻す・処理中）
-- [ ] `App` に `editAnnotation` を結線し、テストを追加する
+- [x] `ScorePage` / `ScoreViewer` に選択・位置指定（`onPick`）と選択表示を足す
+- [x] `ScoreViewer` のテストを追加する（注釈を押す・空いた位置を押す・重ねるものが無いページ）
+- [x] `AnnotationEditPanel` を実装する
+- [x] `Editor` にパネルと選択状態・削除の取り消しを結線し、案内文を更新する
+- [x] `Editor` のテストを追加する（追加・書き換え・削除・自動に戻す・元に戻す・処理中）
+- [x] `App` に `editAnnotation` を結線し、テストを追加する
 
 ## フェーズ5: 統合テスト
 

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   PdfDocumentHandle,
@@ -419,5 +419,135 @@ describe('ScoreViewer: ジャンプ', () => {
     await waitFor(() => {
       expect(scrollIntoView).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('ScoreViewer: 編集の対象を選ぶ', () => {
+  const annotation = {
+    id: 'a1',
+    x: 10,
+    y: 20,
+    text: 'do',
+    chromatic: false,
+    origin: 'auto' as const,
+    textOverridden: false,
+  };
+  const withAnnotation = preview([
+    page({
+      sourcePageIndex: 1,
+      annotations: [annotation],
+      skippedMeasures: [{ partId: 'P1', measureIndex: 4, x: 100, y: 100, width: 50, height: 40 }],
+      placementWarnings: [{ annotationId: 'a1', x: 10, y: 20 }],
+    }),
+  ]);
+
+  /** SVG の表示寸法を決める（jsdom はレイアウトしないため、押した位置の換算に要る） */
+  function layOut(svg: Element, width: number, height: number) {
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+      left: 10,
+      top: 50,
+      width,
+      height,
+      right: 10 + width,
+      bottom: 50 + height,
+      x: 10,
+      y: 50,
+      toJSON: () => ({}),
+    });
+  }
+
+  it('階名を押すと、その階名と元PDFのページを知らせる', async () => {
+    const onPick = vi.fn();
+    setup({ preview: withAnnotation, onPick });
+
+    fireEvent.click(await screen.findByText('do'));
+
+    expect(onPick).toHaveBeenCalledExactlyOnceWith({
+      kind: 'annotation',
+      sourcePageIndex: 1,
+      annotation,
+    });
+  });
+
+  it('配置警告の印を押しても、その階名を選ぶ', async () => {
+    const onPick = vi.fn();
+    setup({ preview: withAnnotation, onPick });
+    await screen.findByText('do');
+
+    fireEvent.click(document.querySelector('[data-warning="a1"] circle') as Element);
+
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ kind: 'annotation' }));
+  });
+
+  it('空いた位置（スキップ小節の枠の中を含む）を押すと、ページのポイント座標を知らせる', async () => {
+    const onPick = vi.fn();
+    setup({ preview: withAnnotation, onPick });
+    const svg = await screen.findByRole('img', { name: '2 ページの階名' });
+    // 表示幅をページのポイント寸法のちょうど半分にする（1 px = 2 pt）
+    layOut(svg, A4.widthPt / 2, A4.heightPt / 2);
+
+    fireEvent.click(svg.querySelector('rect[data-region="P1:4"]') as Element, {
+      clientX: 10 + 60,
+      clientY: 50 + 55,
+    });
+
+    expect(onPick).toHaveBeenCalledOnce();
+    const pick = onPick.mock.calls[0]?.[0];
+    expect(pick).toMatchObject({ kind: 'point', sourcePageIndex: 1 });
+    expect(pick.x).toBeCloseTo(120, 6);
+    expect(pick.y).toBeCloseTo(110, 6);
+  });
+
+  it('編集できるときは、重ねるものが無いページにも書き足せる', async () => {
+    const onPick = vi.fn();
+    setup({ preview: withAnnotation, onPick });
+    const svg = await screen.findByRole('img', { name: '1 ページの階名' });
+    expect(svg.getAttribute('viewBox')).toBe(`0 0 ${A4.widthPt} ${A4.heightPt}`);
+    layOut(svg, A4.widthPt, A4.heightPt);
+
+    fireEvent.click(svg, { clientX: 10 + 30, clientY: 50 + 40 });
+
+    expect(onPick).toHaveBeenCalledWith({ kind: 'point', sourcePageIndex: 0, x: 30, y: 40 });
+  });
+
+  it('レイアウト前（表示寸法 0）の押下は位置を決められないため知らせない', async () => {
+    const onPick = vi.fn();
+    setup({ preview: withAnnotation, onPick });
+    const svg = await screen.findByRole('img', { name: '1 ページの階名' });
+
+    fireEvent.click(svg, { clientX: 1, clientY: 1 });
+
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it('選択中の階名を縁取りと下線で示し、書き足す位置に印を置く', async () => {
+    setup({
+      preview: withAnnotation,
+      onPick: vi.fn(),
+      selectedAnnotationId: 'a1',
+      pendingPoint: { sourcePageIndex: 0, x: 30, y: 40 },
+    });
+
+    const text = await screen.findByText('do');
+    expect(text.getAttribute('text-decoration')).toBe('underline');
+    expect(text.getAttribute('stroke')).toBe('#1565c0');
+    // 文字の色は出力PDFと同じまま
+    expect(text.getAttribute('fill')).toBe('#8b0000');
+    const marker = screen
+      .getByRole('img', { name: '1 ページの階名' })
+      .querySelector('[data-pending-point]');
+    expect(marker?.getAttribute('transform')).toBe('translate(30 40)');
+    // 書き足す位置の印は選んだページにだけ置く
+    expect(
+      screen.getByRole('img', { name: '2 ページの階名' }).querySelector('[data-pending-point]'),
+    ).toBeNull();
+  });
+
+  it('onPick を渡さなければ読み取り専用（押しても何も起きない）', async () => {
+    setup({ preview: withAnnotation });
+    const text = await screen.findByText('do');
+    expect(text.getAttribute('style')).toBeNull();
+    // 重ねるものが無いページには SVG を置かない（従来どおり）
+    expect(screen.queryByRole('img', { name: '1 ページの階名' })).toBeNull();
   });
 });

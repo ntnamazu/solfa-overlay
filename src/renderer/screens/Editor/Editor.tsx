@@ -4,6 +4,7 @@ import type {
   SolfaPreviewRow,
   UnmatchedCorrection,
 } from '../../../shared/ipc/contract';
+import type { Annotation, AnnotationEdit } from '../../../shared/types/Annotation';
 import type { AnnotationIssue, PageInfoIssue } from '../../../shared/types/Issues';
 import type { Project } from '../../../shared/types/Project';
 import type { ProjectSettings } from '../../../shared/types/ProjectSettings';
@@ -11,16 +12,22 @@ import type { Measure } from '../../../shared/types/ScoreModel';
 import type { ScorePreview } from '../../../shared/types/ScorePreview';
 import { partDisplayName } from '../../labels/scoreLabels';
 import type { PdfLoader } from '../../viewer/pdfDocument';
+import type { ScorePick } from '../../viewer/ScorePage';
 import type { ScoreViewerFocus } from '../../viewer/ScoreViewer';
 import { ScoreViewer } from '../../viewer/ScoreViewer';
+import type { AnnotationEditTarget } from './AnnotationEditPanel';
+import { AnnotationEditPanel } from './AnnotationEditPanel';
 import { SolfaNotationSettings } from './SolfaNotationSettings';
 
 /**
  * Editor 画面（画面遷移図の Editor）
  *
- * 元PDF に階名を重ねた楽譜プレビュー（読み取り専用・Phase 6 の第 1 段階 #4）で、
- * 出力PDFを書き出さなくても階名の位置・スキップ小節・配置警告を確かめられる。
- * 注釈の手動編集（F-5）と転調点の指定（F-6）は後続の担当。
+ * 元PDF に階名を重ねた楽譜プレビュー（#4）で、出力PDFを書き出さなくても
+ * 階名の位置・スキップ小節・配置警告を確かめられる。楽譜の上の階名を押すと書き換え・削除でき、
+ * 階名の無い位置を押すとそこへ書き足せる（F-5・#5）。転調点の指定（F-6）は後続の担当。
+ *
+ * **楽譜プレビューは最後の区画に置く**（#17）。全ページを縦に並べるため、後ろに置いた区画
+ * （スキップ小節の一覧・PDF出力）が画面のずっと下に隠れてしまう
  */
 
 /** スキップ小節の一覧に出す上限（3,500 音符の曲では 100 件を超えることがある） */
@@ -46,6 +53,8 @@ export interface EditorProps {
   onExportPdf: () => void;
   /** 階名の表記（音節体系・短調の基準）を切り替える。設定全体を渡す */
   onChangeSettings: (settings: ProjectSettings) => void;
+  /** 楽譜プレビューからの注釈の編集（追加・書き換え・削除・取り消し） */
+  onEditAnnotation: (edit: AnnotationEdit) => void;
   onBackToConfirm: () => void;
   busy: boolean;
 }
@@ -80,6 +89,7 @@ export function Editor({
   exportSummary,
   onExportPdf,
   onChangeSettings,
+  onEditAnnotation,
   onBackToConfirm,
   busy,
 }: EditorProps) {
@@ -106,11 +116,93 @@ export function Editor({
     }));
   };
 
+  /**
+   * 楽譜の上で選んだもの
+   *
+   * 階名は id だけを持ち、中身は毎回最新の `scorePreview` から引く（編集や表記の切り替えで
+   * 文字が変わっても古い内容を見せない。消えた階名は選択が外れたものとして扱う）
+   */
+  const [selection, setSelection] = useState<
+    | { kind: 'annotation'; id: string }
+    | { kind: 'point'; sourcePageIndex: number; x: number; y: number }
+    | null
+  >(null);
+  /** 直前に削除した注釈（「元に戻す」で削除前の内容をそのまま送る） */
+  const [removed, setRemoved] = useState<{ annotation: Annotation; text: string } | null>(null);
+
+  const previewAnnotations = new Map(
+    scorePreview.pages.flatMap((page) =>
+      page.annotations.map((annotation) => [annotation.id, annotation] as const),
+    ),
+  );
+  const selectedAnnotation =
+    selection?.kind === 'annotation' ? previewAnnotations.get(selection.id) : undefined;
+  const target: AnnotationEditTarget | null =
+    selectedAnnotation !== undefined
+      ? { kind: 'annotation', annotation: selectedAnnotation }
+      : selection?.kind === 'point'
+        ? { kind: 'point' }
+        : null;
+  // 対象が変わったらパネルを作り直す（入力欄の初期値を対象に合わせるため）
+  const panelKey =
+    selection === null
+      ? 'none'
+      : selection.kind === 'annotation'
+        ? `annotation:${selection.id}`
+        : `point:${selection.sourcePageIndex}:${selection.x}:${selection.y}`;
+
+  const pick = (picked: ScorePick) => {
+    setRemoved(null);
+    setSelection(
+      picked.kind === 'annotation'
+        ? { kind: 'annotation', id: picked.annotation.id }
+        : { kind: 'point', sourcePageIndex: picked.sourcePageIndex, x: picked.x, y: picked.y },
+    );
+  };
+  const closePanel = () => {
+    setSelection(null);
+    setRemoved(null);
+  };
+  const addAt = (text: string) => {
+    if (selection?.kind === 'point') {
+      onEditAnnotation({
+        kind: 'add',
+        sourcePageIndex: selection.sourcePageIndex,
+        x: selection.x,
+        y: selection.y,
+        text,
+      });
+    }
+    closePanel();
+  };
+  const setSelectedText = (text: string | null) => {
+    if (selectedAnnotation !== undefined) {
+      onEditAnnotation({ kind: 'setText', id: selectedAnnotation.id, text });
+    }
+    closePanel();
+  };
+  const removeSelected = () => {
+    const annotation = project.annotations.find((item) => item.id === selectedAnnotation?.id);
+    if (selectedAnnotation === undefined || annotation === undefined) {
+      closePanel();
+      return;
+    }
+    onEditAnnotation({ kind: 'remove', id: annotation.id });
+    setSelection(null);
+    setRemoved({ annotation, text: selectedAnnotation.text });
+  };
+  const undoRemove = () => {
+    if (removed !== null) {
+      onEditAnnotation({ kind: 'restore', annotation: removed.annotation });
+    }
+    closePanel();
+  };
+
   return (
     <main>
       <h1>階名の確認と出力</h1>
       {/* 全画面共通ルール: h1 の直下に「あなたが今すべきこと」を 1 文置く */}
-      <p>楽譜の上の階名を見て問題がなければ、「注釈付きPDFを出力」で楽譜を書き出してください。</p>
+      <p>楽譜の上の階名を確かめて必要なら直し、「注釈付きPDFを出力」で楽譜を書き出してください。</p>
 
       <section>
         <h2>概要</h2>
@@ -125,7 +217,7 @@ export function Editor({
       {skipped.length > 0 && (
         <section>
           <h2>階名が付かなかった小節（{skipped.length} 件）</h2>
-          <p>押すと、楽譜の黄色く囲んだ位置へ移動します。</p>
+          <p>押すと、楽譜の黄色く囲んだ位置へ移動します。枠の中を押すと、階名を書き足せます。</p>
           <ul>
             {skipped.slice(0, SKIPPED_LIST_LIMIT).map((measure) => {
               const label = `${partDisplayName(measure.partId, partNames.get(measure.partId))}の ${measure.index + 1} 小節目`;
@@ -229,12 +321,18 @@ export function Editor({
 
       <section>
         <h2>楽譜プレビュー</h2>
+        <p>
+          階名を押すと、書き換え・削除できます。階名の無い位置を押すと、そこに階名を書き足せます。
+        </p>
         <ScoreViewer
           sourcePdf={sourcePdf}
           sourcePdfError={sourcePdfError}
           preview={scorePreview}
           focus={focus}
           loadPdf={loadPdf}
+          onPick={busy ? undefined : pick}
+          selectedAnnotationId={selectedAnnotation?.id ?? null}
+          pendingPoint={selection?.kind === 'point' ? selection : null}
         />
         {/* 楽譜を表示できない場合の代わりとして、文字の一覧も残す（既定は畳む） */}
         <details>
@@ -264,6 +362,21 @@ export function Editor({
           )}
         </details>
       </section>
+
+      <AnnotationEditPanel
+        key={panelKey}
+        target={target}
+        removedText={removed?.text ?? null}
+        busy={busy}
+        onAdd={addAt}
+        onSetText={setSelectedText}
+        onRevert={() => {
+          setSelectedText(null);
+        }}
+        onRemove={removeSelected}
+        onUndoRemove={undoRemove}
+        onClose={closePanel}
+      />
     </main>
   );
 }

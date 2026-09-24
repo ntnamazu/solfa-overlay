@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   AnnotationManager,
-  MANUAL_TEXT_MAX_LENGTH,
   addAnnotation,
   applyAnnotationEdit,
   autoAnnotationId,
@@ -15,6 +14,7 @@ import { AnnotationEditError } from '../../../../src/domain/annotations/errors';
 import { solfaFonts } from '../../../../src/domain/render/fontMetrics';
 import type { PageGeometry } from '../../../../src/domain/score/OmrSheetParser';
 import { DEFAULT_SETTINGS } from '../../../../src/shared/constants/DEFAULT_SETTINGS';
+import { MANUAL_TEXT_MAX_LENGTH } from '../../../../src/shared/constants/MANUAL_TEXT_MAX_LENGTH';
 import type { Annotation } from '../../../../src/shared/types/Annotation';
 import type { PageInfo } from '../../../../src/shared/types/Project';
 import type { Measure, NoteEvent, ScoreModel } from '../../../../src/shared/types/ScoreModel';
