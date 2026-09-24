@@ -4,6 +4,7 @@ import type {
   IpcResult,
   ProjectSnapshot,
 } from '../shared/ipc/contract';
+import type { AnnotationEdit } from '../shared/types/Annotation';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress } from '../shared/types/OmrProgress';
 import type { Project } from '../shared/types/Project';
@@ -39,6 +40,10 @@ export interface SolfaOverlayApi {
   completeConfirmation(): Promise<IpcResult<ProjectSnapshot>>;
   /** 注釈付きPDFを書き出す（承認前は失敗する） */
   exportPdf(outPath: string): Promise<IpcResult<ExportSummary>>;
+  /** 開いているプロジェクトの元PDF（楽譜プレビュー用） */
+  getSourcePdf(): Promise<IpcResult<Uint8Array>>;
+  /** 楽譜プレビューからの注釈の編集（追加・書き換え・削除・取り消し） */
+  editAnnotation(edit: AnnotationEdit): Promise<IpcResult<ProjectSnapshot>>;
 
   /**
    * OMR の進捗を購読する

@@ -1,6 +1,11 @@
-import { regenerateAnnotations } from '../domain/annotations/AnnotationManager';
+import { randomUUID } from 'node:crypto';
+import {
+  applyAnnotationEdit,
+  regenerateAnnotations,
+} from '../domain/annotations/AnnotationManager';
 import { renderOverlay } from '../domain/render/OverlayRenderer';
 import { buildPageInfos } from '../domain/render/pageInfo';
+import { buildScorePreview } from '../domain/render/scorePreview';
 import { BookStructureResolver } from '../domain/score/BookStructureResolver';
 import type { StructureIssue } from '../domain/score/BookStructureResolver';
 import type { BookPageRef, PageGeometry } from '../domain/score/OmrSheetParser';
@@ -11,7 +16,9 @@ import { buildConfirmationItems, mergeCorrections } from '../domain/score/confir
 import { KeyRegionBuilder } from '../domain/solfa/KeyRegionBuilder';
 import type { KeyRegionIssue } from '../domain/solfa/KeyRegionBuilder';
 import { SolfaEngine, applyDegrees } from '../domain/solfa/SolfaEngine';
+import { DEFAULT_SETTINGS } from '../shared/constants/DEFAULT_SETTINGS';
 import type { SolfaPreviewRow } from '../shared/ipc/contract';
+import type { AnnotationEdit } from '../shared/types/Annotation';
 import type { AnnotationIssue, PageInfoIssue, RenderIssue } from '../shared/types/Issues';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress } from '../shared/types/OmrProgress';
@@ -19,6 +26,7 @@ import type { OmrRawArtifacts } from '../shared/types/OmrRawArtifacts';
 import type { Project } from '../shared/types/Project';
 import type { ProjectSettings } from '../shared/types/ProjectSettings';
 import type { ScoreModel } from '../shared/types/ScoreModel';
+import type { ScorePreview } from '../shared/types/ScorePreview';
 import type { StructureDecision } from '../shared/types/StructureDecision';
 import { ProjectStore } from '../storage/ProjectStore';
 import { writeExportPdf } from '../storage/writeExportPdf';
@@ -54,6 +62,8 @@ export interface SessionSnapshot {
   annotationIssues: AnnotationIssue[];
   /** Editor の階名プレビュー（先頭の一定小節まで） */
   preview: SolfaPreviewRow[];
+  /** Editor の楽譜プレビューに重ねる内容（注釈・スキップ小節・配置警告） */
+  scorePreview: ScorePreview;
   /**
    * 対象が見つからず適用されなかった訂正
    *
@@ -100,6 +110,22 @@ export interface OmrRunnerLike {
   cancel(): void;
 }
 
+/**
+ * 解析前の楽譜プレビュー（重ねるものなし）
+ *
+ * スナップショットはプロジェクトを開いて解析した後にしか作られないため実際には返らないが、
+ * `preview` の初期値 `[]` と同じく、フィールドを null 許容にせずに済ませるために置く
+ */
+const EMPTY_SCORE_PREVIEW: ScorePreview = {
+  style: {
+    fontFamily: 'sans-serif',
+    fontSizePt: DEFAULT_SETTINGS.fontSizePt,
+    diatonicColor: DEFAULT_SETTINGS.diatonicColor,
+    chromaticColor: DEFAULT_SETTINGS.chromaticColor,
+  },
+  pages: [],
+};
+
 export class ProjectSession {
   private readonly store: ProjectStore;
   private readonly runner: OmrRunnerLike;
@@ -127,6 +153,8 @@ export class ProjectSession {
   private pageIssues: PageInfoIssue[] = [];
   /** Editor の階名プレビュー（承認時にも同じ内容を返せるよう保持する） */
   private preview: SolfaPreviewRow[] = [];
+  /** Editor の楽譜プレビュー（`preview` と同じく承認時にも返せるよう保持する） */
+  private scorePreview: ScorePreview = EMPTY_SCORE_PREVIEW;
   private pendingSave: ReturnType<typeof setTimeout> | null = null;
   /**
    * 進行中の保存（直列化用）
@@ -137,12 +165,21 @@ export class ProjectSession {
    */
   private saveChain: Promise<unknown> = Promise.resolve();
   private readonly autoSaveDelayMs: number;
+  /** 手動注釈の id を発行する（テストで決定的な値に差し替える） */
+  private readonly newAnnotationId: () => string;
 
-  constructor(deps?: { store?: ProjectStore; runner?: OmrRunnerLike; autoSaveDelayMs?: number }) {
+  constructor(deps?: {
+    store?: ProjectStore;
+    runner?: OmrRunnerLike;
+    autoSaveDelayMs?: number;
+    newAnnotationId?: () => string;
+  }) {
     this.store = deps?.store ?? new ProjectStore();
     this.runner = deps?.runner ?? new OmrRunner();
     // アーキテクチャ設計書「プロジェクト自動保存」の 300ms デバウンス
     this.autoSaveDelayMs = deps?.autoSaveDelayMs ?? 300;
+    // 自動注釈（`solfa-<noteId>`）と衝突しない接頭辞を付ける
+    this.newAnnotationId = deps?.newAnnotationId ?? (() => `manual-${randomUUID()}`);
   }
 
   /** 現在開いているプロジェクトファイルのパス（未保存なら null） */
@@ -341,6 +378,29 @@ export class ProjectSession {
   }
 
   /**
+   * 楽譜プレビューからの注釈の編集を適用して解析し直す（F-5）
+   *
+   * 解析を流し直すのは、書き足した手動注釈を自動注釈が避ける配置（`regenerateAnnotations`）と、
+   * プレビュー・出力PDF・再読み込み後の結果を**同じ経路**で決めるため。注釈列だけを差し替えて
+   * プレビューを作ると、画面と再読み込み後で自動注釈の位置が食い違う
+   *
+   * 承認は無効化しない（注釈の編集は「音部記号・調の確認」の対象を変えない。`setSettings` と同じ）。
+   * 訂正ではないため、適用されなかった訂正の報告もそのまま残す
+   *
+   * @throws AnnotationEditError 適用できない編集の場合（注釈列は変更しない）
+   */
+  editAnnotation(edit: AnnotationEdit): SessionSnapshot {
+    const { project } = this.require();
+    const annotations = applyAnnotationEdit(project.annotations, edit, {
+      pages: project.pages,
+      settings: project.settings,
+      newId: this.newAnnotationId,
+    });
+    this.project = { ...project, annotations };
+    return this.analyzeAndSave();
+  }
+
+  /**
    * 確認を完了としてマークする（F-2 の承認）
    *
    * `completedAt` が入るまで階名の確定・PDF 出力へ進めない。承認は解析結果を変えないため
@@ -488,6 +548,14 @@ export class ProjectSession {
       annotationIssues,
     };
     this.preview = buildPreview(score, project.settings, this.engine);
+    this.scorePreview = buildScorePreview({
+      score,
+      omrPages: omr.artifacts.pages,
+      pages: project.pages,
+      annotations,
+      annotationIssues,
+      settings: project.settings,
+    });
     return this.snapshot(this.lastIssues);
   }
 
@@ -504,8 +572,20 @@ export class ProjectSession {
       ...issues,
       pageIssues: this.pageIssues,
       preview: this.preview,
+      scorePreview: this.scorePreview,
       unmatchedCorrections: this.unmatched,
     };
+  }
+
+  /**
+   * 元PDF のバイト列を返す（Editor の楽譜プレビュー用）
+   *
+   * スナップショットに入れないのは、数十MBの PDF を訂正のたびに送り直さないため
+   * （元PDF はセッション中に変わらない）。**パスを受け取らない**のは、IPC を任意ファイルの
+   * 読み出し口にしないため（開いているプロジェクトの PDF しか返せない）
+   */
+  sourcePdfBytes(): Uint8Array {
+    return this.require().sourcePdf;
   }
 
   /**

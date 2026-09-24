@@ -94,6 +94,49 @@ export function toMediaBoxPoint(
   }
 }
 
+/** 画面プレビュー上の位置（**左上原点**・y 下向き・ポイント） */
+export interface PreviewPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * `.omr` の画像座標を画面プレビューの座標（pt・左上原点）へ変換する
+ *
+ * Editor の楽譜プレビューは SVG（`viewBox` = ページのポイント寸法）で注釈を重ねるため、
+ * **y を反転しない**点だけが `toPdfPoint` と違う。縮尺の求め方は共有し、
+ * 出力PDFと画面で位置が食い違わないようにする
+ *
+ * @returns 変換できないページでは null
+ */
+export function toPreviewPoint(page: PageInfo, x: number, y: number): PreviewPoint | null {
+  if (!isTransformable(page)) {
+    return null;
+  }
+  return {
+    x: x * (page.widthPt / page.omrImageWidthPx),
+    y: y * (page.heightPt / page.omrImageHeightPx),
+  };
+}
+
+/**
+ * 画面プレビューの座標（pt・左上原点）を `.omr` の画像座標へ戻す（`toPreviewPoint` の逆）
+ *
+ * Editor で楽譜上の位置を押して階名を書き足すときに使う。縮尺は `toPreviewPoint` と
+ * 同じ式から求め、書き足した注釈が押した位置と出力PDFの両方で同じ場所に載るようにする
+ *
+ * @returns 変換できないページでは null
+ */
+export function fromPreviewPoint(page: PageInfo, x: number, y: number): PreviewPoint | null {
+  if (!isTransformable(page)) {
+    return null;
+  }
+  return {
+    x: x * (page.omrImageWidthPx / page.widthPt),
+    y: y * (page.omrImageHeightPx / page.heightPt),
+  };
+}
+
 /**
  * `.omr` の画像座標を PDF の描画座標へ変換する
  *

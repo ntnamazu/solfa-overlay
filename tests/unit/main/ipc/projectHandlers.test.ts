@@ -3,6 +3,7 @@ import type { ProjectSession } from '../../../../src/main/ProjectSession';
 import { createProjectHandlers, toIpcError } from '../../../../src/main/ipc/projectHandlers';
 import { ConfirmationRequiredError } from '../../../../src/main/errors';
 import { OmrArchiveError, OmrRunError } from '../../../../src/main/omr/errors';
+import { AnnotationEditError } from '../../../../src/domain/annotations/errors';
 import { ProjectFileError } from '../../../../src/storage/errors';
 
 /**
@@ -36,6 +37,8 @@ function fakeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
       unresolvedPlacements: 0,
       renderIssues: [],
     }),
+    sourcePdfBytes: vi.fn().mockReturnValue(new Uint8Array([0x25, 0x50, 0x44, 0x46])),
+    editAnnotation: vi.fn().mockReturnValue(snapshot),
     ...overrides,
   } as unknown as ProjectSession;
 }
@@ -178,5 +181,49 @@ describe('createProjectHandlers', () => {
     const result = await createProjectHandlers(session, () => {}).exportPdf('/out.pdf');
 
     expect(result).toEqual({ ok: false, error: { kind: 'io', message: '書けません' } });
+  });
+
+  it('元PDF のバイト列を返す（楽譜プレビュー用）', () => {
+    const result = createProjectHandlers(fakeSession(), () => {}).getSourcePdf();
+
+    expect(result).toEqual({ ok: true, value: new Uint8Array([0x25, 0x50, 0x44, 0x46]) });
+  });
+
+  it('プロジェクト未オープンで元PDF を求められたら失敗を値で返す（例外で IPC を落とさない）', () => {
+    const session = fakeSession({
+      sourcePdfBytes: vi.fn(() => {
+        throw new Error('プロジェクトが開かれていません');
+      }),
+    } as unknown as Partial<ProjectSession>);
+
+    expect(createProjectHandlers(session, () => {}).getSourcePdf()).toEqual({
+      ok: false,
+      error: { kind: 'unexpected', message: 'プロジェクトが開かれていません' },
+    });
+  });
+
+  it('注釈の編集をそのままセッションへ渡し、解析し直した結果を返す', () => {
+    const session = fakeSession();
+    const edit = { kind: 'remove', id: 'solfa-n1' } as const;
+
+    const result = createProjectHandlers(session, () => {}).editAnnotation(edit);
+
+    expect(session.editAnnotation).toHaveBeenCalledExactlyOnceWith(edit);
+    expect(result.ok).toBe(true);
+  });
+
+  it('適用できない注釈の編集は失敗を値で返す（文言をそのまま画面へ出せる）', () => {
+    const session = fakeSession({
+      editAnnotation: vi.fn(() => {
+        throw new AnnotationEditError('編集しようとした階名が見つかりません');
+      }),
+    } as unknown as Partial<ProjectSession>);
+
+    expect(
+      createProjectHandlers(session, () => {}).editAnnotation({ kind: 'remove', id: 'x' }),
+    ).toEqual({
+      ok: false,
+      error: { kind: 'unexpected', message: '編集しようとした階名が見つかりません' },
+    });
   });
 });

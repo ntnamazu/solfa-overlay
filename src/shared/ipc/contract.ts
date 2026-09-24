@@ -6,9 +6,11 @@ import type {
   RenderIssue,
   StructureIssue,
 } from '../types/Issues';
+import type { AnnotationEdit } from '../types/Annotation';
 import type { KeyRegionDecision } from '../types/KeyRegion';
 import type { Project } from '../types/Project';
 import type { ProjectSettings } from '../types/ProjectSettings';
+import type { ScorePreview } from '../types/ScorePreview';
 import type { StructureDecision } from '../types/StructureDecision';
 import type { IPC_CHANNELS } from './channels';
 
@@ -39,6 +41,12 @@ export interface ProjectSnapshot {
   annotationIssues: AnnotationIssue[];
   /** Editor の階名プレビュー（先頭の一定小節まで） */
   preview: SolfaPreviewRow[];
+  /**
+   * Editor の楽譜プレビューに重ねる内容（注釈・スキップ小節・配置警告）
+   *
+   * 元PDF のバイト列そのものは含めない（`project:getSourcePdf` で 1 回だけ取得する）
+   */
+  scorePreview: ScorePreview;
   /**
    * 対象が見つからず適用されなかった訂正
    *
@@ -137,4 +145,8 @@ export interface IpcContract {
   [IPC_CHANNELS.projectSetSettings]: (settings: ProjectSettings) => IpcResult<ProjectSnapshot>;
   [IPC_CHANNELS.projectCompleteConfirmation]: () => IpcResult<ProjectSnapshot>;
   [IPC_CHANNELS.projectExportPdf]: (outPath: string) => Promise<IpcResult<ExportSummary>>;
+  /** 開いているプロジェクトの元PDF（楽譜プレビュー用）。パスは受け取らない */
+  [IPC_CHANNELS.projectGetSourcePdf]: () => IpcResult<Uint8Array>;
+  /** 楽譜プレビューからの注釈の編集（F-5）。適用して解析し直した結果を返す */
+  [IPC_CHANNELS.projectEditAnnotation]: (edit: AnnotationEdit) => IpcResult<ProjectSnapshot>;
 }

@@ -111,4 +111,53 @@ describe('取り込みから注釈付きPDF出力まで', () => {
     expect(after.project.pages).toEqual(before.project.pages);
     expect(after.project.pages.map((page) => page.sourcePageIndex)).toEqual([0, 0, 1, 2]);
   }, 120_000);
+
+  it('楽譜の上での注釈の編集（F-5）が保存・再読み込みを経て出力まで効く', async () => {
+    let seq = 0;
+    const first = new ProjectSession({
+      runner: new CountingRunner(),
+      newAnnotationId: () => `manual-${(seq += 1)}`,
+    });
+    const imported = await first.importPdf(pdfPath, () => {});
+    first.completeConfirmation();
+
+    // スキップ小節（Victoria は 1 小節）の黄色い枠の真ん中に書き足す（F-5 の主な使い道）
+    const skippedPage = imported.scorePreview.pages.find((page) => page.skippedMeasures.length > 0);
+    const region = skippedPage?.skippedMeasures[0];
+    expect(region).toBeDefined();
+    const center = { x: region!.x + region!.width / 2, y: region!.y + region!.height / 2 };
+    first.editAnnotation({
+      kind: 'add',
+      sourcePageIndex: skippedPage!.sourcePageIndex,
+      ...center,
+      text: 'mi',
+    });
+    const [removedTarget, rewrittenTarget] = imported.project.annotations;
+    first.editAnnotation({ kind: 'remove', id: removedTarget!.id });
+    first.editAnnotation({ kind: 'setText', id: rewrittenTarget!.id, text: 'fi' });
+    await first.save(projectPath);
+
+    const second = new ProjectSession({ runner: new CountingRunner() });
+    const reopened = await second.open(projectPath);
+
+    // 書き足した階名は、押した位置が文字の中心になるように載っている
+    const added = reopened.scorePreview.pages
+      .find((page) => page.sourcePageIndex === skippedPage!.sourcePageIndex)
+      ?.annotations.find((annotation) => annotation.id === 'manual-1');
+    expect(added?.text).toBe('mi');
+    expect(added!.x).toBeLessThan(center.x);
+    expect(added!.y).toBeGreaterThan(center.y);
+    expect(center.x - added!.x).toBeLessThan(region!.width / 2);
+    expect(added!.y - center.y).toBeLessThan(region!.height / 2);
+    // 承認は注釈の編集で外れない
+    expect(reopened.project.confirmation.completedAt).not.toBeNull();
+
+    const result = await second.exportPdf(exportPath);
+    // 808 件から 1 件削除し、1 件書き足した
+    expect(result.drawnCount).toBe(808);
+    expect(reopened.project.annotations.filter((annotation) => !annotation.deleted)).toHaveLength(
+      808,
+    );
+    expect(reopened.project.annotations.find((a) => a.id === rewrittenTarget!.id)?.text).toBe('fi');
+  }, 120_000);
 });

@@ -9,6 +9,7 @@ import { ProjectSession } from '../../../src/main/ProjectSession';
 import type { OmrRunnerLike } from '../../../src/main/ProjectSession';
 import { assembleArtifacts } from '../../../src/main/omr/omrArchive';
 import { TONIC_SOLFA_TABLE } from '../../../src/domain/solfa/syllableTables';
+import { AnnotationEditError } from '../../../src/domain/annotations/errors';
 import { ProjectStore } from '../../../src/storage/ProjectStore';
 import type { Annotation } from '../../../src/shared/types/Annotation';
 import type { OmrProgress } from '../../../src/shared/types/OmrProgress';
@@ -497,6 +498,8 @@ describe('ProjectSession', () => {
       ['setKeyRegionDecisions', () => session.setKeyRegionDecisions([])],
       ['completeConfirmation', () => session.completeConfirmation()],
       ['exportPdf', () => session.exportPdf('/tmp/x.pdf')],
+      ['sourcePdfBytes', () => session.sourcePdfBytes()],
+      ['editAnnotation', () => session.editAnnotation({ kind: 'remove', id: 'solfa-x' })],
     ])('%s はプロジェクト未オープンを明示的に拒否する', async (_name, run) => {
       // 同期で throw する操作と Promise を返す操作が混在するため、両方を同じ形で受ける
       await expect((async () => run())()).rejects.toThrow(/開かれていません/);
@@ -566,6 +569,55 @@ describe('ProjectSession', () => {
       // 注釈自体は作られる（衝突回避なしで置かれ、その旨も報告される）
       expect(snapshot.project.annotations.length).toBeGreaterThan(0);
       expect(snapshot.annotationIssues.some((i) => i.kind === 'missingPageGeometry')).toBe(true);
+    });
+  });
+
+  describe('楽譜プレビュー', () => {
+    it('注釈を元PDFのページごとにまとめて返す（4 Audiveris ページ → 3 ページ）', async () => {
+      const snapshot = await session.importPdf(pdfPath, () => {});
+      const { pages } = snapshot.scorePreview;
+
+      expect(pages.map((page) => page.sourcePageIndex)).toEqual([0, 1, 2]);
+      // 出力PDFに描く注釈（階名を持つ音符と 1:1）がすべて画面にも載る
+      const shown = pages.reduce((sum, page) => sum + page.annotations.length, 0);
+      expect(shown).toBe(snapshot.project.annotations.length);
+    });
+
+    it('スキップ小節の位置を返す（Victoria の 1 小節）', async () => {
+      const snapshot = await session.importPdf(pdfPath, () => {});
+      const skipped = snapshot.project.score?.measures.filter((m) => m.status === 'skipped');
+      const regions = snapshot.scorePreview.pages.flatMap((page) => page.skippedMeasures);
+
+      expect(regions.map((region) => [region.partId, region.measureIndex])).toEqual(
+        skipped?.map((measure) => [measure.partId, measure.index]),
+      );
+    });
+
+    it('設定を変えると重ねる文字が切り替わる（PDF を再取得せずに描き変えられる）', async () => {
+      const imported = await session.importPdf(pdfPath, () => {});
+      const changed = session.setSettings({
+        ...imported.project.settings,
+        syllableSystem: 'tonicSolfa',
+      });
+
+      const tonicSolfa = new Set(
+        Object.values(TONIC_SOLFA_TABLE).flatMap((row) => Object.values(row)),
+      );
+      const texts = changed.scorePreview.pages.flatMap((page) =>
+        page.annotations.map((item) => item.text),
+      );
+      expect(texts.length).toBeGreaterThan(0);
+      expect(texts.every((text) => tonicSolfa.has(text))).toBe(true);
+    });
+
+    it('承認しても楽譜プレビューを失わない（承認は解析を流し直さない）', async () => {
+      const imported = await session.importPdf(pdfPath, () => {});
+      expect(session.completeConfirmation().scorePreview).toEqual(imported.scorePreview);
+    });
+
+    it('元PDF のバイト列をそのまま返す', async () => {
+      await session.importPdf(pdfPath, () => {});
+      expect(session.sourcePdfBytes()).toEqual(new Uint8Array(readFileSync(pdfPath)));
     });
   });
 
@@ -653,6 +705,123 @@ describe('ProjectSession', () => {
       expect(byId.get('manual-1')).toEqual(manual);
       expect(byId.get(hidden!.id)?.deleted).toBe(true);
       expect(byId.get(overwritten!.id)?.text).toBe('ソ');
+    });
+  });
+
+  describe('注釈の編集（editAnnotation）', () => {
+    /** id を決定的にしたセッション（手動注釈の id をテストから指せるように） */
+    function editableSession(): ProjectSession {
+      let seq = 0;
+      return new ProjectSession({
+        runner: new FakeRunner(),
+        newAnnotationId: () => `manual-${(seq += 1)}`,
+      });
+    }
+
+    const previewTexts = (snapshot: {
+      scorePreview: { pages: { annotations: { id: string; text: string }[] }[] };
+    }) =>
+      new Map(
+        snapshot.scorePreview.pages.flatMap((page) => page.annotations.map((a) => [a.id, a.text])),
+      );
+
+    it('書き足した階名が楽譜プレビューの押したページに載る（承認は無効化しない）', async () => {
+      session = editableSession();
+      await session.importPdf(pdfPath, () => {});
+      session.completeConfirmation();
+
+      const edited = session.editAnnotation({
+        kind: 'add',
+        sourcePageIndex: 1,
+        x: 300,
+        y: 400,
+        text: 'si',
+      });
+
+      const manual = edited.project.annotations.find((a) => a.id === 'manual-1');
+      expect(manual).toMatchObject({ origin: 'manual', text: 'si', noteId: null });
+      // 元PDF 2 ページ目は Audiveris の page 2（Victoria は sheet#1 が 2 ページに分かれる）
+      expect(manual?.anchor.pageIndex).toBe(2);
+      const page = edited.scorePreview.pages.find((p) => p.sourcePageIndex === 1);
+      expect(page?.annotations.find((a) => a.id === 'manual-1')).toMatchObject({
+        text: 'si',
+        origin: 'manual',
+      });
+      expect(edited.project.confirmation.completedAt).not.toBeNull();
+    });
+
+    it('削除・書き換えが楽譜プレビューに反映される', async () => {
+      const imported = await session.importPdf(pdfPath, () => {});
+      const [first, second] = imported.project.annotations;
+
+      session.editAnnotation({ kind: 'remove', id: first!.id });
+      const edited = session.editAnnotation({ kind: 'setText', id: second!.id, text: 'fi' });
+
+      const texts = previewTexts(edited);
+      expect(texts.has(first!.id)).toBe(false);
+      expect(texts.get(second!.id)).toBe('fi');
+    });
+
+    it('再解析（表記の切り替え・訂正）の後も手動注釈・削除・上書きが残る', async () => {
+      session = editableSession();
+      const imported = await session.importPdf(pdfPath, () => {});
+      const [first, second] = imported.project.annotations;
+      session.editAnnotation({ kind: 'add', sourcePageIndex: 0, x: 100, y: 100, text: 'ta' });
+      session.editAnnotation({ kind: 'remove', id: first!.id });
+      session.editAnnotation({ kind: 'setText', id: second!.id, text: 'fi' });
+
+      session.setSettings({ ...imported.project.settings, syllableSystem: 'tonicSolfa' });
+      const item = imported.project.confirmation.items[0]!;
+      const after = session.setClefCorrections(new Map([[item.id, 'TREBLE']]));
+
+      const byId = new Map(after.project.annotations.map((a) => [a.id, a]));
+      expect(byId.get('manual-1')).toMatchObject({ origin: 'manual', text: 'ta' });
+      expect(byId.get(first!.id)?.deleted).toBe(true);
+      expect(byId.get(second!.id)?.text).toBe('fi');
+      const texts = previewTexts(after);
+      expect(texts.get('manual-1')).toBe('ta');
+      expect(texts.has(first!.id)).toBe(false);
+    });
+
+    it('保存して開き直すと編集が復元される', async () => {
+      session = editableSession();
+      const imported = await session.importPdf(pdfPath, () => {});
+      const [first] = imported.project.annotations;
+      session.editAnnotation({ kind: 'add', sourcePageIndex: 2, x: 50, y: 60, text: 'le' });
+      const edited = session.editAnnotation({ kind: 'remove', id: first!.id });
+      const path = join(directory, 'song.solfaproj');
+      await session.save(path);
+
+      const reopened = await new ProjectSession({ runner: new FakeRunner() }).open(path);
+
+      const manual = reopened.project.annotations.find((a) => a.id === 'manual-1');
+      expect(manual).toEqual(edited.project.annotations.find((a) => a.id === 'manual-1'));
+      expect(reopened.project.annotations.find((a) => a.id === first!.id)?.deleted).toBe(true);
+      expect(previewTexts(reopened).get('manual-1')).toBe('le');
+      // 再読み込み後の画面は、編集直後の画面と同じ（同じ経路で解析するため）
+      expect(reopened.scorePreview).toEqual(edited.scorePreview);
+    });
+
+    it('保存先が決まっていれば自動保存を予約する', async () => {
+      const imported = await session.importPdf(pdfPath, () => {});
+      await session.save(join(directory, 'song.solfaproj'));
+
+      session.editAnnotation({ kind: 'remove', id: imported.project.annotations[0]!.id });
+      expect(session.hasPendingSave).toBe(true);
+    });
+
+    it('適用できない編集は例外にし、注釈を変えない', async () => {
+      const imported = await session.importPdf(pdfPath, () => {});
+
+      expect(() => session.editAnnotation({ kind: 'remove', id: 'solfa-none' })).toThrow(
+        AnnotationEditError,
+      );
+      expect(() =>
+        session.editAnnotation({ kind: 'add', sourcePageIndex: 9, x: 1, y: 1, text: 'do' }),
+      ).toThrow(AnnotationEditError);
+      expect(session.completeConfirmation().project.annotations).toEqual(
+        imported.project.annotations,
+      );
     });
   });
 

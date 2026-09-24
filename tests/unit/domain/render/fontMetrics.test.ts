@@ -1,6 +1,10 @@
 import { StandardFonts } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { resolveFontFamily, solfaFonts } from '../../../../src/domain/render/fontMetrics';
+import {
+  genericFontFamily,
+  resolveFontFamily,
+  solfaFonts,
+} from '../../../../src/domain/render/fontMetrics';
 
 describe('resolveFontFamily', () => {
   it('総称ファミリ名を標準14フォントへ対応づける', () => {
@@ -72,5 +76,17 @@ describe('solfaFonts', () => {
     const ascent = fonts.regular.ascentPt(8);
     expect(ascent).toBeGreaterThan(0);
     expect(ascent).toBeLessThan(8);
+  });
+});
+
+describe('genericFontFamily', () => {
+  it('総称ファミリ名は大文字小文字・前後の空白を無視してそのまま返す', () => {
+    expect(genericFontFamily(' Serif ')).toBe('serif');
+    expect(genericFontFamily('monospace')).toBe('monospace');
+    expect(genericFontFamily('sans-serif')).toBe('sans-serif');
+  });
+
+  it('未知の名前は出力PDFと同じく sans-serif へ落とす', () => {
+    expect(genericFontFamily('Comic Sans MS')).toBe('sans-serif');
   });
 });

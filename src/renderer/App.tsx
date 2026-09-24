@@ -1,11 +1,12 @@
 import type { ReactElement } from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   ClefCorrections,
   ExportSummary,
   IpcResult,
   ProjectSnapshot,
 } from '../shared/ipc/contract';
+import type { AnnotationEdit } from '../shared/types/Annotation';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress as OmrProgressData } from '../shared/types/OmrProgress';
 import type { ProjectSettings } from '../shared/types/ProjectSettings';
@@ -16,6 +17,7 @@ import { Editor } from './screens/Editor/Editor';
 import { Home } from './screens/Home/Home';
 import { OmrProgress } from './screens/OmrProgress/OmrProgress';
 import { StructureConfirm } from './screens/StructureConfirm/StructureConfirm';
+import type { PdfLoader } from './viewer/pdfDocument';
 
 /**
  * 画面遷移とIPC呼び出しの取りまとめ
@@ -30,7 +32,12 @@ import { StructureConfirm } from './screens/StructureConfirm/StructureConfirm';
 
 export type Screen = 'home' | 'omr' | 'structure' | 'clefKey' | 'editor';
 
-export function App() {
+export interface AppProps {
+  /** 楽譜プレビューの PDF の読み込み方法（画面テストで差し替える。省略時は PDF.js） */
+  loadPdf?: PdfLoader;
+}
+
+export function App({ loadPdf }: AppProps = {}) {
   const api = getApi();
   const [screen, setScreen] = useState<Screen>('home');
   const [snapshot, setSnapshot] = useState<ProjectSnapshot | null>(null);
@@ -39,6 +46,17 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [canceling, setCanceling] = useState(false);
   const [exportSummary, setExportSummary] = useState<ExportSummary | null>(null);
+  /**
+   * 楽譜プレビュー用の元PDF（どのプロジェクトのものかを添えて持つ）
+   *
+   * 元PDF はプロジェクトごとに変わらないため、訂正のたびには取り直さない（数十MBある）。
+   * 別のプロジェクトを開いたら id が変わり、取り直しになる
+   */
+  const [sourcePdf, setSourcePdf] = useState<{
+    projectId: string;
+    bytes: Uint8Array | null;
+    error: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (api === null) {
@@ -47,6 +65,45 @@ export function App() {
     // 購読解除しないと画面が切り替わるたびにリスナーが積み上がる
     return api.onOmrProgress(setProgress);
   }, [api]);
+
+  const projectId = snapshot?.project.id ?? null;
+  const inEditor = screen === 'editor';
+  /** 元PDF を取得済み（または取得中）のプロジェクト id */
+  const sourcePdfRequested = useRef<string | null>(null);
+  useEffect(() => {
+    if (api === null || !inEditor || projectId === null) {
+      return;
+    }
+    if (sourcePdfRequested.current === projectId) {
+      return;
+    }
+    sourcePdfRequested.current = projectId;
+    let active = true;
+    let settled = false;
+    setSourcePdf({ projectId, bytes: null, error: null });
+    void api.getSourcePdf().then((result) => {
+      settled = true;
+      if (!result.ok) {
+        // 失敗したら次に Editor を開いたときに取り直せるようにする
+        sourcePdfRequested.current = null;
+      }
+      // 取得中に Editor を離れた・別のプロジェクトへ切り替わったら、古い結果を採らない
+      if (active) {
+        setSourcePdf(
+          result.ok
+            ? { projectId, bytes: result.value, error: null }
+            : { projectId, bytes: null, error: result.error.message },
+        );
+      }
+    });
+    return () => {
+      active = false;
+      if (!settled) {
+        // 結果を捨てたので、次の機会に取り直す
+        sourcePdfRequested.current = null;
+      }
+    };
+  }, [api, inEditor, projectId]);
 
   /** IPC の結果を受け取り、成功ならスナップショットを更新する */
   const accept = useCallback((result: IpcResult<ProjectSnapshot>, nextScreen?: Screen): boolean => {
@@ -168,6 +225,23 @@ export function App() {
     [api, accept],
   );
 
+  const editAnnotation = useCallback(
+    async (edit: AnnotationEdit) => {
+      if (api === null) {
+        return;
+      }
+      setBusy(true);
+      const result = await api.editAnnotation(edit);
+      setBusy(false);
+      if (accept(result)) {
+        // 出力済みのPDFには今の編集が入っていない。「出力しました」を残すと、
+        // そのファイルに編集が反映されていると誤解される
+        setExportSummary(null);
+      }
+    },
+    [api, accept],
+  );
+
   const approve = useCallback(async () => {
     if (api === null) {
       return;
@@ -274,12 +348,17 @@ export function App() {
       <Editor
         project={snapshot.project}
         preview={snapshot.preview}
+        scorePreview={snapshot.scorePreview}
+        sourcePdf={sourcePdf?.projectId === projectId ? sourcePdf.bytes : null}
+        sourcePdfError={sourcePdf?.projectId === projectId ? sourcePdf.error : null}
+        loadPdf={loadPdf}
         pageIssues={snapshot.pageIssues}
         annotationIssues={snapshot.annotationIssues}
         unmatchedCorrections={snapshot.unmatchedCorrections}
         exportSummary={exportSummary}
         onExportPdf={() => void exportPdf()}
         onChangeSettings={(settings) => void changeSettings(settings)}
+        onEditAnnotation={(edit) => void editAnnotation(edit)}
         onBackToConfirm={() => {
           setScreen('clefKey');
         }}

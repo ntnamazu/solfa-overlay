@@ -1,9 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Editor } from '../../../src/renderer/screens/Editor/Editor';
+import type { PdfDocumentHandle, PdfLoader } from '../../../src/renderer/viewer/pdfDocument';
 import type { ScoreModel } from '../../../src/shared/types/ScoreModel';
-import { project } from './fixtures';
+import type { ScorePreview } from '../../../src/shared/types/ScorePreview';
+import { project, snapshot } from './fixtures';
 
 const APPROVED = '2026-07-20T00:00:00.000Z';
 
@@ -24,12 +26,16 @@ function setup(overrides: Partial<Parameters<typeof Editor>[0]> = {}) {
     preview: [
       { partId: 'P1', partName: 'Soprano', measureIndex: 0, syllables: ['do', 're', 'mi'] },
     ],
+    scorePreview: snapshot().scorePreview,
+    sourcePdf: null as Uint8Array | null,
+    sourcePdfError: null as string | null,
     pageIssues: [],
     annotationIssues: [],
     unmatchedCorrections: [],
     exportSummary: null,
     onExportPdf: vi.fn(),
     onChangeSettings: vi.fn(),
+    onEditAnnotation: vi.fn(),
     onBackToConfirm: vi.fn(),
     busy: false,
     ...overrides,
@@ -52,6 +58,62 @@ describe('Editor', () => {
     expect(screen.getByText('do re mi')).toBeDefined();
     // 小節番号は 1 始まりで表示する（内部は 0 始まり）
     expect(screen.getByRole('cell', { name: '1' })).toBeDefined();
+  });
+
+  it('楽譜プレビュー区画を置き、元PDF の取得を待つ間は読み込み中と示す', () => {
+    setup();
+    expect(screen.getByRole('heading', { name: '楽譜プレビュー' })).toBeDefined();
+    expect(screen.getByText('楽譜を読み込んでいます…')).toBeDefined();
+  });
+
+  describe('区画の並び', () => {
+    /** 見出し（h2）とボタンを文書順に並べた一覧 */
+    function landmarks(): string[] {
+      return [...document.querySelectorAll('h2, main > button')].map(
+        (element) => element.textContent ?? '',
+      );
+    }
+
+    it('楽譜プレビューを最後に置く（全ページを縦に並べるため、後ろの区画が隠れる）', () => {
+      setup({
+        project: project({
+          score: score({
+            measures: [{ partId: 'P1', index: 0, status: 'skipped', notes: [] }],
+          }),
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+      const order = landmarks();
+      expect(order[order.length - 1]).toBe('楽譜プレビュー');
+    });
+
+    it('スキップ小節の一覧・PDF出力・確認画面へ戻るはプレビューより上に置く', () => {
+      setup({
+        project: project({
+          score: score({
+            measures: [{ partId: 'P1', index: 0, status: 'skipped', notes: [] }],
+          }),
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+        annotationIssues: [{ kind: 'placementUnresolved', annotationId: 'solfa-n1', pageIndex: 0 }],
+      });
+      const order = landmarks();
+      const preview = order.indexOf('楽譜プレビュー');
+      for (const label of [
+        '階名が付かなかった小節（1 件）',
+        '配置を調整できなかった注釈（1 件）',
+        'PDF出力',
+        '確認画面へ戻る',
+      ]) {
+        expect(order.indexOf(label), label).toBeGreaterThanOrEqual(0);
+        expect(order.indexOf(label), label).toBeLessThan(preview);
+      }
+    });
+  });
+
+  it('元PDF を取得できなければ楽譜プレビュー区画に理由を示す', () => {
+    setup({ sourcePdfError: '読み込めません' });
+    expect(screen.getByText('楽譜を表示できませんでした（読み込めません）。')).toBeDefined();
   });
 
   it('プレビューが空なら理由を明示する（無言の空表にしない）', () => {
@@ -101,10 +163,10 @@ describe('Editor', () => {
   });
 
   describe('階名の表記', () => {
-    it('階名プレビューの直前に置く（切り替えた結果がすぐ下で見える）', () => {
+    it('楽譜プレビューの直前に置く（切り替えた結果がすぐ下で見える）', () => {
       setup();
       const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
-      expect(headings.indexOf('階名の表記')).toBe(headings.indexOf('階名プレビュー') - 1);
+      expect(headings.indexOf('階名の表記')).toBe(headings.indexOf('楽譜プレビュー') - 1);
     });
 
     it('プロジェクトの設定を選択状態で表示し、切り替えを設定全体で渡す', async () => {
@@ -201,7 +263,68 @@ describe('Editor', () => {
       expect(screen.getByRole('heading', { name: /階名が付かなかった小節（1 件）/ })).toBeDefined();
       // プレビュー表と同じ呼び方をする（違う名前だと行同士を対応付けられない）
       const texts = screen.getAllByRole('listitem').map((item) => item.textContent);
-      expect(texts).toContain('Sopranoの 5 小節目');
+      expect(texts.some((text) => text?.startsWith('Sopranoの 5 小節目'))).toBe(true);
+    });
+
+    it('楽譜上の位置が分からない小節も一覧から消さず、押せない行として理由を添える', () => {
+      setup({
+        project: project({
+          score: score({
+            measures: [{ partId: 'P1', index: 4, status: 'skipped', notes: [] }],
+          }),
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+
+      expect(screen.getByText('Sopranoの 5 小節目（楽譜上の位置を特定できません）')).toBeDefined();
+      expect(screen.queryByRole('button', { name: 'Sopranoの 5 小節目' })).toBeNull();
+    });
+
+    it('楽譜上の位置が分かる小節は、押すとその位置へ移動する', async () => {
+      const scrollIntoView = vi.fn();
+      const original = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = scrollIntoView;
+      const document_: PdfDocumentHandle = {
+        pageSizes: [{ widthPt: 595, heightPt: 842 }],
+        renderPage: () => ({ promise: Promise.resolve(), cancel: () => {} }),
+        destroy: () => {},
+      };
+      const located: ScorePreview = {
+        ...snapshot().scorePreview,
+        pages: [
+          {
+            sourcePageIndex: 0,
+            widthPt: 595,
+            heightPt: 842,
+            annotations: [],
+            skippedMeasures: [{ partId: 'P1', measureIndex: 4, x: 1, y: 2, width: 3, height: 4 }],
+            placementWarnings: [],
+          },
+        ],
+      };
+      try {
+        setup({
+          project: project({
+            score: score({
+              measures: [{ partId: 'P1', index: 4, status: 'skipped', notes: [] }],
+            }),
+            confirmation: { items: [], completedAt: APPROVED },
+          }),
+          scorePreview: located,
+          sourcePdf: new Uint8Array([1]),
+          loadPdf: vi.fn<PdfLoader>().mockResolvedValue(document_),
+        });
+        await screen.findByText('1 ページ');
+
+        await userEvent.click(screen.getByRole('button', { name: 'Sopranoの 5 小節目' }));
+
+        expect(scrollIntoView).toHaveBeenCalledTimes(1);
+        expect(scrollIntoView.mock.contexts[0]).toBe(
+          document.querySelector('rect[data-region="P1:4"]'),
+        );
+      } finally {
+        Element.prototype.scrollIntoView = original;
+      }
     });
 
     it('パート名のない楽譜でも内部 ID を出さない', () => {
@@ -284,5 +407,250 @@ describe('Editor', () => {
     const props = setup();
     await userEvent.click(screen.getByRole('button', { name: '確認画面へ戻る' }));
     expect(props.onBackToConfirm).toHaveBeenCalled();
+  });
+
+  describe('注釈の編集（楽譜の上で押して直す）', () => {
+    const pdf: PdfDocumentHandle = {
+      pageSizes: [{ widthPt: 595, heightPt: 842 }],
+      renderPage: () => ({ promise: Promise.resolve(), cancel: () => {} }),
+      destroy: () => {},
+    };
+    const autoAnnotation = {
+      id: 'solfa-n1',
+      layer: 'solfa' as const,
+      anchor: { pageIndex: 0, x: 40, y: 80 },
+      noteId: 'n1',
+      text: null,
+      origin: 'auto' as const,
+      deleted: false,
+    };
+    const manualAnnotation = {
+      id: 'manual-1',
+      layer: 'solfa' as const,
+      anchor: { pageIndex: 0, x: 400, y: 80 },
+      noteId: null,
+      text: 'ta',
+      origin: 'manual' as const,
+      deleted: false,
+    };
+    const editablePreview = (
+      overrides: { textOverridden?: boolean; text?: string } = {},
+    ): ScorePreview => ({
+      ...snapshot().scorePreview,
+      pages: [
+        {
+          sourcePageIndex: 0,
+          widthPt: 595,
+          heightPt: 842,
+          annotations: [
+            {
+              id: 'solfa-n1',
+              x: 10,
+              y: 20,
+              text: overrides.text ?? 'do',
+              chromatic: false,
+              origin: 'auto',
+              textOverridden: overrides.textOverridden ?? false,
+            },
+            {
+              id: 'manual-1',
+              x: 100,
+              y: 20,
+              text: 'ta',
+              chromatic: false,
+              origin: 'manual',
+              textOverridden: false,
+            },
+          ],
+          skippedMeasures: [],
+          placementWarnings: [],
+        },
+      ],
+    });
+
+    async function setupEditable(overrides: Partial<Parameters<typeof Editor>[0]> = {}) {
+      const props = setup({
+        project: project({
+          score: score(),
+          annotations: [autoAnnotation, manualAnnotation],
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+        scorePreview: editablePreview(),
+        sourcePdf: new Uint8Array([1]),
+        loadPdf: vi.fn<PdfLoader>().mockResolvedValue(pdf),
+        ...overrides,
+      });
+      await screen.findByText('1 ページ');
+      return props;
+    }
+
+    const panel = () => screen.getByRole('form', { name: '階名の編集' });
+    const input = () => screen.getByRole<HTMLInputElement>('textbox', { name: '階名' });
+
+    it('楽譜プレビュー区画で、押して直せることを案内する', async () => {
+      await setupEditable();
+      expect(screen.getByText(/階名を押すと、書き換え・削除できます/)).toBeDefined();
+    });
+
+    it('自動の階名を押して文字を書き換える', async () => {
+      const props = await setupEditable();
+
+      await userEvent.click(screen.getByText('do'));
+      expect(panel().textContent).toContain('自動で付いた階名です');
+      expect(input().value).toBe('do');
+      // 同じ文字のままでは確定できない（何も変わらない）
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '書き換える' }).disabled).toBe(
+        true,
+      );
+
+      await userEvent.clear(input());
+      await userEvent.type(input(), ' fi ');
+      await userEvent.click(screen.getByRole('button', { name: '書き換える' }));
+
+      expect(props.onEditAnnotation).toHaveBeenCalledExactlyOnceWith({
+        kind: 'setText',
+        id: 'solfa-n1',
+        text: 'fi',
+      });
+      // 確定したらパネルを閉じる
+      expect(screen.queryByRole('form', { name: '階名の編集' })).toBeNull();
+    });
+
+    it('Enter キーでも確定できる', async () => {
+      const props = await setupEditable();
+      await userEvent.click(screen.getByText('do'));
+      await userEvent.clear(input());
+      await userEvent.type(input(), 'di{Enter}');
+
+      expect(props.onEditAnnotation).toHaveBeenCalledWith({
+        kind: 'setText',
+        id: 'solfa-n1',
+        text: 'di',
+      });
+    });
+
+    it('書き換えた自動の階名は「自動の階名に戻す」で上書きを取り消せる', async () => {
+      const props = await setupEditable({
+        scorePreview: editablePreview({ textOverridden: true, text: 'fi' }),
+      });
+
+      await userEvent.click(screen.getByText('fi'));
+      expect(panel().textContent).toContain('自動で付いた階名を書き換えています');
+      await userEvent.click(screen.getByRole('button', { name: '自動の階名に戻す' }));
+
+      expect(props.onEditAnnotation).toHaveBeenCalledExactlyOnceWith({
+        kind: 'setText',
+        id: 'solfa-n1',
+        text: null,
+      });
+    });
+
+    it('上書きしていない階名・書き足した階名には「自動の階名に戻す」を出さない', async () => {
+      await setupEditable();
+      await userEvent.click(screen.getByText('do'));
+      expect(screen.queryByRole('button', { name: '自動の階名に戻す' })).toBeNull();
+
+      await userEvent.click(screen.getByText('ta'));
+      expect(panel().textContent).toContain('書き足した階名です');
+      expect(screen.queryByRole('button', { name: '自動の階名に戻す' })).toBeNull();
+    });
+
+    it('削除すると「元に戻す」を出し、削除前の注釈をそのまま送って取り消す', async () => {
+      const props = await setupEditable();
+
+      await userEvent.click(screen.getByText('ta'));
+      await userEvent.click(screen.getByRole('button', { name: '削除' }));
+      expect(props.onEditAnnotation).toHaveBeenLastCalledWith({ kind: 'remove', id: 'manual-1' });
+      expect(screen.getByRole('status').textContent).toContain('階名「ta」を削除しました');
+
+      await userEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+      expect(props.onEditAnnotation).toHaveBeenLastCalledWith({
+        kind: 'restore',
+        annotation: manualAnnotation,
+      });
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+
+    it('階名の無い位置を押すと、その位置に書き足す', async () => {
+      const props = await setupEditable();
+      const svg = screen.getByRole('img', { name: '1 ページの階名' });
+      vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 595,
+        height: 842,
+        right: 595,
+        bottom: 842,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+
+      fireEvent.click(svg, { clientX: 300, clientY: 500 });
+      expect(panel().textContent).toContain('押した位置に書き足す階名を入力してください');
+      expect(svg.querySelector('[data-pending-point]')).not.toBeNull();
+      // 何も入力していなければ書き足せない
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '書き足す' }).disabled).toBe(
+        true,
+      );
+      expect(screen.queryByRole('button', { name: '削除' })).toBeNull();
+
+      await userEvent.type(input(), 'si');
+      await userEvent.click(screen.getByRole('button', { name: '書き足す' }));
+
+      expect(props.onEditAnnotation).toHaveBeenCalledExactlyOnceWith({
+        kind: 'add',
+        sourcePageIndex: 0,
+        x: 300,
+        y: 500,
+        text: 'si',
+      });
+    });
+
+    it('閉じる・Escape キーで何もせずに閉じる', async () => {
+      const props = await setupEditable();
+
+      await userEvent.click(screen.getByText('do'));
+      await userEvent.click(screen.getByRole('button', { name: '閉じる' }));
+      expect(screen.queryByRole('form', { name: '階名の編集' })).toBeNull();
+
+      await userEvent.click(screen.getByText('do'));
+      await userEvent.type(input(), '{Escape}');
+      expect(screen.queryByRole('form', { name: '階名の編集' })).toBeNull();
+      expect(props.onEditAnnotation).not.toHaveBeenCalled();
+    });
+
+    it('別の階名を押すと、入力欄をその階名の文字にする', async () => {
+      await setupEditable();
+      await userEvent.click(screen.getByText('do'));
+      await userEvent.type(input(), 'xx');
+      await userEvent.click(screen.getByText('ta'));
+      expect(input().value).toBe('ta');
+    });
+
+    it('入力欄の初期値は表示用に置換する前の文字にする（開いただけで ♯ を # へ書き換えない）', async () => {
+      const props = await setupEditable({
+        project: project({
+          score: score(),
+          annotations: [autoAnnotation, { ...manualAnnotation, text: 'do♯' }],
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+
+      // 楽譜の上は出力PDFと同じく置換後の文字（'ta' の位置に 'do#' が出ている想定）
+      await userEvent.click(screen.getByText('ta'));
+      expect(input().value).toBe('do♯');
+      // 置換前の文字のままなら確定できない（保存済みの文字を変えない）
+      expect(screen.getByRole<HTMLButtonElement>('button', { name: '書き換える' }).disabled).toBe(
+        true,
+      );
+      expect(props.onEditAnnotation).not.toHaveBeenCalled();
+    });
+
+    it('処理中は楽譜を押しても選べない', async () => {
+      await setupEditable({ busy: true });
+      await userEvent.click(screen.getByText('do'));
+      expect(screen.queryByRole('form', { name: '階名の編集' })).toBeNull();
+    });
   });
 });

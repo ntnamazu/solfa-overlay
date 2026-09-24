@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SolfaOverlayApi } from '../../../src/preload/api';
 import type { IpcErrorKind } from '../../../src/shared/ipc/contract';
 import { App } from '../../../src/renderer/App';
+import type { PdfLoader } from '../../../src/renderer/viewer/pdfDocument';
 import type { OmrProgress } from '../../../src/shared/types/OmrProgress';
 import { confirmationItem, keyRegion, project, snapshot } from './fixtures';
 
@@ -49,6 +50,9 @@ function stubApi(overrides: Partial<SolfaOverlayApi> = {}) {
     setKeyRegionDecisions: vi.fn().mockResolvedValue(ok(snapshot())),
     setSettings: vi.fn().mockResolvedValue(ok(snapshot())),
     completeConfirmation: vi.fn().mockResolvedValue(ok(snapshot())),
+    // 既定は「取得中のまま」。楽譜プレビューを扱わないテストで PDF の読み込みを走らせない
+    getSourcePdf: vi.fn(() => new Promise(() => {})),
+    editAnnotation: vi.fn().mockResolvedValue(ok(snapshot())),
     onOmrProgress: vi.fn((listener: ProgressListener) => {
       listeners.push(listener);
       return unsubscribe;
@@ -438,6 +442,210 @@ describe('App', () => {
           expect(screen.getByRole('alert').textContent).toBe('プロジェクトが開かれていません');
         });
         expect(screen.getByRole<HTMLInputElement>('radio', { name: KODALY }).checked).toBe(true);
+      });
+    });
+
+    describe('注釈の編集', () => {
+      const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+      const loadPdf = () =>
+        vi.fn<PdfLoader>().mockResolvedValue({
+          pageSizes: [{ widthPt: 595, heightPt: 842 }],
+          renderPage: () => ({ promise: Promise.resolve(), cancel: () => {} }),
+          destroy: () => {},
+        });
+      /** 楽譜に階名が 1 つ載ったスナップショット */
+      const withAnnotation = (text: string) => {
+        const base = approved();
+        return {
+          ...base,
+          scorePreview: {
+            ...base.scorePreview,
+            pages: [
+              {
+                sourcePageIndex: 0,
+                widthPt: 595,
+                heightPt: 842,
+                annotations: [
+                  {
+                    id: 'solfa-n1',
+                    x: 10,
+                    y: 20,
+                    text,
+                    chromatic: false,
+                    origin: 'auto' as const,
+                    textOverridden: text !== 'do',
+                  },
+                ],
+                skippedMeasures: [],
+                placementWarnings: [],
+              },
+            ],
+          },
+        };
+      };
+
+      async function rewriteDoToFi() {
+        await userEvent.click(await screen.findByText('do'));
+        await userEvent.clear(screen.getByRole('textbox', { name: '階名' }));
+        await userEvent.type(screen.getByRole('textbox', { name: '階名' }), 'fi');
+        await userEvent.click(screen.getByRole('button', { name: '書き換える' }));
+      }
+
+      it('編集を Main へ送り、返ってきた結果で楽譜を描き直す', async () => {
+        const { api } = stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(withAnnotation('do'))),
+          getSourcePdf: vi.fn().mockResolvedValue(ok(PDF)),
+          editAnnotation: vi.fn().mockResolvedValue(ok(withAnnotation('fi'))),
+        });
+        render(<App loadPdf={loadPdf()} />);
+
+        await advanceToEditor();
+        await rewriteDoToFi();
+
+        expect(api.editAnnotation).toHaveBeenCalledWith({
+          kind: 'setText',
+          id: 'solfa-n1',
+          text: 'fi',
+        });
+        expect(await screen.findByText('fi')).toBeDefined();
+        expect(screen.queryByText('do')).toBeNull();
+      });
+
+      it('編集すると直前の出力結果の表示を消す（出力済みのPDFに編集が入っていないため）', async () => {
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(withAnnotation('do'))),
+          getSourcePdf: vi.fn().mockResolvedValue(ok(PDF)),
+          editAnnotation: vi.fn().mockResolvedValue(ok(withAnnotation('fi'))),
+        });
+        render(<App loadPdf={loadPdf()} />);
+
+        await advanceToEditor();
+        await userEvent.click(screen.getByRole('button', { name: '注釈付きPDFを出力' }));
+        await screen.findByText(/件の階名を出力しました/);
+        await rewriteDoToFi();
+
+        await screen.findByText('fi');
+        expect(screen.queryByText(/件の階名を出力しました/)).toBeNull();
+      });
+
+      it('失敗したら理由を示し、楽譜は元のまま', async () => {
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(withAnnotation('do'))),
+          getSourcePdf: vi.fn().mockResolvedValue(ok(PDF)),
+          editAnnotation: vi
+            .fn()
+            .mockResolvedValue(fail('編集しようとした階名が見つかりません', 'unexpected')),
+        });
+        render(<App loadPdf={loadPdf()} />);
+
+        await advanceToEditor();
+        await rewriteDoToFi();
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert').textContent).toBe(
+            '編集しようとした階名が見つかりません',
+          );
+        });
+        expect(screen.getByText('do')).toBeDefined();
+      });
+    });
+
+    describe('楽譜プレビュー', () => {
+      const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+      const fakeLoader = () =>
+        vi.fn<PdfLoader>().mockResolvedValue({
+          pageSizes: [{ widthPt: 595, heightPt: 842 }],
+          renderPage: () => ({ promise: Promise.resolve(), cancel: () => {} }),
+          destroy: () => {},
+        });
+
+      it('Editor へ進むと元PDF を取得して楽譜を表示する', async () => {
+        const loadPdf = fakeLoader();
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(approved())),
+          getSourcePdf: vi.fn().mockResolvedValue(ok(PDF)),
+        });
+        render(<App loadPdf={loadPdf} />);
+
+        await advanceToEditor();
+
+        expect(await screen.findByText('1 ページ')).toBeDefined();
+        expect(loadPdf).toHaveBeenCalledWith(PDF);
+      });
+
+      it('訂正や表記の切り替えでは元PDF を取り直さない（数十MBを送り直さない）', async () => {
+        const { api } = stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(approved())),
+          setSettings: vi.fn().mockResolvedValue(ok(approved())),
+          getSourcePdf: vi.fn().mockResolvedValue(ok(PDF)),
+        });
+        render(<App loadPdf={fakeLoader()} />);
+
+        await advanceToEditor();
+        await screen.findByText('1 ページ');
+        await userEvent.click(
+          screen.getByRole('radio', { name: 'Tonic sol-fa 略記（d r m f s l t）' }),
+        );
+        await userEvent.click(screen.getByRole('button', { name: '確認画面へ戻る' }));
+        await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
+        await screen.findByText('1 ページ');
+
+        expect(api.getSourcePdf).toHaveBeenCalledTimes(1);
+      });
+
+      it('元PDF を取得できなければ楽譜の区画に理由を示す', async () => {
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(approved())),
+          getSourcePdf: vi
+            .fn()
+            .mockResolvedValue(fail('プロジェクトが開かれていません', 'unexpected')),
+        });
+        render(<App loadPdf={fakeLoader()} />);
+
+        await advanceToEditor();
+
+        expect(
+          await screen.findByText('楽譜を表示できませんでした（プロジェクトが開かれていません）。'),
+        ).toBeDefined();
+      });
+
+      it('取得に失敗しても、次に Editor を開いたときに取り直す', async () => {
+        const { api } = stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(approved())),
+          getSourcePdf: vi
+            .fn()
+            .mockResolvedValueOnce(fail('一時的に読めません', 'io'))
+            .mockResolvedValue(ok(PDF)),
+        });
+        render(<App loadPdf={fakeLoader()} />);
+
+        await advanceToEditor();
+        await screen.findByText(/一時的に読めません/);
+        await userEvent.click(screen.getByRole('button', { name: '確認画面へ戻る' }));
+        await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
+
+        expect(await screen.findByText('1 ページ')).toBeDefined();
+        expect(api.getSourcePdf).toHaveBeenCalledTimes(2);
+      });
+
+      it('別のプロジェクトを開いたら、その元PDF を取り直す', async () => {
+        const other = { ...approved(), project: { ...approved().project, id: 'p2' } };
+        const { api } = stubApi({
+          completeConfirmation: vi
+            .fn()
+            .mockResolvedValueOnce(ok(approved()))
+            .mockResolvedValue(ok(other)),
+          getSourcePdf: vi.fn().mockResolvedValue(ok(PDF)),
+        });
+        render(<App loadPdf={fakeLoader()} />);
+
+        await advanceToEditor();
+        await screen.findByText('1 ページ');
+        await userEvent.click(screen.getByRole('button', { name: '確認画面へ戻る' }));
+        await userEvent.click(screen.getByRole('button', { name: '確認を完了する' }));
+        await screen.findByText('1 ページ');
+
+        expect(api.getSourcePdf).toHaveBeenCalledTimes(2);
       });
     });
 
