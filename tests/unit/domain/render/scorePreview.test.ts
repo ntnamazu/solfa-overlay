@@ -96,7 +96,29 @@ describe('buildScorePreview: 注釈', () => {
     const [page] = build().pages;
     expect(page).toMatchObject({ sourcePageIndex: 0, widthPt: 500, heightPt: 1000 });
     expect(page?.annotations).toEqual([
-      { id: 'solfa-n1', x: 100, y: 200, text: 'do', chromatic: false },
+      {
+        id: 'solfa-n1',
+        x: 100,
+        y: 200,
+        text: 'do',
+        chromatic: false,
+        origin: 'auto',
+        textOverridden: false,
+      },
+    ]);
+  });
+
+  it('編集パネルのために、手動かどうかと文字の上書きの有無を添える', () => {
+    const preview = build({
+      annotations: [
+        annotation({ id: 'solfa-n1', text: 'fi' }),
+        annotation({ id: 'manual-1', noteId: null, text: 'ta', origin: 'manual' }),
+      ],
+    });
+    expect(preview.pages[0]?.annotations).toMatchObject([
+      { id: 'solfa-n1', text: 'fi', origin: 'auto', textOverridden: true },
+      // 手動注釈の文字は「上書き」ではない（戻る先の自動の階名が無い）
+      { id: 'manual-1', text: 'ta', origin: 'manual', textOverridden: false },
     ]);
   });
 

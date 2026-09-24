@@ -175,8 +175,24 @@ describe('ScoreViewer: 重ね描き', () => {
     page({
       sourcePageIndex: 1,
       annotations: [
-        { id: 'a1', x: 10, y: 20, text: 'do', chromatic: false },
-        { id: 'a2', x: 30, y: 20, text: 'fi', chromatic: true },
+        {
+          id: 'a1',
+          x: 10,
+          y: 20,
+          text: 'do',
+          chromatic: false,
+          origin: 'auto',
+          textOverridden: false,
+        },
+        {
+          id: 'a2',
+          x: 30,
+          y: 20,
+          text: 'fi',
+          chromatic: true,
+          origin: 'auto',
+          textOverridden: false,
+        },
       ],
     }),
   ]);
@@ -271,7 +287,17 @@ describe('ScoreViewer: 遅延描画', () => {
     [0, 1, 2].map((index) =>
       page({
         sourcePageIndex: index,
-        annotations: [{ id: `a${index}`, x: 1, y: 1, text: `p${index}`, chromatic: false }],
+        annotations: [
+          {
+            id: `a${index}`,
+            x: 1,
+            y: 1,
+            text: `p${index}`,
+            chromatic: false,
+            origin: 'auto',
+            textOverridden: false,
+          },
+        ],
       }),
     ),
   );

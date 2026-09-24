@@ -120,6 +120,24 @@ export function toPreviewPoint(page: PageInfo, x: number, y: number): PreviewPoi
 }
 
 /**
+ * 画面プレビューの座標（pt・左上原点）を `.omr` の画像座標へ戻す（`toPreviewPoint` の逆）
+ *
+ * Editor で楽譜上の位置を押して階名を書き足すときに使う。縮尺は `toPreviewPoint` と
+ * 同じ式から求め、書き足した注釈が押した位置と出力PDFの両方で同じ場所に載るようにする
+ *
+ * @returns 変換できないページでは null
+ */
+export function fromPreviewPoint(page: PageInfo, x: number, y: number): PreviewPoint | null {
+  if (!isTransformable(page)) {
+    return null;
+  }
+  return {
+    x: x * (page.omrImageWidthPx / page.widthPt),
+    y: y * (page.omrImageHeightPx / page.heightPt),
+  };
+}
+
+/**
  * `.omr` の画像座標を PDF の描画座標へ変換する
  *
  * 縦横のスケールは**別々に**求める。元PDF のページと Audiveris がラスタライズした画像の
