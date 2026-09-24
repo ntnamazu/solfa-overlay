@@ -65,6 +65,51 @@ describe('Editor', () => {
     expect(screen.getByText('楽譜を読み込んでいます…')).toBeDefined();
   });
 
+  describe('区画の並び', () => {
+    /** 見出し（h2）とボタンを文書順に並べた一覧 */
+    function landmarks(): string[] {
+      return [...document.querySelectorAll('h2, main > button')].map(
+        (element) => element.textContent ?? '',
+      );
+    }
+
+    it('楽譜プレビューを最後に置く（全ページを縦に並べるため、後ろの区画が隠れる）', () => {
+      setup({
+        project: project({
+          score: score({
+            measures: [{ partId: 'P1', index: 0, status: 'skipped', notes: [] }],
+          }),
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+      const order = landmarks();
+      expect(order[order.length - 1]).toBe('楽譜プレビュー');
+    });
+
+    it('スキップ小節の一覧・PDF出力・確認画面へ戻るはプレビューより上に置く', () => {
+      setup({
+        project: project({
+          score: score({
+            measures: [{ partId: 'P1', index: 0, status: 'skipped', notes: [] }],
+          }),
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+        annotationIssues: [{ kind: 'placementUnresolved', annotationId: 'solfa-n1', pageIndex: 0 }],
+      });
+      const order = landmarks();
+      const preview = order.indexOf('楽譜プレビュー');
+      for (const label of [
+        '階名が付かなかった小節（1 件）',
+        '配置を調整できなかった注釈（1 件）',
+        'PDF出力',
+        '確認画面へ戻る',
+      ]) {
+        expect(order.indexOf(label), label).toBeGreaterThanOrEqual(0);
+        expect(order.indexOf(label), label).toBeLessThan(preview);
+      }
+    });
+  });
+
   it('元PDF を取得できなければ楽譜プレビュー区画に理由を示す', () => {
     setup({ sourcePdfError: '読み込めません' });
     expect(screen.getByText('楽譜を表示できませんでした（読み込めません）。')).toBeDefined();

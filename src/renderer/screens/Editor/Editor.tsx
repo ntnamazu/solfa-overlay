@@ -122,51 +122,6 @@ export function Editor({
         </ul>
       </section>
 
-      {/* 切り替えた結果がすぐ下のプレビューで見えるよう、プレビューの直前に置く */}
-      <SolfaNotationSettings
-        settings={project.settings}
-        onChange={onChangeSettings}
-        disabled={busy}
-      />
-
-      <section>
-        <h2>楽譜プレビュー</h2>
-        <ScoreViewer
-          sourcePdf={sourcePdf}
-          sourcePdfError={sourcePdfError}
-          preview={scorePreview}
-          focus={focus}
-          loadPdf={loadPdf}
-        />
-        {/* 楽譜を表示できない場合の代わりとして、文字の一覧も残す（既定は畳む） */}
-        <details>
-          <summary>先頭部分の階名を文字で見る</summary>
-          {preview.length === 0 ? (
-            <p>表示できる階名がありません。</p>
-          ) : (
-            <table>
-              <caption>曲の先頭部分の階名</caption>
-              <thead>
-                <tr>
-                  <th scope="col">パート</th>
-                  <th scope="col">小節</th>
-                  <th scope="col">階名</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((row) => (
-                  <tr key={`${row.partId}-${row.measureIndex}`}>
-                    <td>{partDisplayName(row.partId, row.partName)}</td>
-                    <td>{row.measureIndex + 1}</td>
-                    <td>{row.syllables.join(' ')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </details>
-      </section>
-
       {skipped.length > 0 && (
         <section>
           <h2>階名が付かなかった小節（{skipped.length} 件）</h2>
@@ -264,6 +219,51 @@ export function Editor({
       <button type="button" onClick={onBackToConfirm} disabled={busy}>
         確認画面へ戻る
       </button>
+
+      {/* 切り替えた結果がすぐ下のプレビューで見えるよう、プレビューの直前に置く */}
+      <SolfaNotationSettings
+        settings={project.settings}
+        onChange={onChangeSettings}
+        disabled={busy}
+      />
+
+      <section>
+        <h2>楽譜プレビュー</h2>
+        <ScoreViewer
+          sourcePdf={sourcePdf}
+          sourcePdfError={sourcePdfError}
+          preview={scorePreview}
+          focus={focus}
+          loadPdf={loadPdf}
+        />
+        {/* 楽譜を表示できない場合の代わりとして、文字の一覧も残す（既定は畳む） */}
+        <details>
+          <summary>先頭部分の階名を文字で見る</summary>
+          {preview.length === 0 ? (
+            <p>表示できる階名がありません。</p>
+          ) : (
+            <table>
+              <caption>曲の先頭部分の階名</caption>
+              <thead>
+                <tr>
+                  <th scope="col">パート</th>
+                  <th scope="col">小節</th>
+                  <th scope="col">階名</th>
+                </tr>
+              </thead>
+              <tbody>
+                {preview.map((row) => (
+                  <tr key={`${row.partId}-${row.measureIndex}`}>
+                    <td>{partDisplayName(row.partId, row.partName)}</td>
+                    <td>{row.measureIndex + 1}</td>
+                    <td>{row.syllables.join(' ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </details>
+      </section>
     </main>
   );
 }
