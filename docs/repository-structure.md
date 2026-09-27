@@ -101,7 +101,9 @@ project-root/
 - `viewer/`: PDF.js によるページ描画と注釈オーバーレイ表示（Editor の楽譜プレビュー）
   - `pdfDocument.ts`: PDF.js の薄い包み（`PdfLoader` / `PdfDocumentHandle`）。`pdfjs-dist` は動的 import し、
     画面部品は PDF.js の API に直接触れない（画面テストでは擬似ローダーを注入する）
-  - `ScoreViewer.tsx` / `ScorePage.tsx`: ページの並びと 1 ページ分の描画（キャンバス＋SVG の重ね描き）
+  - `ScoreViewer.tsx` / `ScorePage.tsx`: ページの並びと 1 ページ分の描画（キャンバス＋SVG の重ね描き）。
+    編集できる状態では、押した位置・階名を `AnnotationEdit` にして渡す
+  - `AnnotationEditForm.tsx`: 楽譜の上に出す階名の追加・書き換え・削除の入力欄
   - `useNearViewport.ts`: 画面の近くにあるページだけを描く遅延描画のフック
 - `state/`: UI状態管理（プロジェクトの編集状態はIPC越しにMainが正とする）
 
