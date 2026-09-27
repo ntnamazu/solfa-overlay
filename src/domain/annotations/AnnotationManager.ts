@@ -221,7 +221,7 @@ function toAnnotation(
   };
 }
 
-/** 手動注釈を作る（F-5。UI は Phase 6 だが API は先に用意する） */
+/** 手動注釈を作る（F-5） */
 export function addAnnotation(anchor: PageAnchor, text: string, id: string): Annotation {
   return { id, layer: 'solfa', anchor, noteId: null, text, origin: 'manual', deleted: false };
 }
@@ -251,6 +251,84 @@ export function removeAnnotation(annotations: readonly Annotation[], id: string)
   return target.origin === 'manual'
     ? annotations.filter((annotation) => annotation.id !== id)
     : updateAnnotation(annotations, id, { deleted: true });
+}
+
+/**
+ * 楽譜プレビュー上での注釈の編集 1 回分（F-5）
+ *
+ * `add` のアンカーと id は呼び出し側（Main）が確定させて渡す。画面の座標からアンカーを
+ * 求めるには `PageInfo` と `.omr` の段構造が要り、id の採番は乱数に依存するため、
+ * ここでは注釈レイヤーの書き換えだけを純粋に行う
+ */
+export type AnnotationEditCommand =
+  | { kind: 'add'; id: string; anchor: PageAnchor; text: string }
+  /** null は自動注釈の上書きの取り消し（元の階名に戻す） */
+  | { kind: 'setText'; id: string; text: string | null }
+  | { kind: 'remove'; id: string }
+  /** 削除した自動注釈を元に戻す */
+  | { kind: 'restore'; id: string };
+
+/**
+ * 注釈の文字を正規化する（前後の空白を除く）
+ *
+ * @returns 空なら null。空文字の注釈は描かれず、見えないまま注釈レイヤーに残ってしまう
+ */
+export function normalizeAnnotationText(text: string): string | null {
+  const trimmed = text.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+/**
+ * 注釈レイヤーに編集を 1 つ適用した新しい配列を返す
+ *
+ * 画面が防いでいるはずの操作（存在しない注釈・空の文字など）は**黙って無視せず投げる**。
+ * 無視すると「編集したのに変わらない」が無言で起きる
+ *
+ * @throws Error 適用できない編集の場合（入力の配列は変更しない）
+ */
+export function applyAnnotationEdit(
+  annotations: readonly Annotation[],
+  command: AnnotationEditCommand,
+): Annotation[] {
+  if (command.kind === 'add') {
+    const text = normalizeAnnotationText(command.text);
+    if (text === null) {
+      throw new Error('追加する階名の文字が空です');
+    }
+    if (annotations.some((annotation) => annotation.id === command.id)) {
+      throw new Error(`注釈 ${command.id} はすでにあります`);
+    }
+    return [...annotations, addAnnotation(command.anchor, text, command.id)];
+  }
+
+  const target = annotations.find((annotation) => annotation.id === command.id);
+  if (target === undefined) {
+    throw new Error('編集しようとした階名が見つかりません');
+  }
+  switch (command.kind) {
+    case 'setText': {
+      const text = command.text === null ? null : normalizeAnnotationText(command.text);
+      if (command.text !== null && text === null) {
+        throw new Error('階名の文字が空です。消すときは削除してください');
+      }
+      // 手動注釈は文字が唯一の内容。上書きを取り消すと描くものが無くなる
+      if (text === null && target.origin === 'manual') {
+        throw new Error('手で追加した階名は元に戻せません');
+      }
+      return updateAnnotation(annotations, command.id, { text });
+    }
+    case 'remove':
+      // 削除済みの自動注釈へもう一度 remove が来ても deleted を立て直すだけで害はない
+      // （削除済みは画面に描かれず押せないため、通常は届かない）。restore のように拒否はしない
+      return removeAnnotation(annotations, command.id);
+    case 'restore':
+      // 手動注釈は削除で実体が消えるため、deleted が立つのは自動注釈だけ
+      if (!target.deleted) {
+        throw new Error('削除されていない階名は元に戻せません');
+      }
+      // 位置は次の再生成で配置し直される（deleted の間は前回位置を引き継いでいるだけのため）
+      return updateAnnotation(annotations, command.id, { deleted: false });
+  }
 }
 
 /** 階名が欠落している小節（Editor のジャンプ先一覧） */

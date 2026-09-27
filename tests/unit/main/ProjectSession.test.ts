@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectSession } from '../../../src/main/ProjectSession';
-import type { OmrRunnerLike } from '../../../src/main/ProjectSession';
+import type { OmrRunnerLike, SessionSnapshot } from '../../../src/main/ProjectSession';
 import { assembleArtifacts } from '../../../src/main/omr/omrArchive';
 import { TONIC_SOLFA_TABLE } from '../../../src/domain/solfa/syllableTables';
 import { ProjectStore } from '../../../src/storage/ProjectStore';
@@ -498,6 +498,7 @@ describe('ProjectSession', () => {
       ['completeConfirmation', () => session.completeConfirmation()],
       ['exportPdf', () => session.exportPdf('/tmp/x.pdf')],
       ['sourcePdfBytes', () => session.sourcePdfBytes()],
+      ['editAnnotation', () => session.editAnnotation({ kind: 'remove', id: 'x' })],
     ])('%s はプロジェクト未オープンを明示的に拒否する', async (_name, run) => {
       // 同期で throw する操作と Promise を返す操作が混在するため、両方を同じ形で受ける
       await expect((async () => run())()).rejects.toThrow(/開かれていません/);
@@ -742,6 +743,164 @@ describe('ProjectSession', () => {
       session.setClefCorrections(new Map([[item?.id ?? '', 'TREBLE']]));
 
       await expect(session.exportPdf(join(directory, 'out.pdf'))).rejects.toThrow(/確認が完了/);
+    });
+  });
+
+  describe('注釈の編集（editAnnotation）', () => {
+    /** 採番を決定的にしたセッションで取り込み、承認まで済ませる */
+    async function importApproved() {
+      let serial = 0;
+      const editing = new ProjectSession({
+        runner: new FakeRunner(),
+        createAnnotationId: () => `manual-${(serial += 1)}`,
+      });
+      const imported = await editing.importPdf(pdfPath, () => {});
+      editing.completeConfirmation();
+      return { editing, imported };
+    }
+
+    /** Victoria のスキップ小節（1 件）の枠の中心 */
+    function skippedCenter(snapshot: SessionSnapshot) {
+      const page = snapshot.scorePreview.pages.find((item) => item.skippedMeasures.length > 0)!;
+      const region = page.skippedMeasures[0]!;
+      return {
+        sourcePageIndex: page.sourcePageIndex,
+        x: region.x + region.width / 2,
+        y: region.y + region.height / 2,
+        region,
+      };
+    }
+
+    const previewAnnotations = (snapshot: SessionSnapshot) =>
+      snapshot.scorePreview.pages.flatMap((page) => page.annotations);
+
+    it('スキップ小節の枠の中を押して足した階名が、押した位置に描かれる', async () => {
+      const { editing, imported } = await importApproved();
+      const { sourcePageIndex, x, y } = skippedCenter(imported);
+
+      const after = editing.editAnnotation({ kind: 'add', sourcePageIndex, x, y, text: ' la ' });
+
+      const added = after.project.annotations.find((a) => a.id === 'manual-1');
+      expect(added).toMatchObject({ origin: 'manual', noteId: null, text: 'la', deleted: false });
+      const shown = previewAnnotations(after).find((item) => item.id === 'manual-1');
+      expect(shown?.text).toBe('la');
+      expect(shown?.x).toBeCloseTo(x, 6);
+      expect(shown?.y).toBeCloseTo(y, 6);
+    });
+
+    it('押した位置の段を含む Audiveris ページに属させる（1 つの元PDFページに 2 ページある Victoria）', async () => {
+      const { editing, imported } = await importApproved();
+      const { sourcePageIndex, x, y, region } = skippedCenter(imported);
+      const system = imported.project.score?.systems.find(
+        (item) =>
+          item.firstMeasureIndex <= region.measureIndex &&
+          region.measureIndex < item.firstMeasureIndex + item.measureCount,
+      );
+
+      const after = editing.editAnnotation({ kind: 'add', sourcePageIndex, x, y, text: 'la' });
+
+      expect(after.project.annotations.find((a) => a.id === 'manual-1')?.anchor.pageIndex).toBe(
+        system?.pageIndex,
+      );
+    });
+
+    it('承認を無効化しない（注釈の手直しは確認した内容を変えない）', async () => {
+      const { editing, imported } = await importApproved();
+      const [first] = imported.project.annotations;
+
+      const after = editing.editAnnotation({ kind: 'remove', id: first!.id });
+
+      expect(after.project.confirmation.completedAt).not.toBeNull();
+    });
+
+    it('書き換え・削除・元に戻すがプレビューに反映される', async () => {
+      const { editing, imported } = await importApproved();
+      const id = imported.project.annotations[0]!.id;
+
+      const overridden = editing.editAnnotation({ kind: 'setText', id, text: 'fi' });
+      expect(previewAnnotations(overridden).find((item) => item.id === id)?.text).toBe('fi');
+
+      const removed = editing.editAnnotation({ kind: 'remove', id });
+      expect(previewAnnotations(removed).some((item) => item.id === id)).toBe(false);
+      expect(removed.project.annotations.find((a) => a.id === id)?.deleted).toBe(true);
+
+      const restored = editing.editAnnotation({ kind: 'restore', id });
+      // 削除前に書き換えた文字も引き継がれる
+      expect(previewAnnotations(restored).find((item) => item.id === id)?.text).toBe('fi');
+    });
+
+    it('修正結果が出力PDFの描画件数に反映される', async () => {
+      const { editing, imported } = await importApproved();
+      const { sourcePageIndex, x, y } = skippedCenter(imported);
+      const before = await editing.exportPdf(join(directory, 'before.pdf'));
+
+      editing.editAnnotation({ kind: 'add', sourcePageIndex, x, y, text: 'la' });
+      editing.editAnnotation({ kind: 'remove', id: imported.project.annotations[0]!.id });
+      editing.editAnnotation({ kind: 'remove', id: imported.project.annotations[1]!.id });
+      const after = await editing.exportPdf(join(directory, 'after.pdf'));
+
+      expect(after.drawnCount).toBe(before.drawnCount + 1 - 2);
+    });
+
+    it('保存して開き直すと、手動注釈・削除・書き換えが復元される', async () => {
+      const { editing, imported } = await importApproved();
+      const path = join(directory, 'song.solfaproj');
+      await editing.save(path);
+      const { sourcePageIndex, x, y } = skippedCenter(imported);
+      const [hidden, overwritten] = imported.project.annotations;
+
+      editing.editAnnotation({ kind: 'add', sourcePageIndex, x, y, text: 'la' });
+      editing.editAnnotation({ kind: 'remove', id: hidden!.id });
+      const edited = editing.editAnnotation({ kind: 'setText', id: overwritten!.id, text: 'si' });
+      // 編集は自動保存の対象（明示保存を待たずにファイルへ書かれる）
+      await editing.flushPendingSave();
+
+      const reopened = await new ProjectSession({ runner: new FakeRunner() }).open(path);
+
+      expect(reopened.project.annotations).toEqual(edited.project.annotations);
+      expect(reopened.scorePreview).toEqual(edited.scorePreview);
+    });
+
+    it('訂正で再計算しても編集が保全される', async () => {
+      const { editing, imported } = await importApproved();
+      const { sourcePageIndex, x, y } = skippedCenter(imported);
+      const [hidden, overwritten] = imported.project.annotations;
+      editing.editAnnotation({ kind: 'add', sourcePageIndex, x, y, text: 'la' });
+      editing.editAnnotation({ kind: 'remove', id: hidden!.id });
+      editing.editAnnotation({ kind: 'setText', id: overwritten!.id, text: 'si' });
+
+      const item = imported.project.confirmation.items[0]!;
+      const recomputed = editing.setClefCorrections(new Map([[item.id, 'TREBLE']]));
+
+      const byId = new Map(recomputed.project.annotations.map((a) => [a.id, a]));
+      expect(byId.get('manual-1')).toMatchObject({ origin: 'manual', text: 'la' });
+      expect(byId.get(hidden!.id)?.deleted).toBe(true);
+      expect(byId.get(overwritten!.id)?.text).toBe('si');
+    });
+
+    it('適用できない編集は拒否し、状態を変えない', async () => {
+      const { editing, imported } = await importApproved();
+      const before = editing.completeConfirmation();
+
+      expect(() =>
+        editing.editAnnotation({ kind: 'add', sourcePageIndex: 9, x: 10, y: 10, text: 'la' }),
+      ).toThrow(/追加できません/);
+      expect(() =>
+        editing.editAnnotation({ kind: 'add', sourcePageIndex: 0, x: -5, y: 10, text: 'la' }),
+      ).toThrow(/追加できません/);
+      expect(() =>
+        editing.editAnnotation({ kind: 'add', sourcePageIndex: 0, x: 10, y: 10, text: '  ' }),
+      ).toThrow(/空/);
+      expect(() => editing.editAnnotation({ kind: 'remove', id: 'nothing' })).toThrow(
+        /見つかりません/,
+      );
+      expect(() =>
+        editing.editAnnotation({ kind: 'restore', id: imported.project.annotations[0]!.id }),
+      ).toThrow(/削除されていない/);
+
+      expect(editing.completeConfirmation().project.annotations).toEqual(
+        before.project.annotations,
+      );
     });
   });
 

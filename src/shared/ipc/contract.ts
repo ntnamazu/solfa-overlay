@@ -105,6 +105,22 @@ export interface IpcError {
   message: string;
 }
 
+/**
+ * 楽譜プレビュー上での注釈の編集 1 回分（Renderer → Main。F-5）
+ *
+ * `add` は**画面の座標**（元PDF のページ・pt・左上原点）で送る。Renderer は Audiveris ページとの
+ * 対応（`PageInfo`）も `.omr` への縮尺も持たないため、アンカーへの変換は Main が行う
+ */
+export type AnnotationEdit =
+  /** 押した位置に手動注釈を足す。位置は文字の左端＋ベースライン */
+  | { kind: 'add'; sourcePageIndex: number; x: number; y: number; text: string }
+  /** 文字を書き換える。null は自動注釈の上書きの取り消し（元の階名に戻す） */
+  | { kind: 'setText'; id: string; text: string | null }
+  /** 削除する（自動注釈は非表示の印を付け、手動注釈は消す） */
+  | { kind: 'remove'; id: string }
+  /** 削除した自動注釈を元に戻す */
+  | { kind: 'restore'; id: string };
+
 /** 音部記号の訂正（確認項目 id → 訂正後の Audiveris kind。null は訂正の取り消し） */
 export type ClefCorrections = Record<string, string | null>;
 
@@ -146,4 +162,6 @@ export interface IpcContract {
   [IPC_CHANNELS.projectExportPdf]: (outPath: string) => Promise<IpcResult<ExportSummary>>;
   /** 開いているプロジェクトの元PDF（楽譜プレビュー用）。パスは受け取らない */
   [IPC_CHANNELS.projectGetSourcePdf]: () => IpcResult<Uint8Array>;
+  /** 楽譜プレビュー上で注釈を編集して解析し直す（承認は無効化しない） */
+  [IPC_CHANNELS.projectEditAnnotation]: (edit: AnnotationEdit) => IpcResult<ProjectSnapshot>;
 }

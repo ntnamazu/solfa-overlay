@@ -1,7 +1,12 @@
-import { regenerateAnnotations } from '../domain/annotations/AnnotationManager';
+import { randomUUID } from 'node:crypto';
+import {
+  applyAnnotationEdit,
+  regenerateAnnotations,
+} from '../domain/annotations/AnnotationManager';
+import type { AnnotationEditCommand } from '../domain/annotations/AnnotationManager';
 import { renderOverlay } from '../domain/render/OverlayRenderer';
 import { buildPageInfos } from '../domain/render/pageInfo';
-import { buildScorePreview } from '../domain/render/scorePreview';
+import { anchorFromPreviewPoint, buildScorePreview } from '../domain/render/scorePreview';
 import { BookStructureResolver } from '../domain/score/BookStructureResolver';
 import type { StructureIssue } from '../domain/score/BookStructureResolver';
 import type { BookPageRef, PageGeometry } from '../domain/score/OmrSheetParser';
@@ -13,7 +18,7 @@ import { KeyRegionBuilder } from '../domain/solfa/KeyRegionBuilder';
 import type { KeyRegionIssue } from '../domain/solfa/KeyRegionBuilder';
 import { SolfaEngine, applyDegrees } from '../domain/solfa/SolfaEngine';
 import { DEFAULT_SETTINGS } from '../shared/constants/DEFAULT_SETTINGS';
-import type { SolfaPreviewRow } from '../shared/ipc/contract';
+import type { AnnotationEdit, SolfaPreviewRow } from '../shared/ipc/contract';
 import type { AnnotationIssue, PageInfoIssue, RenderIssue } from '../shared/types/Issues';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress } from '../shared/types/OmrProgress';
@@ -160,12 +165,21 @@ export class ProjectSession {
    */
   private saveChain: Promise<unknown> = Promise.resolve();
   private readonly autoSaveDelayMs: number;
+  /** 手動注釈の id を振る（テストで決定的にするため差し替えられる） */
+  private readonly createAnnotationId: () => string;
 
-  constructor(deps?: { store?: ProjectStore; runner?: OmrRunnerLike; autoSaveDelayMs?: number }) {
+  constructor(deps?: {
+    store?: ProjectStore;
+    runner?: OmrRunnerLike;
+    autoSaveDelayMs?: number;
+    createAnnotationId?: () => string;
+  }) {
     this.store = deps?.store ?? new ProjectStore();
     this.runner = deps?.runner ?? new OmrRunner();
     // アーキテクチャ設計書「プロジェクト自動保存」の 300ms デバウンス
     this.autoSaveDelayMs = deps?.autoSaveDelayMs ?? 300;
+    // 自動注釈の `solfa-<noteId>` と重ならないよう接頭辞を分ける
+    this.createAnnotationId = deps?.createAnnotationId ?? (() => `manual-${randomUUID()}`);
   }
 
   /** 現在開いているプロジェクトファイルのパス（未保存なら null） */
@@ -361,6 +375,48 @@ export class ProjectSession {
     // 設定は「何を確認したか」を変えないため承認は無効化しない
     this.project = { ...project, settings };
     return this.analyzeAndSave();
+  }
+
+  /**
+   * 楽譜プレビュー上で注釈を編集して解析し直す（F-5）
+   *
+   * 注釈レイヤーを書き換えたうえでパイプラインを頭から流す。`regenerateAnnotations` が
+   * 手動注釈・削除の印・文字の上書きを id で引き継ぐため、編集はそのまま保全され、
+   * 自動注釈は足した手動注釈を避けて置き直される。
+   *
+   * 承認は無効化しない。注釈の手直しは「何を確認したか」（構造・音部記号・調）を変えないため
+   * （設定変更と同じ扱い）
+   *
+   * @throws Error 適用できない編集の場合（押した位置が楽譜のページ外・空の文字・存在しない注釈）。
+   *   状態は変えない
+   */
+  editAnnotation(edit: AnnotationEdit): SessionSnapshot {
+    const { project, omr } = this.require();
+    const annotations = applyAnnotationEdit(
+      project.annotations,
+      this.toCommand(edit, project, omr),
+    );
+    this.unmatched = [];
+    this.project = { ...project, annotations };
+    return this.analyzeAndSave();
+  }
+
+  /** Renderer から届いた編集を、注釈レイヤーへ適用できる形にする（`add` の位置と id を確定する） */
+  private toCommand(edit: AnnotationEdit, project: Project, omr: LoadedOmr): AnnotationEditCommand {
+    if (edit.kind !== 'add') {
+      return edit;
+    }
+    const anchor = anchorFromPreviewPoint({
+      pages: project.pages,
+      omrPages: omr.artifacts.pages,
+      sourcePageIndex: edit.sourcePageIndex,
+      x: edit.x,
+      y: edit.y,
+    });
+    if (anchor === null) {
+      throw new Error('押した位置に階名を追加できません。楽譜のページの中を押してください');
+    }
+    return { kind: 'add', id: this.createAnnotationId(), anchor, text: edit.text };
   }
 
   /**

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { ScorePreviewInput } from '../../../../src/domain/render/scorePreview';
-import { buildScorePreview } from '../../../../src/domain/render/scorePreview';
+import {
+  anchorFromPreviewPoint,
+  buildScorePreview,
+} from '../../../../src/domain/render/scorePreview';
 import type { OmrPageContent, OmrStaff } from '../../../../src/domain/score/OmrSheetParser';
 import { DEFAULT_SETTINGS } from '../../../../src/shared/constants/DEFAULT_SETTINGS';
 import type { Annotation } from '../../../../src/shared/types/Annotation';
@@ -96,7 +99,36 @@ describe('buildScorePreview: 注釈', () => {
     const [page] = build().pages;
     expect(page).toMatchObject({ sourcePageIndex: 0, widthPt: 500, heightPt: 1000 });
     expect(page?.annotations).toEqual([
-      { id: 'solfa-n1', x: 100, y: 200, text: 'do', chromatic: false },
+      {
+        id: 'solfa-n1',
+        x: 100,
+        y: 200,
+        text: 'do',
+        chromatic: false,
+        origin: 'auto',
+        overridden: false,
+      },
+    ]);
+  });
+
+  it('編集に使う由来と、自動注釈の文字を書き換えてあるかを添える', () => {
+    const preview = build({
+      annotations: [
+        annotation({ id: 'overridden', text: 'fi' }),
+        annotation({ id: 'manual', noteId: null, text: 'la', origin: 'manual' }),
+      ],
+    });
+    expect(
+      preview.pages[0]?.annotations.map(({ id, text, origin, overridden }) => ({
+        id,
+        text,
+        origin,
+        overridden,
+      })),
+    ).toEqual([
+      { id: 'overridden', text: 'fi', origin: 'auto', overridden: true },
+      // 手動注釈は文字そのものが内容であり、「書き換え」ではない
+      { id: 'manual', text: 'la', origin: 'manual', overridden: false },
     ]);
   });
 
@@ -292,5 +324,76 @@ describe('buildScorePreview: 配置警告', () => {
         annotationIssues: [{ kind: 'placementUnresolved', annotationId: 'solfa-n1', pageIndex: 0 }],
       }).pages,
     ).toEqual([]);
+  });
+});
+
+describe('anchorFromPreviewPoint', () => {
+  const at = (
+    x: number,
+    y: number,
+    overrides: Partial<Parameters<typeof anchorFromPreviewPoint>[0]> = {},
+  ) =>
+    anchorFromPreviewPoint({
+      pages: [pageInfo(0, 0)],
+      omrPages: [omrPage()],
+      sourcePageIndex: 0,
+      x,
+      y,
+      ...overrides,
+    });
+
+  it('画面の位置（pt・左上原点）を .omr px のアンカーへ戻す', () => {
+    // 縮尺は x・y とも 0.5（1000×2000px → 500×1000pt）
+    expect(at(100, 200)).toEqual({ pageIndex: 0, x: 200, y: 400 });
+  });
+
+  it('buildScorePreview と往復で一致する（押した位置に描かれる）', () => {
+    const anchor = at(123.4, 567.8);
+    const preview = build({
+      annotations: [
+        annotation({ id: 'm', noteId: null, text: 'la', origin: 'manual', anchor: anchor! }),
+      ],
+    });
+    expect(preview.pages[0]?.annotations[0]?.x).toBeCloseTo(123.4, 6);
+    expect(preview.pages[0]?.annotations[0]?.y).toBeCloseTo(567.8, 6);
+  });
+
+  it('元PDFページに対応する Audiveris ページのうち、押した位置に近い段を持つページを選ぶ', () => {
+    // Victoria の sheet#1 と同じ形: 同じ元PDFページに page 0（上半分）と page 1（下半分）
+    const pages = [pageInfo(0, 0), pageInfo(1, 0), pageInfo(2, 1)];
+    const omrPages = [
+      omrPage([staff('P1', { top: 300, bottom: 380 })]),
+      omrPage([staff('P1', { top: 1500, bottom: 1580 })]),
+      omrPage(),
+    ];
+    // y=760pt → 1520px は page 1 の段の範囲内
+    expect(at(100, 760, { pages, omrPages })?.pageIndex).toBe(1);
+    // y=100pt → 200px は page 0 の段に近い
+    expect(at(100, 100, { pages, omrPages })?.pageIndex).toBe(0);
+    // 別の元PDFページはそのページの Audiveris ページになる
+    expect(at(100, 100, { pages, omrPages, sourcePageIndex: 1 })?.pageIndex).toBe(2);
+  });
+
+  it('段の範囲が分からなければ、候補のうち添字の小さいページにする', () => {
+    expect(
+      at(100, 760, {
+        pages: [pageInfo(1, 0), pageInfo(0, 0)],
+        omrPages: [omrPage([staff('P1')]), omrPage([staff('P1')])],
+      })?.pageIndex,
+    ).toBe(0);
+  });
+
+  it('該当ページが無い・変換できないページでは null', () => {
+    expect(at(100, 200, { sourcePageIndex: 5 })).toBeNull();
+    expect(at(100, 200, { pages: [{ ...pageInfo(0, 0), heightPt: 0 }] })).toBeNull();
+  });
+
+  it('ページの外や有限でない座標は null（Renderer の値をそのまま信じない）', () => {
+    expect(at(-1, 10)).toBeNull();
+    expect(at(10, 1000.5)).toBeNull();
+    expect(at(Number.NaN, 10)).toBeNull();
+    expect(at(10, Number.POSITIVE_INFINITY)).toBeNull();
+    // ページの端ちょうどは受け付ける
+    expect(at(500, 1000)).toEqual({ pageIndex: 0, x: 1000, y: 2000 });
   });
 });

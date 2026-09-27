@@ -1,4 +1,5 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   PdfDocumentHandle,
@@ -175,8 +176,8 @@ describe('ScoreViewer: 重ね描き', () => {
     page({
       sourcePageIndex: 1,
       annotations: [
-        { id: 'a1', x: 10, y: 20, text: 'do', chromatic: false },
-        { id: 'a2', x: 30, y: 20, text: 'fi', chromatic: true },
+        { id: 'a1', x: 10, y: 20, text: 'do', chromatic: false, origin: 'auto', overridden: false },
+        { id: 'a2', x: 30, y: 20, text: 'fi', chromatic: true, origin: 'auto', overridden: false },
       ],
     }),
   ]);
@@ -271,7 +272,17 @@ describe('ScoreViewer: 遅延描画', () => {
     [0, 1, 2].map((index) =>
       page({
         sourcePageIndex: index,
-        annotations: [{ id: `a${index}`, x: 1, y: 1, text: `p${index}`, chromatic: false }],
+        annotations: [
+          {
+            id: `a${index}`,
+            x: 1,
+            y: 1,
+            text: `p${index}`,
+            chromatic: false,
+            origin: 'auto',
+            overridden: false,
+          },
+        ],
       }),
     ),
   );
@@ -393,5 +404,191 @@ describe('ScoreViewer: ジャンプ', () => {
     await waitFor(() => {
       expect(scrollIntoView).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('ScoreViewer: 階名の編集', () => {
+  const editable = preview([
+    page({
+      annotations: [
+        {
+          id: 'solfa-n1',
+          x: 10,
+          y: 20,
+          text: 'do',
+          chromatic: false,
+          origin: 'auto',
+          overridden: false,
+        },
+        {
+          id: 'solfa-n2',
+          x: 40,
+          y: 20,
+          text: 'fi',
+          chromatic: true,
+          origin: 'auto',
+          overridden: true,
+        },
+        {
+          id: 'manual-1',
+          x: 70,
+          y: 20,
+          text: 'la',
+          chromatic: false,
+          origin: 'manual',
+          overridden: false,
+        },
+      ],
+    }),
+  ]);
+
+  /** 編集できる状態で描き、ページの SVG が画面上で 2 倍に伸びているものとして位置を測らせる */
+  async function setupEditing(overrides: Partial<ScoreViewerProps> = {}) {
+    const onEditAnnotation = vi.fn();
+    const result = setup({ preview: editable, editable: true, onEditAnnotation, ...overrides });
+    await screen.findByText('2 ページ');
+    for (const svg of document.querySelectorAll('svg')) {
+      svg.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, width: A4.widthPt * 2, height: A4.heightPt * 2 }) as DOMRect;
+    }
+    return { ...result, onEditAnnotation };
+  }
+
+  const svgOf = (pageNumber: number) =>
+    screen.getByRole('img', { name: `${pageNumber} ページの階名` });
+  const textOf = (id: string) => document.querySelector(`text[data-annotation="${id}"]`)!;
+
+  it('編集できない間は、楽譜を押しても入力欄を出さない', async () => {
+    setup({ preview: editable, onEditAnnotation: vi.fn() });
+    await screen.findByText('2 ページ');
+
+    fireEvent.click(svgOf(1), { clientX: 10, clientY: 10 });
+    fireEvent.click(textOf('solfa-n1'));
+
+    expect(screen.queryByRole('form')).toBeNull();
+    // 重ねるものが無いページには、編集しない限り SVG を置かない
+    expect(screen.queryByRole('img', { name: '2 ページの階名' })).toBeNull();
+  });
+
+  it('何も無い位置を押すと、そのページのポイント座標で階名を追加する', async () => {
+    const { onEditAnnotation } = await setupEditing();
+
+    // 重ねるものが無いページにも書き足せる（2 ページ目）
+    fireEvent.click(svgOf(2), { clientX: 200, clientY: 400 });
+    const form = screen.getByRole('form', { name: '階名の追加' });
+    expect(document.querySelector('[data-draft="add"]')).not.toBeNull();
+    await userEvent.type(screen.getByRole('textbox', { name: '階名' }), 'la{Enter}');
+
+    // 画面上 2 倍に伸びているので、200px・400px は 100pt・200pt
+    expect(onEditAnnotation).toHaveBeenCalledExactlyOnceWith({
+      kind: 'add',
+      sourcePageIndex: 1,
+      x: expect.closeTo(100, 6),
+      y: expect.closeTo(200, 6),
+      text: 'la',
+    });
+    expect(form.isConnected).toBe(false);
+  });
+
+  it('空欄では追加できない', async () => {
+    await setupEditing();
+    fireEvent.click(svgOf(1), { clientX: 200, clientY: 400 });
+
+    expect(screen.getByRole('button', { name: '追加' }).hasAttribute('disabled')).toBe(true);
+    await userEvent.type(screen.getByRole('textbox', { name: '階名' }), '   ');
+    expect(screen.getByRole('button', { name: '追加' }).hasAttribute('disabled')).toBe(true);
+  });
+
+  it('階名を押すと今の文字が入った入力欄が出て、書き換えを渡す', async () => {
+    const { onEditAnnotation } = await setupEditing();
+
+    fireEvent.click(textOf('solfa-n1'));
+    const input = screen.getByRole<HTMLInputElement>('textbox', { name: '階名' });
+    expect(screen.getByRole('form', { name: '階名の修正' })).toBeDefined();
+    expect(input.value).toBe('do');
+    // 階名を押しても「この位置に追加」にはならない
+    expect(document.querySelector('[data-draft="add"]')).toBeNull();
+
+    await userEvent.clear(input);
+    await userEvent.type(input, 'di');
+    await userEvent.click(screen.getByRole('button', { name: '変更' }));
+
+    expect(onEditAnnotation).toHaveBeenCalledExactlyOnceWith({
+      kind: 'setText',
+      id: 'solfa-n1',
+      text: 'di',
+    });
+  });
+
+  it('文字を変えずに「変更」を押したら何も渡さずに閉じる（自動の階名を上書き扱いにしない）', async () => {
+    const { onEditAnnotation } = await setupEditing();
+    fireEvent.click(textOf('solfa-n1'));
+
+    await userEvent.click(screen.getByRole('button', { name: '変更' }));
+
+    expect(onEditAnnotation).not.toHaveBeenCalled();
+    expect(screen.queryByRole('form')).toBeNull();
+  });
+
+  it('削除を渡す', async () => {
+    const { onEditAnnotation } = await setupEditing();
+    fireEvent.click(textOf('manual-1'));
+
+    await userEvent.click(screen.getByRole('button', { name: '削除' }));
+
+    expect(onEditAnnotation).toHaveBeenCalledExactlyOnceWith({ kind: 'remove', id: 'manual-1' });
+  });
+
+  it('書き換えた自動の階名にだけ「元の階名に戻す」を出す', async () => {
+    const { onEditAnnotation } = await setupEditing();
+
+    fireEvent.click(textOf('solfa-n1'));
+    expect(screen.queryByRole('button', { name: '元の階名に戻す' })).toBeNull();
+    fireEvent.click(textOf('manual-1'));
+    expect(screen.queryByRole('button', { name: '元の階名に戻す' })).toBeNull();
+
+    fireEvent.click(textOf('solfa-n2'));
+    await userEvent.click(screen.getByRole('button', { name: '元の階名に戻す' }));
+    expect(onEditAnnotation).toHaveBeenCalledExactlyOnceWith({
+      kind: 'setText',
+      id: 'solfa-n2',
+      text: null,
+    });
+  });
+
+  it('「やめる」と Esc で何も渡さずに閉じる', async () => {
+    const { onEditAnnotation } = await setupEditing();
+
+    fireEvent.click(svgOf(1), { clientX: 200, clientY: 400 });
+    await userEvent.click(screen.getByRole('button', { name: 'やめる' }));
+    expect(screen.queryByRole('form')).toBeNull();
+
+    fireEvent.click(textOf('solfa-n1'));
+    await userEvent.type(screen.getByRole('textbox', { name: '階名' }), '{Escape}');
+    expect(screen.queryByRole('form')).toBeNull();
+    expect(onEditAnnotation).not.toHaveBeenCalled();
+  });
+
+  it('別の位置を押すと、入力欄をその位置のものに作り直す', async () => {
+    await setupEditing();
+    fireEvent.click(textOf('solfa-n1'));
+    await userEvent.type(screen.getByRole('textbox', { name: '階名' }), 'x');
+
+    fireEvent.click(textOf('manual-1'));
+
+    expect(screen.getAllByRole('form')).toHaveLength(1);
+    expect(screen.getByRole<HTMLInputElement>('textbox', { name: '階名' }).value).toBe('la');
+  });
+
+  it('編集できなくなったら（処理中など）開いている入力欄を閉じる', async () => {
+    const { props, view } = await setupEditing();
+    fireEvent.click(svgOf(1), { clientX: 200, clientY: 400 });
+
+    view.rerender(<ScoreViewer {...props} editable={false} />);
+    expect(screen.queryByRole('form')).toBeNull();
+
+    // 編集できる状態へ戻しても、前の入力欄は復活しない
+    view.rerender(<ScoreViewer {...props} editable />);
+    expect(screen.queryByRole('form')).toBeNull();
   });
 });

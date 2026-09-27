@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Editor } from '../../../src/renderer/screens/Editor/Editor';
 import type { PdfDocumentHandle, PdfLoader } from '../../../src/renderer/viewer/pdfDocument';
-import type { ScoreModel } from '../../../src/shared/types/ScoreModel';
+import type { Annotation } from '../../../src/shared/types/Annotation';
+import type { NoteEvent, ScoreModel } from '../../../src/shared/types/ScoreModel';
 import type { ScorePreview } from '../../../src/shared/types/ScorePreview';
 import { project, snapshot } from './fixtures';
 
@@ -13,6 +14,26 @@ const score = (overrides: Partial<ScoreModel> = {}): ScoreModel => ({
   parts: [{ id: 'P1', name: 'Soprano', staves: [] }],
   systems: [],
   measures: [],
+  ...overrides,
+});
+
+const note = (id: string, measureIndex: number): NoteEvent => ({
+  id,
+  partId: 'P1',
+  measureIndex,
+  pitch: { step: 'C', alter: 0, octave: 4 },
+  head: { pageIndex: 0, x: 0, y: 0 },
+  solfa: { degree: 1, alteration: 0 },
+});
+
+const autoAnnotation = (noteId: string, overrides: Partial<Annotation> = {}): Annotation => ({
+  id: `solfa-${noteId}`,
+  layer: 'solfa',
+  anchor: { pageIndex: 0, x: 0, y: 0 },
+  noteId,
+  text: null,
+  origin: 'auto',
+  deleted: false,
   ...overrides,
 });
 
@@ -35,6 +56,7 @@ function setup(overrides: Partial<Parameters<typeof Editor>[0]> = {}) {
     exportSummary: null,
     onExportPdf: vi.fn(),
     onChangeSettings: vi.fn(),
+    onEditAnnotation: vi.fn(),
     onBackToConfirm: vi.fn(),
     busy: false,
     ...overrides,
@@ -47,6 +69,7 @@ describe('Editor', () => {
   it('見出しの直後に「今すべきこと」を 1 文置く', () => {
     setup();
     const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading.nextElementSibling?.textContent).toContain('必要なら直してから');
     expect(heading.nextElementSibling?.textContent).toContain('注釈付きPDFを出力');
   });
 
@@ -114,6 +137,172 @@ describe('Editor', () => {
 
     expect(screen.getByText('照合できた音符: 1')).toBeDefined();
     expect(screen.getByText('注釈: 1')).toBeDefined();
+  });
+
+  describe('区画の並び（#17）', () => {
+    /** 問題の区画がすべて出る props（並び順を 1 度に確かめるため） */
+    const everything = () => ({
+      project: project({
+        score: score({
+          measures: [
+            { partId: 'P1', index: 4, status: 'skipped' as const, notes: [] },
+            { partId: 'P1', index: 5, status: 'matched' as const, notes: [note('n1', 5)] },
+          ],
+        }),
+        annotations: [autoAnnotation('n1', { deleted: true })],
+        confirmation: { items: [], completedAt: APPROVED },
+      }),
+      annotationIssues: [
+        { kind: 'placementUnresolved' as const, annotationId: 'solfa-n1', pageIndex: 0 },
+        { kind: 'orphanAnnotation' as const, annotationId: 'solfa-old' },
+      ],
+      pageIssues: [{ kind: 'sheetGeometryMissing' as const, pageIndex: 0 }],
+      unmatchedCorrections: [{ kind: 'structure' as const, pageIndex: 0, systemIndex: 0 }],
+    });
+
+    it('楽譜プレビューを最後の区画に置く（全ページ分の縦長で、下の区画が埋もれるため）', () => {
+      setup(everything());
+      const main = screen.getByRole('main');
+      const lastSection = [...main.children].at(-1);
+      expect(lastSection?.querySelector('h2')?.textContent).toBe('楽譜プレビュー');
+    });
+
+    it('一覧・警告・PDF出力・確認画面へ戻るを楽譜プレビューより上に置く', () => {
+      setup(everything());
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+      expect(headings).toEqual([
+        '概要',
+        '階名が付かなかった小節（1 件）',
+        '配置を調整できなかった注釈（1 件）',
+        '対応する音符が見つからない注釈（1 件）',
+        '削除した階名（1 件）',
+        'ページの問題（1 件）',
+        '適用されなかった訂正（1 件）',
+        'PDF出力',
+        '階名の表記',
+        '楽譜プレビュー',
+      ]);
+      const back = screen.getByRole('button', { name: '確認画面へ戻る' });
+      const preview = screen.getByRole('heading', { name: '楽譜プレビュー' });
+      expect(back.compareDocumentPosition(preview) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    });
+  });
+
+  describe('階名の編集（F-5）', () => {
+    const document_: PdfDocumentHandle = {
+      pageSizes: [{ widthPt: 595, heightPt: 842 }],
+      renderPage: () => ({ promise: Promise.resolve(), cancel: () => {} }),
+      destroy: () => {},
+    };
+    const annotated: ScorePreview = {
+      ...snapshot().scorePreview,
+      pages: [
+        {
+          sourcePageIndex: 0,
+          widthPt: 595,
+          heightPt: 842,
+          annotations: [
+            {
+              id: 'solfa-n1',
+              x: 10,
+              y: 20,
+              text: 'do',
+              chromatic: false,
+              origin: 'auto',
+              overridden: false,
+            },
+          ],
+          skippedMeasures: [],
+          placementWarnings: [],
+        },
+      ],
+    };
+    const withPdf = (overrides: Partial<Parameters<typeof Editor>[0]> = {}) =>
+      setup({
+        scorePreview: annotated,
+        sourcePdf: new Uint8Array([1]),
+        loadPdf: vi.fn<PdfLoader>().mockResolvedValue(document_),
+        ...overrides,
+      });
+    const clickAnnotation = () => {
+      fireEvent.click(document.querySelector('text[data-annotation="solfa-n1"]')!);
+    };
+
+    it('「楽譜の上で階名を直す」をオンにするまで、楽譜を押しても編集にならない', async () => {
+      const props = withPdf();
+      await screen.findByText('1 ページ');
+
+      clickAnnotation();
+      expect(screen.queryByRole('form')).toBeNull();
+
+      await userEvent.click(screen.getByRole('checkbox', { name: '楽譜の上で階名を直す' }));
+      expect(screen.getByText(/何も無い位置を押すと、そこに階名を書き足せます/)).toBeDefined();
+      clickAnnotation();
+      await userEvent.click(screen.getByRole('button', { name: '削除' }));
+
+      expect(props.onEditAnnotation).toHaveBeenCalledExactlyOnceWith({
+        kind: 'remove',
+        id: 'solfa-n1',
+      });
+    });
+
+    it('処理中は楽譜の上で編集できない', async () => {
+      withPdf({ busy: true });
+      await screen.findByText('1 ページ');
+      await userEvent.click(screen.getByRole('checkbox', { name: '楽譜の上で階名を直す' }));
+
+      clickAnnotation();
+      expect(screen.queryByRole('form')).toBeNull();
+    });
+
+    it('削除した階名を一覧にし、元に戻せる', async () => {
+      const props = setup({
+        project: project({
+          score: score({
+            measures: [
+              { partId: 'P1', index: 2, status: 'matched', notes: [note('n0', 2), note('n1', 2)] },
+            ],
+          }),
+          annotations: [
+            autoAnnotation('n0'),
+            autoAnnotation('n1', { deleted: true }),
+            // 対応する音符が無いものは戻しても描かれないため出さない
+            autoAnnotation('gone', { deleted: true }),
+          ],
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+
+      const section = screen.getByRole('heading', { name: '削除した階名（1 件）' }).parentElement!;
+      const [row] = within(section).getAllByRole('listitem');
+      expect(row?.textContent).toContain('Sopranoの 3 小節目・2 番目の音符の階名');
+
+      await userEvent.click(within(row!).getByRole('button', { name: '元に戻す' }));
+      expect(props.onEditAnnotation).toHaveBeenCalledExactlyOnceWith({
+        kind: 'restore',
+        id: 'solfa-n1',
+      });
+    });
+
+    it('削除した階名が無ければ一覧を出さない', () => {
+      setup();
+      expect(screen.queryByRole('heading', { name: /削除した階名/ })).toBeNull();
+    });
+
+    it('概要の注釈数は削除したものを数えない（削除が効いたと分かるように）', () => {
+      setup({
+        project: project({
+          score: score({
+            measures: [
+              { partId: 'P1', index: 0, status: 'matched', notes: [note('n0', 0), note('n1', 0)] },
+            ],
+          }),
+          annotations: [autoAnnotation('n0'), autoAnnotation('n1', { deleted: true })],
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+      expect(screen.getByText('注釈: 1')).toBeDefined();
+    });
   });
 
   describe('階名の表記', () => {

@@ -1,5 +1,9 @@
+import type { MouseEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
+import type { AnnotationEdit } from '../../shared/ipc/contract';
 import type { ScorePreviewPage, ScorePreviewStyle } from '../../shared/types/ScorePreview';
+import type { AnnotationDraft } from './AnnotationEditForm';
+import { AnnotationEditForm } from './AnnotationEditForm';
 import type { PdfDocumentHandle, PdfPageSize } from './pdfDocument';
 import { isRenderCancelled } from './pdfDocument';
 import { useNearViewport } from './useNearViewport';
@@ -13,6 +17,9 @@ import { useNearViewport } from './useNearViewport';
  *
  * スタイルは React の `style` プロパティ（CSSOM 経由）と SVG の表示属性だけで付ける。
  * CSP（`default-src 'self'`）はインラインの `<style>` を許さないため
+ *
+ * 編集できる状態（`editable`）では、何も無い位置を押すとそこへの追加、注釈の文字を押すと
+ * その注釈の修正になる（F-5）。押した位置は SVG と同じページのポイント座標に直して渡す
  */
 
 /** スキップ小節のハイライト（機能設計書「カラーコーディング」の黄ハイライト。画面のみ） */
@@ -21,6 +28,8 @@ const SKIPPED_STROKE = '#f9a825';
 /** 一覧からジャンプしてきた小節は枠を濃くして、どれを指しているか分かるようにする */
 const FOCUSED_STROKE = '#e65100';
 const WARNING_FILL = '#ff8f00';
+/** 追加しようとしている位置・直そうとしている注釈の印 */
+const DRAFT_STROKE = '#1565c0';
 
 /** キャンバスの表示幅が測れないとき（レイアウト前）の仮の幅（CSS px） */
 const FALLBACK_WIDTH_PX = 800;
@@ -40,6 +49,21 @@ export interface ScorePageProps {
   style: ScorePreviewStyle;
   /** 強調表示するスキップ小節（`regionKey`） */
   focusedRegion: string | null;
+  /** 楽譜を押して階名を足す・直せるか */
+  editable: boolean;
+  /** このページで編集中の対象（無ければ null） */
+  draft: AnnotationDraft | null;
+  /** 楽譜の位置・注釈を押した */
+  onPick: (draft: AnnotationDraft) => void;
+  onSubmitEdit: (edit: AnnotationEdit) => void;
+  onCancelEdit: () => void;
+}
+
+/** 入力欄を押した位置の左右どちらへ伸ばすか（ページの右寄りなら左へ伸ばし、はみ出させない） */
+function formPosition(x: number, y: number, widthPt: number, heightPt: number) {
+  const left = (x / widthPt) * 100;
+  const top = `calc(${(y / heightPt) * 100}% + 6px)`;
+  return left > 60 ? { right: `${100 - left}%`, top } : { left: `${left}%`, top };
 }
 
 export function ScorePage({
@@ -49,6 +73,11 @@ export function ScorePage({
   overlay,
   style,
   focusedRegion,
+  editable,
+  draft,
+  onPick,
+  onSubmitEdit,
+  onCancelEdit,
 }: ScorePageProps) {
   const frame = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -93,6 +122,34 @@ export function ScorePage({
     };
   }, [near, document, pageIndex, size.widthPt, widthPx]);
 
+  // 重ねるものが無いページでも、編集中はどこにでも書き足せるよう SVG を置く
+  const widthPt = overlay?.widthPt ?? size.widthPt;
+  const heightPt = overlay?.heightPt ?? size.heightPt;
+  const showSvg = overlay !== undefined || editable;
+
+  /** 押した位置をページのポイント座標へ直す（SVG は枠いっぱいに伸びている） */
+  const pickPosition = (event: MouseEvent<SVGSVGElement>) => {
+    if (!editable) {
+      return;
+    }
+    const bounds = event.currentTarget.getBoundingClientRect();
+    if (bounds.width <= 0 || bounds.height <= 0) {
+      return; // レイアウト前は位置を決められない
+    }
+    onPick({
+      kind: 'add',
+      sourcePageIndex: pageIndex,
+      x: ((event.clientX - bounds.left) / bounds.width) * widthPt,
+      y: ((event.clientY - bounds.top) / bounds.height) * heightPt,
+    });
+  };
+  const draftPoint =
+    draft === null
+      ? null
+      : draft.kind === 'add'
+        ? { x: draft.x, y: draft.y }
+        : { x: draft.annotation.x, y: draft.annotation.y };
+
   const pageNumber = pageIndex + 1;
   return (
     <figure style={{ margin: '0 0 24px' }}>
@@ -114,15 +171,22 @@ export function ScorePage({
             style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
           />
         )}
-        {overlay !== undefined && (
+        {showSvg && (
           <svg
             role="img"
             aria-label={`${pageNumber} ページの階名`}
-            viewBox={`0 0 ${overlay.widthPt} ${overlay.heightPt}`}
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%' }}
+            viewBox={`0 0 ${widthPt} ${heightPt}`}
+            onClick={pickPosition}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              cursor: editable ? 'crosshair' : undefined,
+            }}
           >
             {/* 件数が少なくジャンプ先にもなるため、スキップ小節と警告は常に描く */}
-            {overlay.skippedMeasures.map((region) => {
+            {overlay?.skippedMeasures.map((region) => {
               const key = regionKey(region.partId, region.measureIndex);
               const focused = key === focusedRegion;
               return (
@@ -144,9 +208,10 @@ export function ScorePage({
             })}
             {/* 注釈は数が多い（1 ページ数百）ため、画面の近くにあるページだけ描く */}
             {near &&
-              overlay.annotations.map((annotation) => (
+              overlay?.annotations.map((annotation) => (
                 <text
                   key={annotation.id}
+                  data-annotation={annotation.id}
                   x={annotation.x}
                   y={annotation.y}
                   fontFamily={style.fontFamily}
@@ -154,11 +219,26 @@ export function ScorePage({
                   // 変化音は色と太字の両方で区別する（モノクロ印刷と同じ考え方）
                   fontWeight={annotation.chromatic ? 'bold' : 'normal'}
                   fill={annotation.chromatic ? style.chromaticColor : style.diatonicColor}
+                  textDecoration={
+                    draft?.kind === 'edit' && draft.annotation.id === annotation.id
+                      ? 'underline'
+                      : undefined
+                  }
+                  onClick={
+                    editable
+                      ? (event) => {
+                          // 下の SVG へ伝えると「この位置に追加」と解釈されてしまう
+                          event.stopPropagation();
+                          onPick({ kind: 'edit', sourcePageIndex: pageIndex, annotation });
+                        }
+                      : undefined
+                  }
+                  style={editable ? { cursor: 'pointer' } : undefined}
                 >
                   {annotation.text}
                 </text>
               ))}
-            {overlay.placementWarnings.map((marker) => (
+            {overlay?.placementWarnings.map((marker) => (
               <g
                 key={marker.annotationId}
                 data-warning={marker.annotationId}
@@ -179,7 +259,43 @@ export function ScorePage({
                 </text>
               </g>
             ))}
+            {draft?.kind === 'add' && (
+              // 足す位置（文字の左端＋ベースライン）に小さな十字を出す
+              <g data-draft="add" stroke={DRAFT_STROKE} strokeWidth={0.75} pointerEvents="none">
+                <line
+                  x1={draft.x - style.fontSizePt / 2}
+                  y1={draft.y}
+                  x2={draft.x + style.fontSizePt / 2}
+                  y2={draft.y}
+                />
+                <line
+                  x1={draft.x}
+                  y1={draft.y - style.fontSizePt / 2}
+                  x2={draft.x}
+                  y2={draft.y + style.fontSizePt / 2}
+                />
+              </g>
+            )}
           </svg>
+        )}
+        {draft !== null && draftPoint !== null && (
+          <div
+            style={{
+              position: 'absolute',
+              zIndex: 1,
+              ...formPosition(draftPoint.x, draftPoint.y, widthPt, heightPt),
+            }}
+          >
+            <AnnotationEditForm
+              // 対象が変わったら入力欄を作り直す（前の対象の文字を持ち越さない）
+              key={
+                draft.kind === 'add' ? `add-${draft.x}-${draft.y}` : `edit-${draft.annotation.id}`
+              }
+              draft={draft}
+              onSubmit={onSubmitEdit}
+              onCancel={onCancelEdit}
+            />
+          </div>
         )}
       </div>
       {failed && <p role="alert">このページを表示できませんでした。</p>}

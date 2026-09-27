@@ -49,6 +49,7 @@ function stubApi(overrides: Partial<SolfaOverlayApi> = {}) {
     setClefCorrections: vi.fn().mockResolvedValue(ok(snapshot())),
     setKeyRegionDecisions: vi.fn().mockResolvedValue(ok(snapshot())),
     setSettings: vi.fn().mockResolvedValue(ok(snapshot())),
+    editAnnotation: vi.fn().mockResolvedValue(ok(snapshot())),
     completeConfirmation: vi.fn().mockResolvedValue(ok(snapshot())),
     // 既定は「取得中のまま」。楽譜プレビューを扱わないテストで PDF の読み込みを走らせない
     getSourcePdf: vi.fn(() => new Promise(() => {})),
@@ -441,6 +442,104 @@ describe('App', () => {
           expect(screen.getByRole('alert').textContent).toBe('プロジェクトが開かれていません');
         });
         expect(screen.getByRole<HTMLInputElement>('radio', { name: KODALY }).checked).toBe(true);
+      });
+    });
+
+    describe('階名の編集', () => {
+      /** 自動の階名を 1 つ削除してある状態（「削除した階名」の一覧から戻せる） */
+      const withHidden = (deleted: boolean) => {
+        const base = approved();
+        return {
+          ...base,
+          project: {
+            ...base.project,
+            score: {
+              parts: [{ id: 'P1', name: 'Soprano', staves: [] }],
+              systems: [],
+              measures: [
+                {
+                  partId: 'P1',
+                  index: 0,
+                  status: 'matched' as const,
+                  notes: [
+                    {
+                      id: 'n1',
+                      partId: 'P1',
+                      measureIndex: 0,
+                      pitch: { step: 'C' as const, alter: 0, octave: 4 },
+                      head: { pageIndex: 0, x: 0, y: 0 },
+                      solfa: { degree: 1 as const, alteration: 0 },
+                    },
+                  ],
+                },
+              ],
+            },
+            annotations: [
+              {
+                id: 'solfa-n1',
+                layer: 'solfa' as const,
+                anchor: { pageIndex: 0, x: 0, y: 0 },
+                noteId: 'n1',
+                text: null,
+                origin: 'auto' as const,
+                deleted,
+              },
+            ],
+          },
+        };
+      };
+
+      it('編集を Main へ送り、返ってきた結果で描き直す', async () => {
+        const { api } = stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(withHidden(true))),
+          editAnnotation: vi.fn().mockResolvedValue(ok(withHidden(false))),
+        });
+        render(<App />);
+
+        await advanceToEditor();
+        await userEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+
+        expect(api.editAnnotation).toHaveBeenCalledWith({ kind: 'restore', id: 'solfa-n1' });
+        await waitFor(() => {
+          expect(screen.queryByRole('heading', { name: /削除した階名/ })).toBeNull();
+        });
+      });
+
+      it('編集すると直前の出力結果の表示を消す（出力済みのPDFは編集前の内容のため）', async () => {
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(withHidden(true))),
+          editAnnotation: vi.fn().mockResolvedValue(ok(withHidden(false))),
+        });
+        render(<App />);
+
+        await advanceToEditor();
+        await userEvent.click(screen.getByRole('button', { name: '注釈付きPDFを出力' }));
+        await screen.findByText(/件の階名を出力しました/);
+        await userEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+
+        await waitFor(() => {
+          expect(screen.queryByText(/件の階名を出力しました/)).toBeNull();
+        });
+      });
+
+      it('失敗したら理由を示し、画面は編集前のまま', async () => {
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(withHidden(true))),
+          editAnnotation: vi
+            .fn()
+            .mockResolvedValue(fail('編集しようとした階名が見つかりません', 'unexpected')),
+        });
+        render(<App />);
+
+        await advanceToEditor();
+        await userEvent.click(screen.getByRole('button', { name: '元に戻す' }));
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert').textContent).toBe(
+            '編集しようとした階名が見つかりません',
+          );
+        });
+        expect(screen.getByRole('heading', { name: '削除した階名（1 件）' })).toBeDefined();
       });
     });
 

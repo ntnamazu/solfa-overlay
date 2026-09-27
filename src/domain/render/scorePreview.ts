@@ -9,7 +9,7 @@ import type {
   ScorePreviewRegion,
   ScorePreviewStyle,
 } from '../../shared/types/ScorePreview';
-import type { Measure, ScoreModel, SystemInfo } from '../../shared/types/ScoreModel';
+import type { Measure, PageAnchor, ScoreModel, SystemInfo } from '../../shared/types/ScoreModel';
 import type { OmrPageContent } from '../score/OmrSheetParser';
 import {
   annotationContent,
@@ -17,7 +17,7 @@ import {
   normalizeHexColor,
   notesById,
 } from './annotationContent';
-import { toPreviewPoint } from './coordinateTransform';
+import { fromPreviewPoint, isTransformable, toPreviewPoint } from './coordinateTransform';
 import { genericFontFamily, solfaFonts } from './fontMetrics';
 import { pageInfoByIndex } from './pageInfo';
 
@@ -161,6 +161,8 @@ export function buildScorePreview(input: ScorePreviewInput): ScorePreview {
       y: point.y,
       text: metrics.displayText(content.text).text,
       chromatic: content.chromatic,
+      origin: annotation.origin,
+      overridden: annotation.origin === 'auto' && annotation.text !== null,
     });
   }
 
@@ -223,4 +225,90 @@ function skippedRegion(
       height: bottomRight.y - topLeft.y,
     },
   };
+}
+
+/** 画面の位置から注釈のアンカーを求める入力 */
+export interface PreviewAnchorInput {
+  pages: readonly PageInfo[];
+  /** `.omr` の段の物理構造。添字は Audiveris ページ */
+  omrPages: readonly OmrPageContent[];
+  /** 押した元PDF のページ（0始まり） */
+  sourcePageIndex: number;
+  /** 押した位置（pt・左上原点） */
+  x: number;
+  y: number;
+}
+
+/**
+ * 画面プレビュー上の位置を、注釈のアンカー（`.omr` px・Audiveris ページ）へ戻す
+ *
+ * Editor で楽譜を押して注釈を足すときに使う（F-5）。縮尺は `buildScorePreview` と同じ
+ * `fromPreviewPoint` で求め、押した位置と描かれる位置が往復で一致するようにする。
+ *
+ * **1 つの元PDFページに Audiveris ページが複数対応する場合**（Victoria の sheet#1）は、
+ * 押した位置に最も近い段を持つページを選ぶ。どれを選んでも同じ sheet の画像で縮尺は同じだが、
+ * 注釈の衝突回避はページ単位のため、押した位置の音符と同じページに属させる
+ *
+ * @returns 該当するページが無い・変換できない・ページの外を指す場合は null
+ */
+export function anchorFromPreviewPoint(input: PreviewAnchorInput): PageAnchor | null {
+  const { sourcePageIndex, x, y } = input;
+  const candidates = input.pages
+    .filter((page) => page.sourcePageIndex === sourcePageIndex && isTransformable(page))
+    .sort((a, b) => a.pageIndex - b.pageIndex);
+  const first = candidates[0];
+  if (
+    first === undefined ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    x < 0 ||
+    y < 0 ||
+    x > first.widthPt ||
+    y > first.heightPt
+  ) {
+    return null;
+  }
+  const chosen =
+    candidates.length === 1 ? first : nearestSystemPage(candidates, input.omrPages, x, y);
+  const point = fromPreviewPoint(chosen, x, y);
+  return point === null ? null : { pageIndex: chosen.pageIndex, ...point };
+}
+
+/**
+ * 押した位置に最も近い段を持つページを選ぶ
+ *
+ * 段の縦範囲は譜表の譜線範囲の和集合。範囲内なら距離 0。どのページも段の範囲が
+ * 分からなければ先頭の候補（添字の小さいページ）にする
+ */
+function nearestSystemPage(
+  candidates: readonly PageInfo[],
+  omrPages: readonly OmrPageContent[],
+  x: number,
+  y: number,
+): PageInfo {
+  let best = candidates[0] as PageInfo;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const page of candidates) {
+    const point = fromPreviewPoint(page, x, y);
+    if (point === null) {
+      continue;
+    }
+    for (const system of omrPages[page.pageIndex]?.systems ?? []) {
+      const extents = system.staves.flatMap((staff) =>
+        staff.extent === undefined ? [] : [staff.extent],
+      );
+      if (extents.length === 0) {
+        continue;
+      }
+      const top = Math.min(...extents.map((extent) => extent.top));
+      const bottom = Math.max(...extents.map((extent) => extent.bottom));
+      const distance = point.y < top ? top - point.y : point.y > bottom ? point.y - bottom : 0;
+      // 同じ距離なら先に見た（添字の小さい）ページを保つ
+      if (distance < bestDistance) {
+        best = page;
+        bestDistance = distance;
+      }
+    }
+  }
+  return best;
 }

@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   AnnotationManager,
   addAnnotation,
+  applyAnnotationEdit,
   autoAnnotationId,
   listSkippedMeasures,
+  normalizeAnnotationText,
   regenerateAnnotations,
   removeAnnotation,
   updateAnnotation,
@@ -281,6 +283,98 @@ describe('注釈の編集', () => {
   it('存在しない id の削除は元の配列と同じ内容を返す', () => {
     const manual = addAnnotation({ pageIndex: 0, x: 1, y: 1 }, 'do', 'm1');
     expect(removeAnnotation([manual], 'zzz')).toEqual([manual]);
+  });
+});
+
+describe('normalizeAnnotationText', () => {
+  it('前後の空白を除く', () => {
+    expect(normalizeAnnotationText('  fi \n')).toBe('fi');
+  });
+
+  it('空白だけなら null（描けない注釈を作らない）', () => {
+    expect(normalizeAnnotationText('')).toBeNull();
+    expect(normalizeAnnotationText(' \t ')).toBeNull();
+  });
+});
+
+describe('applyAnnotationEdit', () => {
+  const auto = (): Annotation[] => regenerate(scoreWith([note('n1', 500, 400)])).annotations;
+  const autoId = autoAnnotationId('n1');
+  const manual = addAnnotation({ pageIndex: 0, x: 1, y: 2 }, 'la', 'manual-1');
+
+  it('add は手動注釈を末尾に足す（文字は前後の空白を除く）', () => {
+    const edited = applyAnnotationEdit(auto(), {
+      kind: 'add',
+      id: 'manual-2',
+      anchor: { pageIndex: 0, x: 10, y: 20 },
+      text: ' si ',
+    });
+    expect(edited.at(-1)).toEqual(addAnnotation({ pageIndex: 0, x: 10, y: 20 }, 'si', 'manual-2'));
+    expect(edited).toHaveLength(2);
+  });
+
+  it('add は空の文字・重複する id を拒否する', () => {
+    const add = (id: string, text: string) =>
+      applyAnnotationEdit([manual], { kind: 'add', id, anchor: manual.anchor, text });
+    expect(() => add('manual-2', '  ')).toThrow(/空/);
+    expect(() => add('manual-1', 'do')).toThrow(/すでに/);
+  });
+
+  it('setText は自動注釈の文字を上書きし、null で上書きを取り消す', () => {
+    const overridden = applyAnnotationEdit(auto(), { kind: 'setText', id: autoId, text: 'fi' });
+    expect(overridden[0]).toMatchObject({ id: autoId, text: 'fi', origin: 'auto' });
+
+    const reverted = applyAnnotationEdit(overridden, { kind: 'setText', id: autoId, text: null });
+    expect(reverted[0]?.text).toBeNull();
+  });
+
+  it('setText は手動注釈の文字を差し替える', () => {
+    expect(
+      applyAnnotationEdit([manual], { kind: 'setText', id: 'manual-1', text: 'so' })[0]?.text,
+    ).toBe('so');
+  });
+
+  it('setText は空の文字と、手動注釈の上書きの取り消しを拒否する', () => {
+    expect(() => applyAnnotationEdit(auto(), { kind: 'setText', id: autoId, text: ' ' })).toThrow(
+      /空/,
+    );
+    expect(() =>
+      applyAnnotationEdit([manual], { kind: 'setText', id: 'manual-1', text: null }),
+    ).toThrow(/元に戻せません/);
+  });
+
+  it('remove は自動注釈に deleted を立て、手動注釈を消す', () => {
+    expect(applyAnnotationEdit(auto(), { kind: 'remove', id: autoId })[0]?.deleted).toBe(true);
+    expect(applyAnnotationEdit([manual], { kind: 'remove', id: 'manual-1' })).toEqual([]);
+  });
+
+  it('restore は削除した自動注釈を元に戻す', () => {
+    const removed = applyAnnotationEdit(auto(), { kind: 'remove', id: autoId });
+    expect(applyAnnotationEdit(removed, { kind: 'restore', id: autoId })[0]?.deleted).toBe(false);
+  });
+
+  it('restore は削除されていない注釈を拒否する', () => {
+    expect(() => applyAnnotationEdit(auto(), { kind: 'restore', id: autoId })).toThrow(
+      /削除されていない/,
+    );
+  });
+
+  it('存在しない注釈への編集は拒否する（黙って無視しない）', () => {
+    for (const command of [
+      { kind: 'setText', id: 'zzz', text: 'do' },
+      { kind: 'remove', id: 'zzz' },
+      { kind: 'restore', id: 'zzz' },
+    ] as const) {
+      expect(() => applyAnnotationEdit([manual], command)).toThrow(/見つかりません/);
+    }
+  });
+
+  it('入力の配列を書き換えない', () => {
+    const before = auto();
+    const snapshot = structuredClone(before);
+    applyAnnotationEdit(before, { kind: 'remove', id: autoId });
+    applyAnnotationEdit(before, { kind: 'setText', id: autoId, text: 'x' });
+    expect(before).toEqual(snapshot);
   });
 });
 

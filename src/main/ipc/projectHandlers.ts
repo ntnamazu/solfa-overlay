@@ -1,4 +1,5 @@
 import type {
+  AnnotationEdit,
   ClefCorrections,
   ExportSummary,
   IpcError,
@@ -114,6 +115,9 @@ export function createProjectHandlers(
       attemptAsync(() => session.exportPdf(outPath)),
 
     getSourcePdf: (): IpcResult<Uint8Array> => attempt(() => session.sourcePdfBytes()),
+
+    editAnnotation: (edit: AnnotationEdit): IpcResult<ProjectSnapshot> =>
+      attempt(() => session.editAnnotation(edit)),
   };
 }
 

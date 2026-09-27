@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  fromPreviewPoint,
   isTransformable,
   pxPerPt,
   toMediaBoxPoint,
@@ -123,5 +124,23 @@ describe('toPreviewPoint', () => {
 
   it('変換できないページでは null（NaN の座標を画面へ渡さない）', () => {
     expect(toPreviewPoint({ ...VICTORIA_PAGE, omrImageHeightPx: 0 }, 1, 1)).toBeNull();
+  });
+});
+
+describe('fromPreviewPoint', () => {
+  it('toPreviewPoint の逆になる（押した位置と描かれる位置が往復で一致する）', () => {
+    const preview = toPreviewPoint(VICTORIA_PAGE, 1240, 1000);
+    const back = fromPreviewPoint(VICTORIA_PAGE, preview?.x ?? Number.NaN, preview?.y ?? 0);
+    expect(back?.x).toBeCloseTo(1240, 6);
+    expect(back?.y).toBeCloseTo(1000, 6);
+  });
+
+  it('縦横を別々に縮尺する（ページの下端を画像の下端へ写す）', () => {
+    expect(fromPreviewPoint(VICTORIA_PAGE, 595.28, 841.89)?.x).toBeCloseTo(2480, 6);
+    expect(fromPreviewPoint(VICTORIA_PAGE, 595.28, 841.89)?.y).toBeCloseTo(3507, 6);
+  });
+
+  it('変換できないページでは null', () => {
+    expect(fromPreviewPoint({ ...VICTORIA_PAGE, widthPt: 0 }, 1, 1)).toBeNull();
   });
 });

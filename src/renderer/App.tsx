@@ -1,6 +1,7 @@
 import type { ReactElement } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
+  AnnotationEdit,
   ClefCorrections,
   ExportSummary,
   IpcResult,
@@ -224,6 +225,22 @@ export function App({ loadPdf }: AppProps = {}) {
     [api, accept],
   );
 
+  const editAnnotation = useCallback(
+    async (edit: AnnotationEdit) => {
+      if (api === null) {
+        return;
+      }
+      setBusy(true);
+      const result = await api.editAnnotation(edit);
+      setBusy(false);
+      if (accept(result)) {
+        // 出力済みのPDFは編集前の内容のまま（設定の切り替えと同じ理由で結果表示を消す）
+        setExportSummary(null);
+      }
+    },
+    [api, accept],
+  );
+
   const approve = useCallback(async () => {
     if (api === null) {
       return;
@@ -340,6 +357,7 @@ export function App({ loadPdf }: AppProps = {}) {
         exportSummary={exportSummary}
         onExportPdf={() => void exportPdf()}
         onChangeSettings={(settings) => void changeSettings(settings)}
+        onEditAnnotation={(edit) => void editAnnotation(edit)}
         onBackToConfirm={() => {
           setScreen('clefKey');
         }}

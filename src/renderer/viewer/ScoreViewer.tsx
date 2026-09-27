@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
+import type { AnnotationEdit } from '../../shared/ipc/contract';
 import type { ScorePreview } from '../../shared/types/ScorePreview';
+import type { AnnotationDraft } from './AnnotationEditForm';
 import type { PdfDocumentHandle, PdfLoader } from './pdfDocument';
 import { loadPdfWithPdfjs } from './pdfDocument';
 import { ScorePage, regionKey } from './ScorePage';
 
 /**
- * 楽譜プレビュー（元PDF ＋ 階名注釈。読み取り専用。機能設計書「Phase 6 で追加する」）
+ * 楽譜プレビュー（元PDF ＋ 階名注釈。機能設計書「Phase 6 で追加する」）
  *
  * 元PDF の全ページを縦に並べ、Main が確定させた重ね描き内容（`ScorePreview`）を載せる。
  * 何をどこに描くかはここでは決めない（表示文字列・座標は Main 側で出力PDFと同じ規則で確定済み）。
+ *
+ * `editable` の間は、楽譜を押して階名を足す・直せる（F-5）。編集は `onEditAnnotation` へ渡すだけで、
+ * 結果は新しい `preview` として届く（画面側で注釈を書き換えない）。
  */
 
 /** 一覧から指定されたジャンプ先（`seq` は同じ小節を続けて押したときにも反応させるための通し番号） */
@@ -27,6 +32,9 @@ export interface ScoreViewerProps {
   focus: ScoreViewerFocus | null;
   /** PDF の読み込み方法（画面テストで差し替える） */
   loadPdf?: PdfLoader;
+  /** 楽譜を押して階名を足す・直せるか（処理中は false にする） */
+  editable?: boolean;
+  onEditAnnotation?: (edit: AnnotationEdit) => void;
 }
 
 type LoadState =
@@ -44,9 +52,28 @@ export function ScoreViewer({
   preview,
   focus,
   loadPdf = loadPdfWithPdfjs,
+  editable = false,
+  onEditAnnotation,
 }: ScoreViewerProps) {
   const container = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  /** 編集中の対象（同時に 1 つだけ） */
+  const [draft, setDraft] = useState<AnnotationDraft | null>(null);
+  const canEdit = editable && onEditAnnotation !== undefined;
+  // 編集できなくなったら（処理中・編集をやめた）開いている入力欄を閉じる。
+  // 描画中に前回値と比べて直す（effect で閉じると、閉じる前の 1 フレームが描かれる）
+  const [previousCanEdit, setPreviousCanEdit] = useState(canEdit);
+  if (canEdit !== previousCanEdit) {
+    setPreviousCanEdit(canEdit);
+    if (!canEdit) {
+      setDraft(null);
+    }
+  }
+  const submitEdit = (edit: AnnotationEdit) => {
+    // 結果は新しいスナップショットとして届く。失敗の理由は App が画面上部に出す
+    setDraft(null);
+    onEditAnnotation?.(edit);
+  };
 
   useEffect(() => {
     if (sourcePdf === null) {
@@ -115,6 +142,13 @@ export function ScoreViewer({
           overlay={overlays.get(pageIndex)}
           style={preview.style}
           focusedRegion={focusKey}
+          editable={canEdit}
+          draft={draft?.sourcePageIndex === pageIndex ? draft : null}
+          onPick={setDraft}
+          onSubmitEdit={submitEdit}
+          onCancelEdit={() => {
+            setDraft(null);
+          }}
         />
       ))}
     </div>

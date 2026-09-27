@@ -1,4 +1,5 @@
 import type {
+  AnnotationEdit,
   ClefCorrections,
   ExportSummary,
   IpcResult,
@@ -41,6 +42,8 @@ export interface SolfaOverlayApi {
   exportPdf(outPath: string): Promise<IpcResult<ExportSummary>>;
   /** 開いているプロジェクトの元PDF（楽譜プレビュー用） */
   getSourcePdf(): Promise<IpcResult<Uint8Array>>;
+  /** 楽譜プレビュー上で注釈を追加・書き換え・削除・復元する（F-5） */
+  editAnnotation(edit: AnnotationEdit): Promise<IpcResult<ProjectSnapshot>>;
 
   /**
    * OMR の進捗を購読する
