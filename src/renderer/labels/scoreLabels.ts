@@ -1,6 +1,8 @@
+import { KEY_SIGNATURE_TONICS } from '../../shared/constants/KEY_SIGNATURE_TONICS';
 import type { ConfirmationItem } from '../../shared/types/Confirmation';
 import { UNKNOWN_CLEF } from '../../shared/types/Confirmation';
 import type { MinorBasis, SyllableSystem } from '../../shared/types/ProjectSettings';
+import type { PitchStep } from '../../shared/types/Pitch';
 import type { StaffRef } from '../../shared/types/ScoreModel';
 
 /**
@@ -259,3 +261,75 @@ export const SYLLABLE_SYSTEM_OPTIONS: readonly SettingOption<SyllableSystem>[] =
 export const MINOR_BASIS_OPTIONS: readonly SettingOption<MinorBasis>[] = MINOR_BASIS_ORDER.map(
   (value) => ({ value, label: MINOR_BASIS_LABELS[value] }),
 );
+
+/** 調の旋法 */
+export type KeyMode = 'major' | 'minor';
+
+/**
+ * 調を「主音 旋法」の読みやすい形にする（例: `F♯ 短調`）
+ *
+ * 主音は英語の音名で書く。合唱団員の楽譜にはイタリア語・ドイツ語・日本語の音名が混在するが、
+ * 楽譜に書かれた調号と照らし合わせやすいのは記号付きの英語音名のため（確認画面の調の表と同じ）
+ */
+export function keyLabel(tonicStep: PitchStep, tonicAlter: number, mode: KeyMode): string {
+  const accidental = tonicAlter > 0 ? '♯' : '♭';
+  const tonic = tonicStep + accidental.repeat(Math.abs(tonicAlter));
+  return `${tonic} ${mode === 'minor' ? '短調' : '長調'}`;
+}
+
+/** 調号の数え方（例: `♯2つ` / `調号なし`）。楽譜の調号と見比べて選べるようにする */
+function signatureLabel(fifths: number): string {
+  if (fifths === 0) {
+    return '調号なし';
+  }
+  return `${fifths > 0 ? '♯' : '♭'}${Math.abs(fifths)}つ`;
+}
+
+/** 転調点の調の選択肢 1 つ（F-6） */
+export interface KeyOption {
+  /** `<select>` の値（`<fifths>:<mode>`） */
+  value: string;
+  fifths: number;
+  mode: KeyMode;
+  tonicStep: PitchStep;
+  tonicAlter: number;
+  /** 表示名（例: `D 長調（♯2つ）`） */
+  label: string;
+}
+
+const KEY_MODES: readonly KeyMode[] = ['major', 'minor'];
+
+/**
+ * 転調点で選べる調（長調 15・短調 15。調号の少ない ♭ 側から ♯ 側への順）
+ *
+ * 主音表は shared の定数を使う（Main が主音を引く表と同じ。食い違うと選んだ調と違う調で読まれる）
+ */
+export const KEY_OPTIONS: readonly KeyOption[] = KEY_MODES.flatMap((mode) =>
+  Object.entries(KEY_SIGNATURE_TONICS[mode])
+    .map(([fifths, tonic]) => ({ fifths: Number(fifths), tonic }))
+    .sort((a, b) => a.fifths - b.fifths)
+    .map(({ fifths, tonic }) => ({
+      value: `${fifths}:${mode}`,
+      fifths,
+      mode,
+      tonicStep: tonic.step,
+      tonicAlter: tonic.alter,
+      label: `${keyLabel(tonic.step, tonic.alter, mode)}（${signatureLabel(fifths)}）`,
+    })),
+);
+
+/**
+ * 主音と旋法から選択肢を引く（調文脈の区間 → 選択肢の初期値）
+ *
+ * @returns 表にない主音（`KeyRegion` は表から作られるため通常は起きない）では undefined
+ */
+export function keyOptionFor(
+  tonicStep: PitchStep,
+  tonicAlter: number,
+  mode: KeyMode,
+): KeyOption | undefined {
+  return KEY_OPTIONS.find(
+    (option) =>
+      option.mode === mode && option.tonicStep === tonicStep && option.tonicAlter === tonicAlter,
+  );
+}

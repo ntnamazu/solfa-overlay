@@ -8,6 +8,7 @@ import {
   clefLabel,
   countAllSystems,
   countSystems,
+  keyLabel,
   mismatchLabel,
   needsAttention,
   partLabel,
@@ -53,13 +54,6 @@ export interface ClefKeyConfirmProps {
  */
 function unresolvedItems(items: readonly ConfirmationItem[]): ConfirmationItem[] {
   return items.filter((item) => needsAttention(clefCheckStatus(item)));
-}
-
-/** 調区間を「主音（旋法）」の読みやすい形にする */
-function describeKey(region: KeyRegion): string {
-  const accidental = region.tonicAlter > 0 ? '♯' : '♭';
-  const tonic = region.tonicStep + accidental.repeat(Math.abs(region.tonicAlter));
-  return `${tonic} ${region.mode === 'minor' ? '短調' : '長調'}`;
 }
 
 export function ClefKeyConfirm({
@@ -191,7 +185,7 @@ export function ClefKeyConfirm({
             {keyRegions.map((region) => (
               <tr key={region.id}>
                 <td>{region.start.measureIndex + 1}</td>
-                <td>{describeKey(region)}</td>
+                <td>{keyLabel(region.tonicStep, region.tonicAlter, region.mode)}</td>
                 <td>{region.source === 'user' ? '指定済み' : '自動判定'}</td>
                 <td>
                   <select

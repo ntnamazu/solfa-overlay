@@ -10,7 +10,8 @@ import { ScorePage, regionKey } from './ScorePage';
  *
  * 元PDF の全ページを縦に並べ、Main が確定させた重ね描き内容（`ScorePreview`）を載せる。
  * 何をどこに描くかはここでは決めない（表示文字列・座標は Main 側で出力PDFと同じ規則で確定済み）。
- * `onPick` を渡すと、押した階名・位置を編集の対象として知らせる（F-5。編集自体は Editor と Main の担当）。
+ * `onPick` を渡すと、押した階名・位置・調の区切りを編集の対象として知らせる
+ * （F-5 / F-6。編集自体は Editor と Main の担当）。
  */
 
 /** 一覧から指定されたジャンプ先（`seq` は同じ小節を続けて押したときにも反応させるための通し番号） */
@@ -35,6 +36,8 @@ export interface ScoreViewerProps {
   selectedAnnotationId?: string | null;
   /** 書き足そうとしている位置（元PDFのページとポイント座標） */
   pendingPoint?: (ScorePoint & { sourcePageIndex: number }) | null;
+  /** 転調点を指定しようとしている小節（通し小節番号） */
+  selectedMeasureIndex?: number | null;
 }
 
 type LoadState =
@@ -55,6 +58,7 @@ export function ScoreViewer({
   onPick,
   selectedAnnotationId = null,
   pendingPoint = null,
+  selectedMeasureIndex = null,
 }: ScoreViewerProps) {
   const container = useRef<HTMLDivElement>(null);
   const [state, setState] = useState<LoadState>({ status: 'loading' });
@@ -129,6 +133,7 @@ export function ScoreViewer({
           onPick={onPick}
           selectedAnnotationId={selectedAnnotationId}
           pendingPoint={pendingPoint?.sourcePageIndex === pageIndex ? pendingPoint : null}
+          selectedMeasureIndex={selectedMeasureIndex}
         />
       ))}
     </div>

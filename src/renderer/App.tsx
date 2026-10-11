@@ -7,7 +7,7 @@ import type {
   ProjectSnapshot,
 } from '../shared/ipc/contract';
 import type { AnnotationEdit } from '../shared/types/Annotation';
-import type { KeyRegionDecision } from '../shared/types/KeyRegion';
+import type { KeyChangeEdit, KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress as OmrProgressData } from '../shared/types/OmrProgress';
 import type { ProjectSettings } from '../shared/types/ProjectSettings';
 import type { StructureDecision } from '../shared/types/StructureDecision';
@@ -242,6 +242,22 @@ export function App({ loadPdf }: AppProps = {}) {
     [api, accept],
   );
 
+  const editKeyChange = useCallback(
+    async (edit: KeyChangeEdit) => {
+      if (api === null) {
+        return;
+      }
+      setBusy(true);
+      const result = await api.editKeyChange(edit);
+      setBusy(false);
+      if (accept(result)) {
+        // 出力済みのPDFは転調点を変える前の階名のまま（editAnnotation と同じ理由）
+        setExportSummary(null);
+      }
+    },
+    [api, accept],
+  );
+
   const approve = useCallback(async () => {
     if (api === null) {
       return;
@@ -354,11 +370,14 @@ export function App({ loadPdf }: AppProps = {}) {
         loadPdf={loadPdf}
         pageIssues={snapshot.pageIssues}
         annotationIssues={snapshot.annotationIssues}
+        keyRegionIssues={snapshot.keyRegionIssues}
+        detectedKeyRegions={snapshot.detectedKeyRegions}
         unmatchedCorrections={snapshot.unmatchedCorrections}
         exportSummary={exportSummary}
         onExportPdf={() => void exportPdf()}
         onChangeSettings={(settings) => void changeSettings(settings)}
         onEditAnnotation={(edit) => void editAnnotation(edit)}
+        onEditKeyChange={(edit) => void editKeyChange(edit)}
         onBackToConfirm={() => {
           setScreen('clefKey');
         }}
