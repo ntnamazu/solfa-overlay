@@ -46,6 +46,8 @@ const page = (overrides: Partial<ScorePreviewPage> = {}): ScorePreviewPage => ({
   annotations: [],
   skippedMeasures: [],
   placementWarnings: [],
+  measures: [],
+  keyChanges: [],
   ...overrides,
 });
 
@@ -493,7 +495,7 @@ describe('ScoreViewer: 編集の対象を選ぶ', () => {
 
     expect(onPick).toHaveBeenCalledOnce();
     const pick = onPick.mock.calls[0]?.[0];
-    expect(pick).toMatchObject({ kind: 'point', sourcePageIndex: 1 });
+    expect(pick).toMatchObject({ kind: 'point', sourcePageIndex: 1, measureIndex: null });
     expect(pick.x).toBeCloseTo(120, 6);
     expect(pick.y).toBeCloseTo(110, 6);
   });
@@ -507,7 +509,13 @@ describe('ScoreViewer: 編集の対象を選ぶ', () => {
 
     fireEvent.click(svg, { clientX: 10 + 30, clientY: 50 + 40 });
 
-    expect(onPick).toHaveBeenCalledWith({ kind: 'point', sourcePageIndex: 0, x: 30, y: 40 });
+    expect(onPick).toHaveBeenCalledWith({
+      kind: 'point',
+      sourcePageIndex: 0,
+      x: 30,
+      y: 40,
+      measureIndex: null,
+    });
   });
 
   it('レイアウト前（表示寸法 0）の押下は位置を決められないため知らせない', async () => {
@@ -549,5 +557,98 @@ describe('ScoreViewer: 編集の対象を選ぶ', () => {
     expect(text.getAttribute('style')).toBeNull();
     // 重ねるものが無いページには SVG を置かない（従来どおり）
     expect(screen.queryByRole('img', { name: '1 ページの階名' })).toBeNull();
+  });
+});
+
+describe('ScoreViewer: 調の区切り（F-6）', () => {
+  const withKeyChanges = preview([
+    page({
+      measures: [
+        { measureIndex: 0, x: 50, y: 100, width: 200, height: 150 },
+        { measureIndex: 1, x: 250, y: 100, width: 200, height: 150 },
+      ],
+      keyChanges: [
+        {
+          measureIndex: 0,
+          x: 50,
+          y: 100,
+          height: 150,
+          tonicStep: 'C',
+          tonicAlter: 0,
+          mode: 'major',
+          source: 'auto',
+        },
+        {
+          measureIndex: 1,
+          x: 250,
+          y: 100,
+          height: 150,
+          tonicStep: 'F',
+          tonicAlter: 1,
+          mode: 'minor',
+          source: 'user',
+        },
+      ],
+    }),
+  ]);
+
+  it('区切りの小節の左端に調名の印を置く（自動はグレー、指定は青）', async () => {
+    setup({ preview: withKeyChanges });
+
+    const auto = await screen.findByText('C 長調');
+    const user = screen.getByText('F♯ 短調');
+    expect(auto.getAttribute('fill')).toBe('#757575');
+    expect(user.getAttribute('fill')).toBe('#1e88e5');
+    expect(user.getAttribute('x')).toBe('250');
+    const line = document.querySelector('[data-key-change="1"] line');
+    expect(line?.getAttribute('y1')).toBe('100');
+    expect(line?.getAttribute('y2')).toBe('250');
+    expect(document.querySelector('[data-key-change="1"] title')?.textContent).toBe(
+      '指定した調の区切り（2 小節目から F♯ 短調）',
+    );
+  });
+
+  it('印を押すと、その区切りの小節を知らせる', async () => {
+    const onPick = vi.fn();
+    setup({ preview: withKeyChanges, onPick });
+
+    fireEvent.click(await screen.findByText('F♯ 短調'));
+
+    expect(onPick).toHaveBeenCalledExactlyOnceWith({
+      kind: 'keyChange',
+      sourcePageIndex: 0,
+      measureIndex: 1,
+    });
+  });
+
+  it('空いた位置を押すと、その点を含む小節を添える', async () => {
+    const onPick = vi.fn();
+    setup({ preview: withKeyChanges, onPick });
+    const svg = await screen.findByRole('img', { name: '1 ページの階名' });
+    vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: A4.widthPt,
+      height: A4.heightPt,
+      right: A4.widthPt,
+      bottom: A4.heightPt,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.click(svg, { clientX: 300, clientY: 200 });
+    fireEvent.click(svg, { clientX: 300, clientY: 400 });
+
+    expect(onPick.mock.calls.map(([pick]) => pick.measureIndex)).toEqual([1, null]);
+  });
+
+  it('転調点を指定しようとしている小節を枠で示す', async () => {
+    setup({ preview: withKeyChanges, onPick: vi.fn(), selectedMeasureIndex: 1 });
+    await screen.findByText('C 長調');
+
+    const selected = document.querySelectorAll('[data-selected-measure]');
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.getAttribute('x')).toBe('250');
   });
 });

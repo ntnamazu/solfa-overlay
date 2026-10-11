@@ -67,13 +67,14 @@ graph TB
 ```typescript
 /** プロジェクト全体（プロジェクトファイルのルート） */
 interface Project {
-  schemaVersion: number; // project.json のスキーマ版数（v1 = 1）。互換性判定に使う
+  schemaVersion: number; // project.json のスキーマ版数（現行 v2。v2 で keyChanges を追加）。互換性判定に使う
   id: string; // UUID
   sourcePdf: string; // プロジェクト内に取り込んだ元PDFの相対パス
   pages: PageInfo[]; // ページごとの画像サイズ・スケール係数
   score: ScoreModel | null; // OMR＋照合の結果（OMR未実行ならnull）
   confirmation: ConfirmationState; // 音部記号・調号の確認状態
-  keyRegions: KeyRegion[]; // 調文脈（自動検出＋ユーザー指定の転調点）
+  keyChanges: KeyChange[]; // 転調点の指定（F-6。ユーザー判断。下記）
+  keyRegions: KeyRegion[]; // 調文脈（自動検出＋ユーザー指定の反映結果。解析結果のキャッシュ）
   annotations: Annotation[]; // 注釈レイヤー（自動生成＋手動）
   settings: ProjectSettings;
   createdAt: string; // ISO 8601
@@ -169,6 +170,11 @@ interface ScorePosition {
   measureIndex: number;
   offset: number; // 小節内オフセット（divisions基準）。小節頭は0
 }
+
+/** 転調点の指定（F-6）。小節の頭から適用する。1 小節につき 1 件 */
+type KeyChange =
+  | { kind: 'set'; measureIndex: number; fifths: number; mode: 'major' | 'minor' } // 挿入・上書き
+  | { kind: 'remove'; measureIndex: number }; // その小節の区切りを取り除く（曲頭は不可）
 
 /** 音部記号・調号の確認画面（F-2）の状態 */
 interface ConfirmationState {
@@ -386,7 +392,12 @@ class ScoreModelBuilder {
   旋法だけの訂正は調号を保ったまま平行調へ移し、`source` を `'user'` にする。
   訂正の結果として隣接区間が同じ調になったらマージする（存在しない転調点を描かせない）。
   既存区間の開始位置と一致しない訂正は `unmatchedKeyDecision` として報告する
-  （区間の新規挿入は F-6 の担当であり、本コンポーネントは既存区間の訂正しか行わない）
+- 転調点の指定（`keyChanges`。F-6）を反映する。区間の挿入・上書き（`source: 'user'`）・削除を行い、
+  最後に隣接する同じ調を統合する。適用できない指定（曲の範囲外・取り除く区切りが無い・曲頭の削除）は
+  `unmatchedKeyChange` として報告する
+- 適用順は**自動生成 → 曲頭の保証 → 転調点の指定 → 確認画面の訂正**。確認画面の調の表は挿入された区間も
+  1 行として出すため、指定を先に当てないとその行への訂正が `unmatchedKeyDecision` になる。
+  同じ小節に両方があると訂正が勝つため、Editor で転調点を指定したら `ProjectSession` がその小節の訂正を外す（後からの操作を勝たせる）
 
 **インターフェース**:
 
@@ -396,7 +407,9 @@ class KeyRegionBuilder {
     artifacts: OmrArtifacts,
     structure: ResolvedStructure,
     decisions?: readonly KeyRegionDecision[], // ClefKeyConfirm での旋法・調号の訂正
+    keyChanges?: readonly KeyChange[], // Editor での転調点の指定（F-6）
   ): KeyRegionBuildResult;
+  // KeyRegionBuildResult = { keyRegions; issues; detectedKeyRegions（指定・訂正を反映する前）; measureCount }
   // KeyRegionBuildResult = { keyRegions: KeyRegion[]; issues: KeyRegionIssue[] }
   // KeyRegionDecision = { measureIndex: number; fifths?: number; mode?: 'major' | 'minor' }
 }
@@ -480,8 +493,10 @@ function applyDegrees(score: ScoreModel, degrees: ReadonlyMap<string, SolfaDegre
   マージ意味論とし、転調指定変更時の範囲限定再計算（性能要件）で範囲外の階名が無言で消えないようにする
 
 **既知の限界**: `NoteEvent` は小節内オフセットを持たないため `KeyRegion.start.offset` は無視され、
-転調はその小節の先頭から適用される。自動生成の `KeyRegion` は必ず offset=0 のため現時点で実害はない。
-小節途中の転調指定（F-6）を実装する際に `NoteEvent` へオフセットを持たせるか判断する。
+転調はその小節の先頭から適用される。自動生成の `KeyRegion` も転調点の指定（F-6）も offset=0 のため実害はない。
+F-6（#6）では**小節単位の指定に留めた**。拍位置から指定するには `NoteEvent` に小節内の位置を持たせる必要があるが、
+MusicXML の `divisions` はパート・小節ごとに異なり得るため、単位をそろえた位置（例: 四分音符単位の分数）を
+ScoreModel に足すスキーマ変更が要る。必要になったら `KeyChange` に `offset` を足す（`ScorePosition.offset` は既にある）。
 
 **依存関係**: ScoreModel、KeyRegion
 
@@ -957,7 +972,7 @@ stateDiagram-v2
 | 楽譜ページ   | 元PDFのレンダリング＋注釈オーバーレイ | PDF.js キャンバス＋SVG                   | 実装済み（#4） |
 | 階名注釈     | 幹音/半音変化を色分け                 | 幹音=濃赤・変化音=紫＋太字（設定変更可） | 実装済み（#4） |
 | スキップ小節 | 楽譜上のハイライト                    | 黄ハイライト。一覧のクリックでジャンプ   | 実装済み（#4） |
-| 転調点       | KeyRegion の境界                      | 小節上のマーカー（auto=グレー、user=青） | 未実装（#6）   |
+| 転調点       | KeyRegion の境界                      | 小節上のマーカー（auto=グレー、user=青） | 実装済み（#6） |
 | 配置警告     | 衝突回避失敗の位置                    | 楽譜上の警告アイコン（「!」）            | 実装済み（#4） |
 | 注釈の編集   | 追加・書き換え・削除                  | 楽譜上の注釈・位置をクリックして編集     | 実装済み（#5） |
 
@@ -988,10 +1003,10 @@ domain（`syllableTables`）の仕事だが、Renderer は domain へ依存で�
 - 実測（`tests/integration/pipeline/score-preview.test.ts`）: 画面に重ねる注釈数は出力PDFの描画件数と一致
   （Victoria 808 / divisi 3500）。スキップ小節は全件が位置を持つ（Victoria 1 / divisi 135）。配置警告 Victoria 0 / divisi 29
 
-**Editor の区画の並び（#17 で決定）**:
+**Editor の区画の並び（#17 で決定。#6 で「調の区切り」を追加）**:
 
 概要 → 階名が付かなかった小節 → 配置警告 → 孤立注釈 → ページの問題 → 適用されなかった訂正 →
-PDF出力 → 確認画面へ戻る → 階名の表記 → **楽譜プレビュー（最後）**。
+PDF出力 → 確認画面へ戻る → 調の区切り → 階名の表記 → **楽譜プレビュー（最後）**。
 
 - 楽譜プレビューは全ページを縦に並べるため、後ろに置いた区画は画面のずっと下に隠れる。
   h1 直下の案内文が指す「注釈付きPDFを出力」と、ジャンプの起点になるスキップ小節の一覧をプレビューより上に置く
@@ -1027,13 +1042,43 @@ PDF出力 → 確認画面へ戻る → 階名の表記 → **楽譜プレビュ
 - 位置の移動（ドラッグ）はできない。削除して書き足す
 - 階名の選択はマウス操作のみ（1 ページ数百の階名をすべてタブ移動の対象にすると、キーボード操作がかえって成立しない）
 
-### 転調点の指定・修正の操作フロー（F-6）
+### 転調点の指定・修正の操作フロー（F-6・#6 で実装）
 
-1. Editor で任意の小節（または小節内の拍位置）を選択し、「ここから転調」を実行する
-2. ダイアログで解釈先の調（主音・長/短）を指定する。初期値はその位置で現在有効な KeyRegion の値
-3. 適用すると新しい KeyRegion（`source: 'user'`）が挿入され、次の転調点までの範囲の階名が再計算・再描画される
-4. 既存の転調点マーカー（auto/user）はクリックで編集・削除できる。auto マーカーを編集した場合は user として上書きされる
-5. 再計算後も手動注釈（`origin: 'manual'`）と削除フラグは保全される（フロー説明3の原則）
+1. 楽譜プレビューで小節の中（階名の無い位置）を押すと、階名の編集パネルに「N 小節目から転調」が出る。押すと転調点のパネルへ切り替わる
+2. パネルで解釈先の調（長調 15・短調 15 のドロップダウン。表示は「D 長調（♯2つ）」）を選び、「ここから転調」を押す。
+   初期値はその小節で現在有効な KeyRegion の調で、初期値のままでは適用できない
+3. 適用すると新しい KeyRegion（`source: 'user'`）が挿入され、次の転調点までの範囲の階名が再計算・再描画される（自動保存）
+4. 既存の転調点マーカー（区切りの小節の左端の縦線＋調名。auto=グレーの破線、user=青）を押すと、調の選び直し（「調を変える」）と削除（「転調点を削除」）ができる。
+   auto マーカーを編集した場合は user として上書きされる。曲頭の調は選び直せるが削除できない
+5. 自動判定の区切りを上書き・削除した小節では「自動判定に戻す（G 長調）」で指定を取り消せる。
+   **削除と戻すは別の操作**: 削除はその区切りごと取り除き（前の区間の調が続く）、戻すは自動判定の調に戻す
+6. Editor の「調の区切り」一覧からも同じパネルを開ける（楽譜上の位置が取れない区切り・キーボード操作の代わり）。
+   削除した自動判定の区切りも「N 小節目の G 長調（自動判定・削除済み）」として一覧に残し、そこから自動判定に戻せる
+7. 再計算後も手動注釈（`origin: 'manual'`）と削除フラグは保全される（フロー説明3の原則）
+
+**設計の要点**:
+
+- ユーザーの指定は解析結果のキャッシュ（`keyRegions`）ではなく**ユーザー判断**として `Project.keyChanges` に持ち、
+  解析のたびに `KeyRegionBuilder` が反映する（`Project` の「正は decisions 側」の原則。再解析しても指定が生き残る）
+- Renderer は編集（`KeyChangeEdit` = `set` / `remove` / `revert`。小節番号と調号＋旋法）だけを IPC（`project:editKeyChange`）で送る。
+  検証（範囲・調号・曲頭の削除・取り除く区切りや取り消す指定の有無）と保存の形は Main（`applyKeyChangeEdit`）が決め、違反は `KeyChangeEditError`
+- **削除の保存の形は、その小節に自動判定の区切りがあるかで変わる**。ある小節は `remove` を残してその区切りを取り除き、
+  無い小節（書き足した転調点）は指定の記録を消すだけにする（`remove` を残すと、取り除く区切りが無いため解析のたびに
+  `unmatchedKeyChange` として報告されてしまう）。判定には `KeyRegionBuilder` が返す自動判定の区切り
+  （`detectedKeyRegions`。指定・訂正を反映する前）と小節数（`measureCount`。解析の範囲判定と同じ値）を使う。
+  自動判定の区切りはスナップショットにも載せ、Editor が「自動判定に戻す」の可否と戻る先の調を示す
+- 保存ファイルの読み込みでは、同じ小節の指定の重複を拒否する（どちらが効くかが配列の順番しだいになるため）
+- 押した位置がどの小節かは、Main が `buildScorePreview` で確定させた**小節の範囲**（段の全譜表の縦範囲 × stack の横範囲。
+  `ScorePreviewPage.measures`）から Renderer が引く。範囲が分からない位置では転調の入口を出さない
+- 調の選択肢の主音表は `shared/constants/KEY_SIGNATURE_TONICS.ts` に置き、Main（`tonicForFifths`）と Renderer（`KEY_OPTIONS`）が共有する
+- 転調点の指定は承認（`completedAt`）を無効化しない。歌い手の解釈の指定であり、確認画面が確かめた読み取り結果（音部記号・調号）を変えないため（注釈の編集・設定変更と同じ扱い）
+- 前の区間と同じ調を選ぶと区切りは統合されて消える（存在しない転調点を描かない原則）。パネルにその旨を書く
+- 保存済みの指定が再解析で適用できなくなった場合（小節数や自動の区切りが変わった等）は、Editor の「適用されなかった訂正」に並べる
+
+**既知の限界**:
+
+- 小節の途中（拍位置）からは指定できない（SolfaEngine の既知の限界を参照）
+- 「指定範囲」だけの転調（終点の指定）は、終点に次の転調点を置いて表す
 
 ### カラーコーディング
 

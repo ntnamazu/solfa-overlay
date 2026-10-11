@@ -40,6 +40,7 @@ const api: SolfaOverlayApi = {
   exportPdf: (outPath) => invoke(IPC_CHANNELS.projectExportPdf, outPath),
   getSourcePdf: () => invoke(IPC_CHANNELS.projectGetSourcePdf),
   editAnnotation: (edit) => invoke(IPC_CHANNELS.projectEditAnnotation, edit),
+  editKeyChange: (edit) => invoke(IPC_CHANNELS.projectEditKeyChange, edit),
 
   onOmrProgress: (listener) => {
     // ipcRenderer のイベント引数（第1引数は IpcRendererEvent）は Renderer へ渡さない。

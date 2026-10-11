@@ -38,7 +38,7 @@ export function keyRegion(overrides: Partial<KeyRegion> = {}): KeyRegion {
 
 export function project(overrides: Partial<Project> = {}): Project {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: 'p1',
     sourcePdf: 'source.pdf',
     pages: [],
@@ -46,6 +46,7 @@ export function project(overrides: Partial<Project> = {}): Project {
     confirmation: { items: [], completedAt: null },
     structureDecisions: [],
     keyRegionDecisions: [],
+    keyChanges: [],
     keyRegions: [],
     annotations: [],
     settings: {
@@ -81,6 +82,7 @@ export function snapshot(overrides: Partial<ProjectSnapshot> = {}): ProjectSnaps
       },
       pages: [],
     },
+    detectedKeyRegions: [],
     unmatchedCorrections: [],
     ...overrides,
   };

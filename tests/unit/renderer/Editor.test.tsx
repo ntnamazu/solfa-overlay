@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { Editor } from '../../../src/renderer/screens/Editor/Editor';
 import type { PdfDocumentHandle, PdfLoader } from '../../../src/renderer/viewer/pdfDocument';
+import type { KeyRegion } from '../../../src/shared/types/KeyRegion';
 import type { ScoreModel } from '../../../src/shared/types/ScoreModel';
 import type { ScorePreview } from '../../../src/shared/types/ScorePreview';
 import { project, snapshot } from './fixtures';
@@ -31,11 +32,14 @@ function setup(overrides: Partial<Parameters<typeof Editor>[0]> = {}) {
     sourcePdfError: null as string | null,
     pageIssues: [],
     annotationIssues: [],
+    keyRegionIssues: [],
+    detectedKeyRegions: [] as KeyRegion[],
     unmatchedCorrections: [],
     exportSummary: null,
     onExportPdf: vi.fn(),
     onChangeSettings: vi.fn(),
     onEditAnnotation: vi.fn(),
+    onEditKeyChange: vi.fn(),
     onBackToConfirm: vi.fn(),
     busy: false,
     ...overrides,
@@ -299,6 +303,8 @@ describe('Editor', () => {
             annotations: [],
             skippedMeasures: [{ partId: 'P1', measureIndex: 4, x: 1, y: 2, width: 3, height: 4 }],
             placementWarnings: [],
+            measures: [],
+            keyChanges: [],
           },
         ],
       };
@@ -394,6 +400,19 @@ describe('Editor', () => {
       expect(screen.getByText(/2ページ 3段目への訂正/)).toBeDefined();
     });
 
+    it('適用できなかった転調点の指定も「適用されなかった訂正」に並べる', () => {
+      setup({
+        unmatchedCorrections: [{ kind: 'clef', itemId: 'clef-P6-ALTO' }],
+        keyRegionIssues: [
+          { kind: 'unmatchedKeyChange', measureIndex: 11 },
+          { kind: 'unmatchedKeyDecision', measureIndex: 3 },
+        ],
+      });
+
+      expect(screen.getByRole('heading', { name: /適用されなかった訂正（2 件）/ })).toBeDefined();
+      expect(screen.getByText(/12 小節目の転調点の指定を適用できませんでした/)).toBeDefined();
+    });
+
     it('問題がなければ該当する見出しを出さない', () => {
       setup();
 
@@ -464,6 +483,8 @@ describe('Editor', () => {
           ],
           skippedMeasures: [],
           placementWarnings: [],
+          measures: [],
+          keyChanges: [],
         },
       ],
     });
@@ -651,6 +672,297 @@ describe('Editor', () => {
       await setupEditable({ busy: true });
       await userEvent.click(screen.getByText('do'));
       expect(screen.queryByRole('form', { name: '階名の編集' })).toBeNull();
+    });
+  });
+
+  describe('転調点の指定（F-6）', () => {
+    const pdf: PdfDocumentHandle = {
+      pageSizes: [{ widthPt: 595, heightPt: 842 }],
+      renderPage: () => ({ promise: Promise.resolve(), cancel: () => {} }),
+      destroy: () => {},
+    };
+    /** 曲頭ハ長調（自動）・5 小節目からト長調（自動） */
+    const keyRegions: KeyRegion[] = [
+      {
+        id: 'key-0',
+        start: { measureIndex: 0, offset: 0 },
+        tonicStep: 'C',
+        tonicAlter: 0,
+        mode: 'major',
+        source: 'auto',
+      },
+      {
+        id: 'key-4',
+        start: { measureIndex: 4, offset: 0 },
+        tonicStep: 'G',
+        tonicAlter: 0,
+        mode: 'major',
+        source: 'auto',
+      },
+    ];
+    const marker = (region: KeyRegion, x: number) => ({
+      measureIndex: region.start.measureIndex,
+      x,
+      y: 100,
+      height: 100,
+      tonicStep: region.tonicStep,
+      tonicAlter: region.tonicAlter,
+      mode: region.mode,
+      source: region.source,
+    });
+    const keyPreview: ScorePreview = {
+      ...snapshot().scorePreview,
+      pages: [
+        {
+          sourcePageIndex: 0,
+          widthPt: 595,
+          heightPt: 842,
+          annotations: [],
+          skippedMeasures: [],
+          placementWarnings: [],
+          // 0〜5 小節目が横に並ぶ（1 小節 80pt）
+          measures: Array.from({ length: 6 }, (_, index) => ({
+            measureIndex: index,
+            x: 50 + index * 80,
+            y: 100,
+            width: 80,
+            height: 100,
+          })),
+          keyChanges: [marker(keyRegions[0]!, 50), marker(keyRegions[1]!, 370)],
+        },
+      ],
+    };
+
+    async function setupKeys(overrides: Partial<Parameters<typeof Editor>[0]> = {}) {
+      const props = setup({
+        project: project({
+          score: score(),
+          keyRegions,
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+        scorePreview: keyPreview,
+        detectedKeyRegions: keyRegions,
+        sourcePdf: new Uint8Array([1]),
+        loadPdf: vi.fn<PdfLoader>().mockResolvedValue(pdf),
+        ...overrides,
+      });
+      await screen.findByText('1 ページ');
+      return props;
+    }
+
+    const keyPanel = () => screen.getByRole('form', { name: '転調点の指定' });
+    const keySelect = () => screen.getByRole<HTMLSelectElement>('combobox', { name: '調' });
+
+    /** 楽譜の上の点を押す（SVG の表示寸法をページのポイント寸法にそろえる） */
+    function clickAt(x: number, y: number) {
+      const svg = screen.getByRole('img', { name: '1 ページの階名' });
+      vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 595,
+        height: 842,
+        right: 595,
+        bottom: 842,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+      fireEvent.click(svg, { clientX: x, clientY: y });
+    }
+
+    it('小節を押して「N 小節目から転調」で調を選び、その小節から転調する', async () => {
+      const props = await setupKeys();
+
+      // 3 小節目（添字 2: x 210〜290）の中を押す
+      clickAt(250, 150);
+      await userEvent.click(screen.getByRole('button', { name: '3 小節目から転調' }));
+
+      expect(keyPanel().textContent).toContain('3 小節目から転調します');
+      // 初期値はその小節で今有効な調（曲頭のハ長調）。そのままでは適用できない
+      expect(keySelect().value).toBe('0:major');
+      const apply = screen.getByRole<HTMLButtonElement>('button', { name: 'ここから転調' });
+      expect(apply.disabled).toBe(true);
+      // 区切りの無い小節には「転調点を削除」を出さない
+      expect(screen.queryByRole('button', { name: '転調点を削除' })).toBeNull();
+      // 選んだ小節を楽譜の上で示す
+      expect(document.querySelector('[data-selected-measure="2"]')).not.toBeNull();
+
+      await userEvent.selectOptions(keySelect(), 'A 短調（調号なし）');
+      await userEvent.click(apply);
+
+      expect(props.onEditKeyChange).toHaveBeenCalledExactlyOnceWith({
+        kind: 'set',
+        measureIndex: 2,
+        fifths: 0,
+        mode: 'minor',
+      });
+      expect(screen.queryByRole('form', { name: '転調点の指定' })).toBeNull();
+    });
+
+    it('小節の範囲の外を押したときは転調の入口を出さない', async () => {
+      await setupKeys();
+      clickAt(250, 600);
+      expect(screen.getByRole('form', { name: '階名の編集' })).toBeDefined();
+      expect(screen.queryByRole('button', { name: /小節目から転調/ })).toBeNull();
+    });
+
+    it('自動の区切りの印を押すと、調を選び直す（user として上書き）か削除できる', async () => {
+      const props = await setupKeys();
+
+      await userEvent.click(screen.getByText('G 長調'));
+      expect(keyPanel().textContent).toContain('5 小節目からの調です（自動判定）');
+      expect(keySelect().value).toBe('1:major');
+
+      await userEvent.selectOptions(keySelect(), 'E 短調（♯1つ）');
+      await userEvent.click(screen.getByRole('button', { name: '調を変える' }));
+      expect(props.onEditKeyChange).toHaveBeenLastCalledWith({
+        kind: 'set',
+        measureIndex: 4,
+        fifths: 1,
+        mode: 'minor',
+      });
+
+      await userEvent.click(screen.getByText('G 長調'));
+      await userEvent.click(screen.getByRole('button', { name: '転調点を削除' }));
+      expect(props.onEditKeyChange).toHaveBeenLastCalledWith({ kind: 'remove', measureIndex: 4 });
+    });
+
+    it('曲頭の調は選び直せるが削除できない', async () => {
+      await setupKeys();
+      await userEvent.click(screen.getByText('C 長調'));
+
+      expect(keyPanel().textContent).toContain('曲の始まりの調です');
+      expect(screen.getByRole('button', { name: '調を変える' })).toBeDefined();
+      expect(screen.queryByRole('button', { name: '転調点を削除' })).toBeNull();
+    });
+
+    it('「調の区切り」の一覧からも同じパネルを開ける（位置の取れない区切り・キーボード操作）', async () => {
+      const props = await setupKeys({
+        project: project({
+          score: score(),
+          keyRegions: [keyRegions[0]!, { ...keyRegions[1]!, source: 'user' }],
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+
+      expect(screen.getByRole('heading', { name: '調の区切り（2 件）' })).toBeDefined();
+      await userEvent.click(
+        screen.getByRole('button', { name: '5 小節目から G 長調（指定済み）' }),
+      );
+      expect(keyPanel().textContent).toContain('5 小節目からの調です（指定済み）');
+
+      await userEvent.type(keySelect(), '{Escape}');
+      expect(screen.queryByRole('form', { name: '転調点の指定' })).toBeNull();
+      expect(props.onEditKeyChange).not.toHaveBeenCalled();
+    });
+
+    it('「調の区切り」は楽譜プレビューより上に置く', async () => {
+      await setupKeys();
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent);
+      expect(headings.indexOf('調の区切り（2 件）')).toBeLessThan(
+        headings.indexOf('楽譜プレビュー'),
+      );
+    });
+
+    it('閉じるで何もせずに閉じ、処理中は一覧から開けない', async () => {
+      const props = await setupKeys();
+      await userEvent.click(screen.getByText('G 長調'));
+      await userEvent.click(screen.getByRole('button', { name: '閉じる' }));
+      expect(screen.queryByRole('form', { name: '転調点の指定' })).toBeNull();
+      expect(props.onEditKeyChange).not.toHaveBeenCalled();
+    });
+
+    it('自動判定の区切りを上書きした小節は「自動判定に戻す」で指定を取り消せる', async () => {
+      const props = await setupKeys({
+        project: project({
+          score: score(),
+          keyRegions: [keyRegions[0]!, { ...keyRegions[1]!, tonicStep: 'D', source: 'user' }],
+          keyChanges: [{ kind: 'set', measureIndex: 4, fifths: 2, mode: 'major' }],
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+
+      await userEvent.click(
+        screen.getByRole('button', { name: '5 小節目から D 長調（指定済み）' }),
+      );
+      // 削除（区切りごと取り除く）と戻す（自動判定の調に戻す）は別の操作として両方出す
+      expect(screen.getByRole('button', { name: '転調点を削除' })).toBeDefined();
+      await userEvent.click(screen.getByRole('button', { name: '自動判定に戻す（G 長調）' }));
+
+      expect(props.onEditKeyChange).toHaveBeenCalledExactlyOnceWith({
+        kind: 'revert',
+        measureIndex: 4,
+      });
+      expect(screen.queryByRole('form', { name: '転調点の指定' })).toBeNull();
+    });
+
+    it('書き足した転調点・指定していない自動判定の区切りには「自動判定に戻す」を出さない', async () => {
+      await setupKeys({
+        project: project({
+          score: score(),
+          keyRegions: [
+            keyRegions[0]!,
+            {
+              ...keyRegions[0]!,
+              id: 'key-2',
+              start: { measureIndex: 2, offset: 0 },
+              tonicStep: 'F',
+              source: 'user',
+            },
+            keyRegions[1]!,
+          ],
+          keyChanges: [{ kind: 'set', measureIndex: 2, fifths: -1, mode: 'major' }],
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+
+      await userEvent.click(
+        screen.getByRole('button', { name: '3 小節目から F 長調（指定済み）' }),
+      );
+      expect(screen.getByRole('button', { name: '転調点を削除' })).toBeDefined();
+      expect(screen.queryByRole('button', { name: /自動判定に戻す/ })).toBeNull();
+
+      await userEvent.click(screen.getByRole('button', { name: '閉じる' }));
+      await userEvent.click(
+        screen.getByRole('button', { name: '5 小節目から G 長調（自動判定）' }),
+      );
+      expect(screen.queryByRole('button', { name: /自動判定に戻す/ })).toBeNull();
+    });
+
+    it('削除した自動判定の区切りも一覧に残し、そこから自動判定に戻せる', async () => {
+      const props = await setupKeys({
+        project: project({
+          score: score(),
+          keyRegions: [keyRegions[0]!],
+          keyChanges: [{ kind: 'remove', measureIndex: 4 }],
+          confirmation: { items: [], completedAt: APPROVED },
+        }),
+      });
+
+      expect(screen.getByRole('heading', { name: '調の区切り（2 件）' })).toBeDefined();
+      await userEvent.click(
+        screen.getByRole('button', { name: '5 小節目の G 長調（自動判定・削除済み）' }),
+      );
+      expect(keyPanel().textContent).toContain(
+        '5 小節目の自動判定の区切り（G 長調）は削除しています',
+      );
+      // 区切りが無いため、削除は出さず「ここから転調」と「自動判定に戻す」を出す
+      expect(screen.queryByRole('button', { name: '転調点を削除' })).toBeNull();
+      expect(screen.getByRole('button', { name: 'ここから転調' })).toBeDefined();
+      await userEvent.click(screen.getByRole('button', { name: '自動判定に戻す（G 長調）' }));
+
+      expect(props.onEditKeyChange).toHaveBeenCalledExactlyOnceWith({
+        kind: 'revert',
+        measureIndex: 4,
+      });
+    });
+
+    it('処理中は一覧のボタンを押せない', async () => {
+      await setupKeys({ busy: true });
+      expect(
+        screen.getByRole<HTMLButtonElement>('button', { name: '1 小節目から C 長調（自動判定）' })
+          .disabled,
+      ).toBe(true);
     });
   });
 });

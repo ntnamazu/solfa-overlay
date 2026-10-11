@@ -7,7 +7,7 @@ import type {
   StructureIssue,
 } from '../types/Issues';
 import type { AnnotationEdit } from '../types/Annotation';
-import type { KeyRegionDecision } from '../types/KeyRegion';
+import type { KeyChangeEdit, KeyRegion, KeyRegionDecision } from '../types/KeyRegion';
 import type { Project } from '../types/Project';
 import type { ProjectSettings } from '../types/ProjectSettings';
 import type { ScorePreview } from '../types/ScorePreview';
@@ -47,6 +47,12 @@ export interface ProjectSnapshot {
    * 元PDF のバイト列そのものは含めない（`project:getSourcePdf` で 1 回だけ取得する）
    */
   scorePreview: ScorePreview;
+  /**
+   * 自動判定の調の区切り（転調点の指定・確認画面の訂正を反映する前）
+   *
+   * Editor が「自動判定に戻す」を出すか・戻る先の調を示すのに使う
+   */
+  detectedKeyRegions: KeyRegion[];
   /**
    * 対象が見つからず適用されなかった訂正
    *
@@ -149,4 +155,6 @@ export interface IpcContract {
   [IPC_CHANNELS.projectGetSourcePdf]: () => IpcResult<Uint8Array>;
   /** 楽譜プレビューからの注釈の編集（F-5）。適用して解析し直した結果を返す */
   [IPC_CHANNELS.projectEditAnnotation]: (edit: AnnotationEdit) => IpcResult<ProjectSnapshot>;
+  /** 楽譜プレビューからの転調点の指定（F-6）。適用して解析し直した結果を返す */
+  [IPC_CHANNELS.projectEditKeyChange]: (edit: KeyChangeEdit) => IpcResult<ProjectSnapshot>;
 }

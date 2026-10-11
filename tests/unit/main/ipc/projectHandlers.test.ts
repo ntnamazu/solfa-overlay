@@ -4,6 +4,7 @@ import { createProjectHandlers, toIpcError } from '../../../../src/main/ipc/proj
 import { ConfirmationRequiredError } from '../../../../src/main/errors';
 import { OmrArchiveError, OmrRunError } from '../../../../src/main/omr/errors';
 import { AnnotationEditError } from '../../../../src/domain/annotations/errors';
+import { KeyChangeEditError } from '../../../../src/domain/solfa/errors';
 import { ProjectFileError } from '../../../../src/storage/errors';
 
 /**
@@ -39,6 +40,7 @@ function fakeSession(overrides: Partial<ProjectSession> = {}): ProjectSession {
     }),
     sourcePdfBytes: vi.fn().mockReturnValue(new Uint8Array([0x25, 0x50, 0x44, 0x46])),
     editAnnotation: vi.fn().mockReturnValue(snapshot),
+    editKeyChange: vi.fn().mockReturnValue(snapshot),
     ...overrides,
   } as unknown as ProjectSession;
 }
@@ -224,6 +226,31 @@ describe('createProjectHandlers', () => {
     ).toEqual({
       ok: false,
       error: { kind: 'unexpected', message: '編集しようとした階名が見つかりません' },
+    });
+  });
+
+  it('転調点の指定をセッションへ渡す', () => {
+    const session = fakeSession();
+    const edit = { kind: 'set', measureIndex: 3, fifths: 1, mode: 'major' } as const;
+
+    const result = createProjectHandlers(session, () => {}).editKeyChange(edit);
+
+    expect(session.editKeyChange).toHaveBeenCalledExactlyOnceWith(edit);
+    expect(result.ok).toBe(true);
+  });
+
+  it('適用できない転調点の指定は失敗を値で返す（文言をそのまま画面へ出せる）', () => {
+    const session = fakeSession({
+      editKeyChange: vi.fn(() => {
+        throw new KeyChangeEditError('曲の始まりの調は削除できません');
+      }),
+    } as unknown as Partial<ProjectSession>);
+
+    expect(
+      createProjectHandlers(session, () => {}).editKeyChange({ kind: 'remove', measureIndex: 0 }),
+    ).toEqual({
+      ok: false,
+      error: { kind: 'unexpected', message: '曲の始まりの調は削除できません' },
     });
   });
 });

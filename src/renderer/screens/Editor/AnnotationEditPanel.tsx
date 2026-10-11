@@ -4,7 +4,8 @@ import { MANUAL_TEXT_MAX_LENGTH } from '../../../shared/constants/MANUAL_TEXT_MA
 import type { ScorePreviewAnnotation } from '../../../shared/types/ScorePreview';
 
 /**
- * 楽譜の上で選んだ階名・位置を編集するパネル（F-5）
+ * 楽譜の上で選んだ階名・位置を編集するパネル（F-5）。押した位置が小節の中なら、
+ * そこから転調点の指定（F-6）へ進む入口も兼ねる
  *
  * 楽譜プレビューは縦に長く、区画の頭に置くと押した位置から見えなくなるため、**画面の下端に固定**する。
  * 入力中の文字だけを手元に持ち、確定した編集は `on*` で Editor へ渡す（注釈そのものは Main が持つ）。
@@ -24,7 +25,8 @@ export type AnnotationEditTarget =
        */
       editableText: string;
     }
-  | { kind: 'point' };
+  /** `measureIndex` は押した点を含む小節（分からなければ null。転調点の指定へ進めない） */
+  | { kind: 'point'; measureIndex: number | null };
 
 export interface AnnotationEditPanelProps {
   /** 編集の対象（何も選んでいなければ null） */
@@ -41,6 +43,8 @@ export interface AnnotationEditPanelProps {
   onRemove: () => void;
   /** 直前の削除を取り消す */
   onUndoRemove: () => void;
+  /** 押した小節から転調点を指定する（F-6。転調点のパネルへ切り替える） */
+  onStartKeyChange: () => void;
   onClose: () => void;
 }
 
@@ -63,6 +67,7 @@ export function AnnotationEditPanel({
   onRevert,
   onRemove,
   onUndoRemove,
+  onStartKeyChange,
   onClose,
 }: AnnotationEditPanelProps) {
   const initial = target?.kind === 'annotation' ? target.editableText : '';
@@ -146,6 +151,12 @@ export function AnnotationEditPanel({
           {target.kind === 'annotation' && (
             <button type="button" onClick={onRemove} disabled={busy}>
               削除
+            </button>
+          )}
+          {/* 小節の中を押したときだけ出す（段の外や小節の範囲が分からない位置では出さない） */}
+          {target.kind === 'point' && target.measureIndex !== null && (
+            <button type="button" onClick={onStartKeyChange} disabled={busy}>
+              {target.measureIndex + 1} 小節目から転調
             </button>
           )}
           <button type="button" onClick={onClose}>

@@ -110,6 +110,60 @@ describe('projectSchema', () => {
   });
 });
 
+describe('転調点の指定（v2）', () => {
+  it('転調点の指定を往復できる', () => {
+    const project = validProject() as Record<string, unknown>;
+    project.keyChanges = [
+      { kind: 'set', measureIndex: 3, fifths: -2, mode: 'minor' },
+      { kind: 'remove', measureIndex: 8 },
+    ];
+    expect(parseProject(project)).toEqual(project);
+  });
+
+  it.each([
+    { kind: 'set', measureIndex: 3, fifths: 1.5, mode: 'major' },
+    { kind: 'set', measureIndex: 3, fifths: 1, mode: 'dorian' },
+    { kind: 'move', measureIndex: 3 },
+    { kind: 'remove', measureIndex: '3' },
+  ])('不正な指定 %o は schema エラー', (change) => {
+    const project = validProject() as Record<string, unknown>;
+    project.keyChanges = [change];
+    expect(reasonOf(() => parseProject(project))).toBe('schema');
+  });
+
+  it('同じ小節の指定が重複していれば schema エラー（どちらが効くかが順番しだいになるため）', () => {
+    const project = validProject() as Record<string, unknown>;
+    project.keyChanges = [
+      { kind: 'set', measureIndex: 5, fifths: 1, mode: 'major' },
+      { kind: 'remove', measureIndex: 5 },
+    ];
+    expect(reasonOf(() => parseProject(project))).toBe('schema');
+  });
+
+  it('v1 のファイルは転調点の指定なしの v2 として読む', () => {
+    const v1 = validProject() as Record<string, unknown>;
+    v1.schemaVersion = 1;
+    delete v1.keyChanges;
+    const parsed = parseProject(v1);
+    expect(parsed.schemaVersion).toBe(2);
+    expect(parsed.keyChanges).toEqual([]);
+    expect(parsed).toEqual({ ...v1, schemaVersion: 2, keyChanges: [] });
+  });
+
+  it('v1 として壊れているファイルは移行後も schema エラー', () => {
+    const v1 = validProject() as Record<string, unknown>;
+    v1.schemaVersion = 1;
+    delete v1.keyRegions;
+    expect(reasonOf(() => parseProject(v1))).toBe('schema');
+  });
+
+  it('v2 で keyChanges が欠けていれば schema エラー（移行は版数で判定する）', () => {
+    const project = validProject() as Record<string, unknown>;
+    delete project.keyChanges;
+    expect(reasonOf(() => parseProject(project))).toBe('schema');
+  });
+});
+
 describe('版数の下限', () => {
   it.each([0, -1])('存在しない版数 %i は version エラー（v1 として読まない）', (schemaVersion) => {
     const project = validProject() as Record<string, unknown>;

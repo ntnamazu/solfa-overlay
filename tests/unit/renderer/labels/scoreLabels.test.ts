@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { isKnownClefKind } from '../../../../src/domain/score/clefTable';
+import { tonicForFifths } from '../../../../src/domain/solfa/keyTable';
 import { KODALY_TABLE, TONIC_SOLFA_TABLE } from '../../../../src/domain/solfa/syllableTables';
 import {
+  KEY_OPTIONS,
   LABELED_CLEF_KINDS,
   MINOR_BASIS_OPTIONS,
   SYLLABLE_SYSTEM_OPTIONS,
@@ -10,6 +12,8 @@ import {
   clefLabel,
   countAllSystems,
   countSystems,
+  keyLabel,
+  keyOptionFor,
   mismatchLabel,
   needsAttention,
   partDisplayName,
@@ -255,5 +259,57 @@ describe('SYLLABLE_SYSTEM_OPTIONS / MINOR_BASIS_OPTIONS', () => {
     for (const label of labels) {
       expect(label).not.toMatch(/kodaly|tonicSolfa/);
     }
+  });
+});
+
+describe('keyLabel', () => {
+  it.each([
+    ['C', 0, 'major', 'C 長調'],
+    ['F', 1, 'minor', 'F♯ 短調'],
+    ['B', -1, 'major', 'B♭ 長調'],
+    ['C', 2, 'major', 'C♯♯ 長調'],
+  ] as const)('%s %i %s → %s', (step, alter, mode, label) => {
+    expect(keyLabel(step, alter, mode)).toBe(label);
+  });
+});
+
+// テストは domain の tonicForFifths を参照してよい（レイヤー境界は src/** のみ）。
+// Renderer の選択肢と Main が主音を引く表の食い違いを機械的に検出するのが目的
+describe('KEY_OPTIONS', () => {
+  it('長調 15・短調 15 の 30 調を、旋法ごとに ♭ 側から並べる', () => {
+    expect(KEY_OPTIONS).toHaveLength(30);
+    expect(KEY_OPTIONS.slice(0, 15).map((option) => option.fifths)).toEqual(
+      Array.from({ length: 15 }, (_, index) => index - 7),
+    );
+    expect(KEY_OPTIONS.slice(15).every((option) => option.mode === 'minor')).toBe(true);
+  });
+
+  it('主音は Main が主音を引く表（tonicForFifths）と一致する', () => {
+    for (const option of KEY_OPTIONS) {
+      expect(tonicForFifths(option.fifths, option.mode)).toEqual({
+        step: option.tonicStep,
+        alter: option.tonicAlter,
+      });
+    }
+  });
+
+  it('値は一意で、表示名に調号の数を添える', () => {
+    expect(new Set(KEY_OPTIONS.map((option) => option.value)).size).toBe(30);
+    expect(KEY_OPTIONS.find((option) => option.value === '2:major')?.label).toBe('D 長調（♯2つ）');
+    expect(KEY_OPTIONS.find((option) => option.value === '-3:minor')?.label).toBe('C 短調（♭3つ）');
+    expect(KEY_OPTIONS.find((option) => option.value === '0:minor')?.label).toBe(
+      'A 短調（調号なし）',
+    );
+  });
+});
+
+describe('keyOptionFor', () => {
+  it('主音と旋法から選択肢を引く', () => {
+    expect(keyOptionFor('E', -1, 'major')?.value).toBe('-3:major');
+    expect(keyOptionFor('E', 0, 'minor')?.value).toBe('1:minor');
+  });
+
+  it('表にない主音では undefined', () => {
+    expect(keyOptionFor('D', 1, 'major')).toBeUndefined();
   });
 });

@@ -53,6 +53,7 @@ function stubApi(overrides: Partial<SolfaOverlayApi> = {}) {
     // 既定は「取得中のまま」。楽譜プレビューを扱わないテストで PDF の読み込みを走らせない
     getSourcePdf: vi.fn(() => new Promise(() => {})),
     editAnnotation: vi.fn().mockResolvedValue(ok(snapshot())),
+    editKeyChange: vi.fn().mockResolvedValue(ok(snapshot())),
     onOmrProgress: vi.fn((listener: ProgressListener) => {
       listeners.push(listener);
       return unsubscribe;
@@ -478,6 +479,8 @@ describe('App', () => {
                 ],
                 skippedMeasures: [],
                 placementWarnings: [],
+                measures: [],
+                keyChanges: [],
               },
             ],
           },
@@ -547,6 +550,88 @@ describe('App', () => {
           );
         });
         expect(screen.getByText('do')).toBeDefined();
+      });
+    });
+
+    describe('転調点の指定', () => {
+      /** 曲頭の調だけを持つスナップショット（tonic / source を差し替える） */
+      const withHeadKey = (head: { step: 'C' | 'F'; source: 'auto' | 'user' }) => {
+        const base = approved();
+        return {
+          ...base,
+          project: {
+            ...base.project,
+            keyRegions: [
+              {
+                id: 'key-0',
+                start: { measureIndex: 0, offset: 0 },
+                tonicStep: head.step,
+                tonicAlter: 0,
+                mode: 'major' as const,
+                source: head.source,
+              },
+            ],
+          },
+        };
+      };
+
+      async function rekeyHeadToF() {
+        await userEvent.click(
+          screen.getByRole('button', { name: '1 小節目から C 長調（自動判定）' }),
+        );
+        await userEvent.selectOptions(
+          screen.getByRole('combobox', { name: '調' }),
+          'F 長調（♭1つ）',
+        );
+        await userEvent.click(screen.getByRole('button', { name: '調を変える' }));
+      }
+
+      it('指定を Main へ送り、返ってきた結果で描き直し、直前の出力結果の表示を消す', async () => {
+        const { api } = stubApi({
+          completeConfirmation: vi
+            .fn()
+            .mockResolvedValue(ok(withHeadKey({ step: 'C', source: 'auto' }))),
+          editKeyChange: vi.fn().mockResolvedValue(ok(withHeadKey({ step: 'F', source: 'user' }))),
+        });
+        render(<App />);
+
+        await advanceToEditor();
+        await userEvent.click(screen.getByRole('button', { name: '注釈付きPDFを出力' }));
+        await screen.findByText(/件の階名を出力しました/);
+        await rekeyHeadToF();
+
+        expect(api.editKeyChange).toHaveBeenCalledWith({
+          kind: 'set',
+          measureIndex: 0,
+          fifths: -1,
+          mode: 'major',
+        });
+        expect(
+          await screen.findByRole('button', { name: '1 小節目から F 長調（指定済み）' }),
+        ).toBeDefined();
+        expect(screen.queryByText(/件の階名を出力しました/)).toBeNull();
+      });
+
+      it('失敗したら理由を示し、調は元のまま', async () => {
+        stubApi({
+          completeConfirmation: vi
+            .fn()
+            .mockResolvedValue(ok(withHeadKey({ step: 'C', source: 'auto' }))),
+          editKeyChange: vi
+            .fn()
+            .mockResolvedValue(fail('曲の始まりの調は削除できません', 'unexpected')),
+        });
+        render(<App />);
+
+        await advanceToEditor();
+        await rekeyHeadToF();
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert').textContent).toBe('曲の始まりの調は削除できません');
+        });
+        expect(
+          screen.getByRole('button', { name: '1 小節目から C 長調（自動判定）' }),
+        ).toBeDefined();
       });
     });
 

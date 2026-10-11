@@ -5,18 +5,21 @@ import type {
   UnmatchedCorrection,
 } from '../../../shared/ipc/contract';
 import type { Annotation, AnnotationEdit } from '../../../shared/types/Annotation';
-import type { AnnotationIssue, PageInfoIssue } from '../../../shared/types/Issues';
+import type { AnnotationIssue, KeyRegionIssue, PageInfoIssue } from '../../../shared/types/Issues';
+import type { KeyChangeEdit, KeyRegion } from '../../../shared/types/KeyRegion';
 import type { Project } from '../../../shared/types/Project';
 import type { ProjectSettings } from '../../../shared/types/ProjectSettings';
 import type { Measure } from '../../../shared/types/ScoreModel';
 import type { ScorePreview } from '../../../shared/types/ScorePreview';
-import { partDisplayName } from '../../labels/scoreLabels';
+import { keyLabel, keyOptionFor, partDisplayName } from '../../labels/scoreLabels';
 import type { PdfLoader } from '../../viewer/pdfDocument';
 import type { ScorePick } from '../../viewer/ScorePage';
 import type { ScoreViewerFocus } from '../../viewer/ScoreViewer';
 import { ScoreViewer } from '../../viewer/ScoreViewer';
 import type { AnnotationEditTarget } from './AnnotationEditPanel';
 import { AnnotationEditPanel } from './AnnotationEditPanel';
+import type { KeyChangeTarget } from './KeyChangePanel';
+import { KeyChangePanel } from './KeyChangePanel';
 import { SolfaNotationSettings } from './SolfaNotationSettings';
 
 /**
@@ -24,7 +27,8 @@ import { SolfaNotationSettings } from './SolfaNotationSettings';
  *
  * 元PDF に階名を重ねた楽譜プレビュー（#4）で、出力PDFを書き出さなくても
  * 階名の位置・スキップ小節・配置警告を確かめられる。楽譜の上の階名を押すと書き換え・削除でき、
- * 階名の無い位置を押すとそこへ書き足せる（F-5・#5）。転調点の指定（F-6）は後続の担当。
+ * 階名の無い位置を押すとそこへ書き足せる（F-5・#5）。小節を押すとそこから転調でき、
+ * 調の区切りの印を押すと調を選び直せる（F-6・#6）。
  *
  * **楽譜プレビューは最後の区画に置く**（#17）。全ページを縦に並べるため、後ろに置いた区画
  * （スキップ小節の一覧・PDF出力）が画面のずっと下に隠れてしまう
@@ -47,6 +51,10 @@ export interface EditorProps {
   loadPdf?: PdfLoader;
   pageIssues: PageInfoIssue[];
   annotationIssues: AnnotationIssue[];
+  /** 調文脈の問題（適用できなかった転調点の指定を「適用されなかった訂正」に並べる） */
+  keyRegionIssues: KeyRegionIssue[];
+  /** 自動判定の調の区切り（転調点の指定を反映する前）。「自動判定に戻す」に使う */
+  detectedKeyRegions: KeyRegion[];
   unmatchedCorrections: UnmatchedCorrection[];
   /** 直近の出力結果（未出力なら null） */
   exportSummary: ExportSummary | null;
@@ -55,6 +63,8 @@ export interface EditorProps {
   onChangeSettings: (settings: ProjectSettings) => void;
   /** 楽譜プレビューからの注釈の編集（追加・書き換え・削除・取り消し） */
   onEditAnnotation: (edit: AnnotationEdit) => void;
+  /** 転調点の指定（挿入・上書き・削除） */
+  onEditKeyChange: (edit: KeyChangeEdit) => void;
   onBackToConfirm: () => void;
   busy: boolean;
 }
@@ -76,6 +86,72 @@ function describeUnmatched(correction: UnmatchedCorrection): string {
     : `${correction.pageIndex + 1}ページ ${correction.systemIndex + 1}段目への訂正の適用先が見つかりませんでした`;
 }
 
+/**
+ * 小節から転調点のパネルの対象を組み立てる
+ *
+ * 初期値は**その小節で今有効な調**（機能設計書「転調点の指定・修正の操作フロー」）。
+ * 区切りの小節ならその区切りの調、途中の小節なら直前の区切りの調になる
+ */
+function keyChangeTargetAt(
+  project: Project,
+  detectedKeyRegions: readonly KeyRegion[],
+  measureIndex: number,
+): KeyChangeTarget {
+  const current = project.keyRegions
+    .filter((region) => region.start.measureIndex <= measureIndex)
+    .at(-1);
+  const existing = project.keyRegions.find((region) => region.start.measureIndex === measureIndex);
+  // 自動判定の区切りを上書き・削除した小節だけ、自動判定へ戻せる
+  const detected = detectedKeyRegions.find((region) => region.start.measureIndex === measureIndex);
+  const changed = project.keyChanges.some((change) => change.measureIndex === measureIndex);
+  return {
+    measureIndex,
+    currentValue:
+      current === undefined
+        ? null
+        : (keyOptionFor(current.tonicStep, current.tonicAlter, current.mode)?.value ?? null),
+    existing: existing?.source ?? null,
+    revertLabel:
+      detected !== undefined && changed
+        ? keyLabel(detected.tonicStep, detected.tonicAlter, detected.mode)
+        : null,
+  };
+}
+
+/** 「調の区切り」一覧の 1 行 */
+interface KeyRegionListItem {
+  measureIndex: number;
+  label: string;
+}
+
+/**
+ * 「調の区切り」一覧の行を小節順に並べる
+ *
+ * 今ある区切りに加え、**削除した自動判定の区切り**も行に残す。楽譜の上には印が無くなるため、
+ * 一覧に無いと「自動判定に戻す」までたどり着けない
+ */
+function keyRegionListItems(
+  project: Project,
+  detectedKeyRegions: readonly KeyRegion[],
+): KeyRegionListItem[] {
+  const current = project.keyRegions.map((region) => ({
+    measureIndex: region.start.measureIndex,
+    label: `${region.start.measureIndex + 1} 小節目から ${keyLabel(region.tonicStep, region.tonicAlter, region.mode)}（${region.source === 'user' ? '指定済み' : '自動判定'}）`,
+  }));
+  const removedMeasures = new Set(
+    project.keyChanges
+      .filter((change) => change.kind === 'remove')
+      .map((change) => change.measureIndex),
+  );
+  const removed = detectedKeyRegions
+    .filter((region) => removedMeasures.has(region.start.measureIndex))
+    .map((region) => ({
+      measureIndex: region.start.measureIndex,
+      label: `${region.start.measureIndex + 1} 小節目の ${keyLabel(region.tonicStep, region.tonicAlter, region.mode)}（自動判定・削除済み）`,
+    }));
+  return [...current, ...removed].sort((a, b) => a.measureIndex - b.measureIndex);
+}
+
 export function Editor({
   project,
   preview,
@@ -85,11 +161,14 @@ export function Editor({
   loadPdf,
   pageIssues,
   annotationIssues,
+  keyRegionIssues,
+  detectedKeyRegions,
   unmatchedCorrections,
   exportSummary,
   onExportPdf,
   onChangeSettings,
   onEditAnnotation,
+  onEditKeyChange,
   onBackToConfirm,
   busy,
 }: EditorProps) {
@@ -98,6 +177,11 @@ export function Editor({
   const skipped: Measure[] = score?.measures.filter((m) => m.status === 'skipped') ?? [];
   const unresolved = annotationIssues.filter((issue) => issue.kind === 'placementUnresolved');
   const orphans = annotationIssues.filter((issue) => issue.kind === 'orphanAnnotation');
+  const unmatchedKeyChanges = keyRegionIssues.filter(
+    (issue) => issue.kind === 'unmatchedKeyChange',
+  );
+  const unmatchedCount = unmatchedCorrections.length + unmatchedKeyChanges.length;
+  const keyListItems = keyRegionListItems(project, detectedKeyRegions);
   const noteCount = score?.measures.reduce((sum, measure) => sum + measure.notes.length, 0) ?? 0;
   // 同じ画面の 2 つの一覧が同じパートを別の名前で呼ぶと、行同士を対応付けられなくなる
   const partNames = new Map(score?.parts.map((part) => [part.id, part.name]) ?? []);
@@ -124,7 +208,14 @@ export function Editor({
    */
   const [selection, setSelection] = useState<
     | { kind: 'annotation'; id: string }
-    | { kind: 'point'; sourcePageIndex: number; x: number; y: number }
+    | {
+        kind: 'point';
+        sourcePageIndex: number;
+        x: number;
+        y: number;
+        measureIndex: number | null;
+      }
+    | { kind: 'keyChange'; measureIndex: number }
     | null
   >(null);
   /** 直前に削除した注釈（「元に戻す」で削除前の内容をそのまま送る） */
@@ -148,23 +239,45 @@ export function Editor({
             selectedAnnotation.text,
         }
       : selection?.kind === 'point'
-        ? { kind: 'point' }
+        ? { kind: 'point', measureIndex: selection.measureIndex }
         : null;
+  const keyChangeTarget: KeyChangeTarget | null =
+    selection?.kind === 'keyChange'
+      ? keyChangeTargetAt(project, detectedKeyRegions, selection.measureIndex)
+      : null;
   // 対象が変わったらパネルを作り直す（入力欄の初期値を対象に合わせるため）
   const panelKey =
     selection === null
       ? 'none'
       : selection.kind === 'annotation'
         ? `annotation:${selection.id}`
-        : `point:${selection.sourcePageIndex}:${selection.x}:${selection.y}`;
+        : selection.kind === 'keyChange'
+          ? // 区切りの有無・調が変われば初期値も変わるため作り直す
+            `keyChange:${selection.measureIndex}:${keyChangeTarget?.existing}:${keyChangeTarget?.currentValue}:${keyChangeTarget?.revertLabel}`
+          : `point:${selection.sourcePageIndex}:${selection.x}:${selection.y}`;
 
   const pick = (picked: ScorePick) => {
     setRemoved(null);
-    setSelection(
-      picked.kind === 'annotation'
-        ? { kind: 'annotation', id: picked.annotation.id }
-        : { kind: 'point', sourcePageIndex: picked.sourcePageIndex, x: picked.x, y: picked.y },
-    );
+    switch (picked.kind) {
+      case 'annotation':
+        setSelection({ kind: 'annotation', id: picked.annotation.id });
+        return;
+      case 'keyChange':
+        setSelection({ kind: 'keyChange', measureIndex: picked.measureIndex });
+        return;
+      case 'point':
+        setSelection({
+          kind: 'point',
+          sourcePageIndex: picked.sourcePageIndex,
+          x: picked.x,
+          y: picked.y,
+          measureIndex: picked.measureIndex,
+        });
+    }
+  };
+  const openKeyChange = (measureIndex: number) => {
+    setRemoved(null);
+    setSelection({ kind: 'keyChange', measureIndex });
   };
   const closePanel = () => {
     setSelection(null);
@@ -197,6 +310,24 @@ export function Editor({
     onEditAnnotation({ kind: 'remove', id: annotation.id });
     setSelection(null);
     setRemoved({ annotation, text: selectedAnnotation.text });
+  };
+  const applyKeyChange = (key: { fifths: number; mode: 'major' | 'minor' }) => {
+    if (selection?.kind === 'keyChange') {
+      onEditKeyChange({ kind: 'set', measureIndex: selection.measureIndex, ...key });
+    }
+    closePanel();
+  };
+  const revertKeyChange = () => {
+    if (selection?.kind === 'keyChange') {
+      onEditKeyChange({ kind: 'revert', measureIndex: selection.measureIndex });
+    }
+    closePanel();
+  };
+  const removeKeyChange = () => {
+    if (selection?.kind === 'keyChange') {
+      onEditKeyChange({ kind: 'remove', measureIndex: selection.measureIndex });
+    }
+    closePanel();
   };
   const undoRemove = () => {
     if (removed !== null) {
@@ -277,9 +408,9 @@ export function Editor({
         </section>
       )}
 
-      {unmatchedCorrections.length > 0 && (
+      {unmatchedCount > 0 && (
         <section>
-          <h2>適用されなかった訂正（{unmatchedCorrections.length} 件）</h2>
+          <h2>適用されなかった訂正（{unmatchedCount} 件）</h2>
           <ul>
             {unmatchedCorrections.map((correction) => (
               <li
@@ -290,6 +421,12 @@ export function Editor({
                 }
               >
                 {describeUnmatched(correction)}
+              </li>
+            ))}
+            {unmatchedKeyChanges.map((issue) => (
+              <li key={`key-change-${issue.measureIndex}`}>
+                {issue.measureIndex + 1}{' '}
+                小節目の転調点の指定を適用できませんでした。楽譜の小節を押して指定し直してください
               </li>
             ))}
           </ul>
@@ -319,6 +456,26 @@ export function Editor({
         確認画面へ戻る
       </button>
 
+      <section>
+        <h2>調の区切り（{keyListItems.length} 件）</h2>
+        <p>押すと、その小節からの調を選び直せます。楽譜の小節を押すと、そこから転調できます。</p>
+        <ul>
+          {keyListItems.map((item) => (
+            <li key={item.measureIndex}>
+              <button
+                type="button"
+                onClick={() => {
+                  openKeyChange(item.measureIndex);
+                }}
+                disabled={busy}
+              >
+                {item.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       {/* 切り替えた結果がすぐ下のプレビューで見えるよう、プレビューの直前に置く */}
       <SolfaNotationSettings
         settings={project.settings}
@@ -329,7 +486,7 @@ export function Editor({
       <section>
         <h2>楽譜プレビュー</h2>
         <p>
-          階名を押すと、書き換え・削除できます。階名の無い位置を押すと、そこに階名を書き足せます。
+          階名を押すと、書き換え・削除できます。階名の無い位置を押すと、そこに階名を書き足すか、その小節から転調できます。調名（灰色は自動判定、青は指定済み）を押すと、調を選び直せます。
         </p>
         <ScoreViewer
           sourcePdf={sourcePdf}
@@ -340,6 +497,7 @@ export function Editor({
           onPick={busy ? undefined : pick}
           selectedAnnotationId={selectedAnnotation?.id ?? null}
           pendingPoint={selection?.kind === 'point' ? selection : null}
+          selectedMeasureIndex={selection?.kind === 'keyChange' ? selection.measureIndex : null}
         />
         {/* 楽譜を表示できない場合の代わりとして、文字の一覧も残す（既定は畳む） */}
         <details>
@@ -370,20 +528,37 @@ export function Editor({
         </details>
       </section>
 
-      <AnnotationEditPanel
-        key={panelKey}
-        target={target}
-        removedText={removed?.text ?? null}
-        busy={busy}
-        onAdd={addAt}
-        onSetText={setSelectedText}
-        onRevert={() => {
-          setSelectedText(null);
-        }}
-        onRemove={removeSelected}
-        onUndoRemove={undoRemove}
-        onClose={closePanel}
-      />
+      {keyChangeTarget !== null ? (
+        <KeyChangePanel
+          key={panelKey}
+          target={keyChangeTarget}
+          busy={busy}
+          onApply={applyKeyChange}
+          onRemove={removeKeyChange}
+          onRevert={revertKeyChange}
+          onClose={closePanel}
+        />
+      ) : (
+        <AnnotationEditPanel
+          key={panelKey}
+          target={target}
+          removedText={removed?.text ?? null}
+          busy={busy}
+          onAdd={addAt}
+          onSetText={setSelectedText}
+          onRevert={() => {
+            setSelectedText(null);
+          }}
+          onRemove={removeSelected}
+          onUndoRemove={undoRemove}
+          onStartKeyChange={() => {
+            if (selection?.kind === 'point' && selection.measureIndex !== null) {
+              openKeyChange(selection.measureIndex);
+            }
+          }}
+          onClose={closePanel}
+        />
+      )}
     </main>
   );
 }

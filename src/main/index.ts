@@ -113,6 +113,7 @@ function registerIpcHandlers(): void {
   handleIpc(IPC_CHANNELS.projectExportPdf, (outPath) => handlers.exportPdf(outPath));
   handleIpc(IPC_CHANNELS.projectGetSourcePdf, () => handlers.getSourcePdf());
   handleIpc(IPC_CHANNELS.projectEditAnnotation, (edit) => handlers.editAnnotation(edit));
+  handleIpc(IPC_CHANNELS.projectEditKeyChange, (edit) => handlers.editKeyChange(edit));
 }
 
 /** 保存先選択ダイアログを開き、選ばれたパスを返す（キャンセルなら null） */

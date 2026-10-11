@@ -45,6 +45,7 @@ async function prepare(
     pages: run.pages,
     annotations: run.annotations,
     annotationIssues: run.issues,
+    keyRegions: solfa.keyRegions,
     settings: { ...DEFAULT_SETTINGS },
   };
   return {
@@ -78,7 +79,7 @@ beforeAll(async () => {
 /** 出力PDFの描画件数（同じ注釈列を OverlayRenderer に通す） */
 async function drawnCount(target: Case): Promise<number> {
   const project: Project = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: 'fixture',
     sourcePdf: 'source.pdf',
     pages: [...target.input.pages],
@@ -86,6 +87,7 @@ async function drawnCount(target: Case): Promise<number> {
     confirmation: { items: [], completedAt: '2026-09-22T00:00:00.000Z' },
     structureDecisions: [],
     keyRegionDecisions: [],
+    keyChanges: [],
     keyRegions: [],
     annotations: [...target.input.annotations],
     settings: target.input.settings,

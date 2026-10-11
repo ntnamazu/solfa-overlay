@@ -2,9 +2,11 @@ import type { MouseEvent } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import type {
   ScorePreviewAnnotation,
+  ScorePreviewMeasure,
   ScorePreviewPage,
   ScorePreviewStyle,
 } from '../../shared/types/ScorePreview';
+import { keyLabel } from '../labels/scoreLabels';
 import type { PdfDocumentHandle, PdfPageSize } from './pdfDocument';
 import { isRenderCancelled } from './pdfDocument';
 import { useNearViewport } from './useNearViewport';
@@ -28,6 +30,15 @@ const FOCUSED_STROKE = '#e65100';
 const WARNING_FILL = '#ff8f00';
 /** 選んだ階名・書き足す位置の印（スキップ小節の黄・警告の橙・階名の赤紫と見分けられる青） */
 const SELECTION_STROKE = '#1565c0';
+/**
+ * 調の区切りの印（機能設計書「Phase 6 で追加する」: auto=グレー、user=青）
+ *
+ * user の青は選択の印（`SELECTION_STROKE`）より明るくして、選んだものと見分けられるようにする
+ */
+const KEY_CHANGE_COLORS: Readonly<Record<'auto' | 'user', string>> = {
+  auto: '#757575',
+  user: '#1e88e5',
+};
 
 /** キャンバスの表示幅が測れないとき（レイアウト前）の仮の幅（CSS px） */
 const FALLBACK_WIDTH_PX = 800;
@@ -44,7 +55,22 @@ export function regionKey(partId: string, measureIndex: number): string {
  */
 export type ScorePick =
   | { kind: 'annotation'; sourcePageIndex: number; annotation: ScorePreviewAnnotation }
-  | { kind: 'point'; sourcePageIndex: number; x: number; y: number };
+  /** `measureIndex` は押した点を含む小節（小節の範囲が分からない位置では null） */
+  | { kind: 'point'; sourcePageIndex: number; x: number; y: number; measureIndex: number | null }
+  /** 調の区切りの印 */
+  | { kind: 'keyChange'; sourcePageIndex: number; measureIndex: number };
+
+/** 押した点を含む小節を探す（範囲の境目はどちらでもよいため、先に見つかった方） */
+function measureAt(measures: readonly ScorePreviewMeasure[], x: number, y: number): number | null {
+  const found = measures.find(
+    (measure) =>
+      measure.x <= x &&
+      x <= measure.x + measure.width &&
+      measure.y <= y &&
+      y <= measure.y + measure.height,
+  );
+  return found?.measureIndex ?? null;
+}
 
 /** 書き足す位置（ページのポイント座標） */
 export interface ScorePoint {
@@ -68,6 +94,8 @@ export interface ScorePageProps {
   selectedAnnotationId?: string | null;
   /** このページで書き足そうとしている位置 */
   pendingPoint?: ScorePoint | null;
+  /** 転調点を指定しようとしている小節（その範囲を枠で示す） */
+  selectedMeasureIndex?: number | null;
 }
 
 export function ScorePage({
@@ -80,6 +108,7 @@ export function ScorePage({
   onPick,
   selectedAnnotationId = null,
   pendingPoint = null,
+  selectedMeasureIndex = null,
 }: ScorePageProps) {
   const frame = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -130,18 +159,25 @@ export function ScorePage({
   const widthPt = overlay?.widthPt ?? size.widthPt;
   const heightPt = overlay?.heightPt ?? size.heightPt;
   const annotations = overlay?.annotations ?? [];
+  const measures = overlay?.measures ?? [];
 
   /**
    * 押した位置を編集の対象へ直す
    *
    * 注釈は 1 ページ数百あるため要素ごとにハンドラを付けず、SVG の 1 か所で受ける。
-   * 押した要素（またはその祖先）が `data-annotation` を持てば、その階名を選ぶ
+   * 押した要素（またはその祖先）が `data-key-change` を持てば調の区切りを、
+   * `data-annotation` を持てばその階名を選ぶ
    */
   const handleClick = (event: MouseEvent<SVGSVGElement>) => {
     if (onPick === undefined) {
       return;
     }
     const target = event.target instanceof Element ? event.target : null;
+    const keyChange = target?.closest('[data-key-change]')?.getAttribute('data-key-change');
+    if (keyChange != null) {
+      onPick({ kind: 'keyChange', sourcePageIndex: pageIndex, measureIndex: Number(keyChange) });
+      return;
+    }
     const annotationId = target?.closest('[data-annotation]')?.getAttribute('data-annotation');
     const annotation =
       annotationId == null ? undefined : annotations.find((item) => item.id === annotationId);
@@ -153,11 +189,14 @@ export function ScorePage({
     if (rect.width <= 0 || rect.height <= 0) {
       return; // レイアウト前は位置を決められない
     }
+    const x = ((event.clientX - rect.left) / rect.width) * widthPt;
+    const y = ((event.clientY - rect.top) / rect.height) * heightPt;
     onPick({
       kind: 'point',
       sourcePageIndex: pageIndex,
-      x: ((event.clientX - rect.left) / rect.width) * widthPt,
-      y: ((event.clientY - rect.top) / rect.height) * heightPt,
+      x,
+      y,
+      measureIndex: measureAt(measures, x, y),
     });
   };
 
@@ -214,6 +253,74 @@ export function ScorePage({
                 >
                   <title>階名が付かなかった小節</title>
                 </rect>
+              );
+            })}
+            {/* 転調点を指定しようとしている小節（段の全譜表にわたる範囲） */}
+            {measures
+              .filter((measure) => measure.measureIndex === selectedMeasureIndex)
+              .map((measure) => (
+                <rect
+                  key={`measure-${measure.measureIndex}`}
+                  data-selected-measure={measure.measureIndex}
+                  x={measure.x}
+                  y={measure.y}
+                  width={measure.width}
+                  height={measure.height}
+                  fill={SELECTION_STROKE}
+                  fillOpacity={0.08}
+                  stroke={SELECTION_STROKE}
+                  strokeWidth={1.5}
+                  pointerEvents="none"
+                />
+              ))}
+            {/* 調の区切りは件数が少なく（曲全体で数件）、楽譜を眺めて探すものなので常に描く */}
+            {overlay?.keyChanges.map((marker) => {
+              const color = KEY_CHANGE_COLORS[marker.source];
+              const label = keyLabel(marker.tonicStep, marker.tonicAlter, marker.mode);
+              return (
+                <g
+                  key={`key-${marker.measureIndex}`}
+                  data-key-change={marker.measureIndex}
+                  style={editable ? { cursor: 'pointer' } : undefined}
+                >
+                  <title>
+                    {marker.source === 'user' ? '指定した調の区切り' : '自動で判定した調の区切り'}（
+                    {marker.measureIndex + 1} 小節目から {label}）
+                  </title>
+                  {/* 細い線は押しにくいため、透明の太い帯で受ける */}
+                  <rect
+                    x={marker.x - style.fontSizePt * 0.4}
+                    y={marker.y}
+                    width={style.fontSizePt * 0.8}
+                    height={marker.height}
+                    fill="transparent"
+                  />
+                  <line
+                    x1={marker.x}
+                    x2={marker.x}
+                    y1={marker.y}
+                    y2={marker.y + marker.height}
+                    stroke={color}
+                    strokeWidth={style.fontSizePt * 0.15}
+                    strokeDasharray={
+                      marker.source === 'auto' ? `${style.fontSizePt * 0.4}` : undefined
+                    }
+                  />
+                  <text
+                    x={marker.x}
+                    y={marker.y - style.fontSizePt * 0.3}
+                    fontFamily="sans-serif"
+                    fontWeight="bold"
+                    fontSize={style.fontSizePt}
+                    fill={color}
+                    // 譜面の線や記号に重なっても読めるよう、白い縁取りを文字の下に敷く
+                    stroke="#ffffff"
+                    strokeWidth={style.fontSizePt * 0.25}
+                    paintOrder="stroke"
+                  >
+                    {label}
+                  </text>
+                </g>
               );
             })}
             {/* 注釈は数が多い（1 ページ数百）ため、画面の近くにあるページだけ描く */}

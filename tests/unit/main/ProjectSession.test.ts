@@ -6,12 +6,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectSession } from '../../../src/main/ProjectSession';
-import type { OmrRunnerLike } from '../../../src/main/ProjectSession';
+import type { OmrRunnerLike, SessionSnapshot } from '../../../src/main/ProjectSession';
 import { assembleArtifacts } from '../../../src/main/omr/omrArchive';
 import { TONIC_SOLFA_TABLE } from '../../../src/domain/solfa/syllableTables';
 import { AnnotationEditError } from '../../../src/domain/annotations/errors';
+import { KeyChangeEditError } from '../../../src/domain/solfa/errors';
 import { ProjectStore } from '../../../src/storage/ProjectStore';
 import type { Annotation } from '../../../src/shared/types/Annotation';
+import type { KeyChange } from '../../../src/shared/types/KeyRegion';
 import type { OmrProgress } from '../../../src/shared/types/OmrProgress';
 import type { OmrRawArtifacts } from '../../../src/shared/types/OmrRawArtifacts';
 
@@ -500,6 +502,7 @@ describe('ProjectSession', () => {
       ['exportPdf', () => session.exportPdf('/tmp/x.pdf')],
       ['sourcePdfBytes', () => session.sourcePdfBytes()],
       ['editAnnotation', () => session.editAnnotation({ kind: 'remove', id: 'solfa-x' })],
+      ['editKeyChange', () => session.editKeyChange({ kind: 'remove', measureIndex: 1 })],
     ])('%s はプロジェクト未オープンを明示的に拒否する', async (_name, run) => {
       // 同期で throw する操作と Promise を返す操作が混在するため、両方を同じ形で受ける
       await expect((async () => run())()).rejects.toThrow(/開かれていません/);
@@ -822,6 +825,181 @@ describe('ProjectSession', () => {
       expect(session.completeConfirmation().project.annotations).toEqual(
         imported.project.annotations,
       );
+    });
+  });
+
+  describe('転調点の指定（editKeyChange）', () => {
+    /** 音符 id → 階名（度数＋変位）。範囲内だけ変わることを確かめる */
+    const solfaById = (snapshot: SessionSnapshot) =>
+      new Map(
+        (snapshot.project.score?.measures ?? []).flatMap((measure) =>
+          measure.notes.map((note) => [note.id, { measure: measure.index, solfa: note.solfa }]),
+        ),
+      );
+    const regionsOf = (snapshot: SessionSnapshot) =>
+      snapshot.project.keyRegions.map(
+        (region) =>
+          `${region.start.measureIndex}:${region.tonicStep}:${region.mode}:${region.source}`,
+      );
+
+    it('挿入した転調点から次の区切りまでの階名だけを計算し直す', async () => {
+      const imported = await session.importPdf(pdfPath, () => {});
+      // Victoria は曲頭ハ長調・通し小節番号 28 からト長調
+      expect(regionsOf(imported)).toEqual(['0:C:major:auto', '28:G:major:auto']);
+
+      const edited = session.editKeyChange({
+        kind: 'set',
+        measureIndex: 10,
+        fifths: -1,
+        mode: 'major',
+      });
+
+      expect(regionsOf(edited)).toEqual(['0:C:major:auto', '10:F:major:user', '28:G:major:auto']);
+      expect(edited.project.keyChanges).toEqual([
+        { kind: 'set', measureIndex: 10, fifths: -1, mode: 'major' },
+      ]);
+      const before = solfaById(imported);
+      const after = solfaById(edited);
+      let changedInside = 0;
+      for (const [id, { measure, solfa }] of after) {
+        const inside = measure >= 10 && measure < 28;
+        if (inside && JSON.stringify(solfa) !== JSON.stringify(before.get(id)?.solfa)) {
+          changedInside += 1;
+        }
+        if (!inside) {
+          expect(solfa).toEqual(before.get(id)?.solfa);
+        }
+      }
+      expect(changedInside).toBeGreaterThan(0);
+      // 楽譜プレビューにユーザー指定の印が載る
+      const markers = edited.scorePreview.pages.flatMap((page) => page.keyChanges);
+      expect(markers.find((marker) => marker.measureIndex === 10)).toMatchObject({
+        source: 'user',
+        tonicStep: 'F',
+      });
+    });
+
+    it('自動の区切りを削除すると前の区間の調が続く', async () => {
+      await session.importPdf(pdfPath, () => {});
+      const edited = session.editKeyChange({ kind: 'remove', measureIndex: 28 });
+      expect(regionsOf(edited)).toEqual(['0:C:major:auto']);
+    });
+
+    it('書き足した転調点を削除すると指定の記録ごと消え、適用できなかった報告を出さない', async () => {
+      await session.importPdf(pdfPath, () => {});
+      session.editKeyChange({ kind: 'set', measureIndex: 10, fifths: -1, mode: 'major' });
+
+      const removed = session.editKeyChange({ kind: 'remove', measureIndex: 10 });
+
+      // remove を残すと、取り除く区切りが無いため毎回 unmatchedKeyChange になる（レビュー #1）
+      expect(removed.project.keyChanges).toEqual([]);
+      expect(
+        removed.keyRegionIssues.filter((issue) => issue.kind === 'unmatchedKeyChange'),
+      ).toEqual([]);
+      expect(regionsOf(removed)).toEqual(['0:C:major:auto', '28:G:major:auto']);
+    });
+
+    it.each([
+      { name: '上書きした', edit: { kind: 'set', measureIndex: 28, fifths: 2, mode: 'major' } },
+      { name: '削除した', edit: { kind: 'remove', measureIndex: 28 } },
+    ] satisfies { name: string; edit: KeyChange }[])(
+      '$name自動判定の区切りを「自動判定に戻す」で元に戻せる',
+      async ({ edit }) => {
+        const imported = await session.importPdf(pdfPath, () => {});
+        expect(imported.detectedKeyRegions.map((region) => region.start.measureIndex)).toEqual([
+          0, 28,
+        ]);
+        session.editKeyChange(edit);
+
+        const reverted = session.editKeyChange({ kind: 'revert', measureIndex: 28 });
+
+        expect(reverted.project.keyChanges).toEqual([]);
+        expect(regionsOf(reverted)).toEqual(['0:C:major:auto', '28:G:major:auto']);
+        expect(solfaById(reverted)).toEqual(solfaById(imported));
+      },
+    );
+
+    it('同じ小節の確認画面の訂正を外す（今した指定を勝たせる）', async () => {
+      await session.importPdf(pdfPath, () => {});
+      session.setKeyRegionDecisions([
+        { measureIndex: 0, mode: 'minor' },
+        { measureIndex: 28, mode: 'minor' },
+      ]);
+
+      const edited = session.editKeyChange({
+        kind: 'set',
+        measureIndex: 28,
+        fifths: 2,
+        mode: 'major',
+      });
+
+      expect(edited.project.keyRegionDecisions).toEqual([{ measureIndex: 0, mode: 'minor' }]);
+      expect(regionsOf(edited)).toEqual(['0:A:minor:user', '28:D:major:user']);
+    });
+
+    it('承認は無効化せず、手動注釈・削除の印を保つ', async () => {
+      let seq = 0;
+      session = new ProjectSession({
+        runner: new FakeRunner(),
+        newAnnotationId: () => `manual-${(seq += 1)}`,
+      });
+      const imported = await session.importPdf(pdfPath, () => {});
+      session.editAnnotation({ kind: 'add', sourcePageIndex: 0, x: 100, y: 100, text: 'ta' });
+      session.editAnnotation({ kind: 'remove', id: imported.project.annotations[0]!.id });
+      session.completeConfirmation();
+
+      const edited = session.editKeyChange({
+        kind: 'set',
+        measureIndex: 0,
+        fifths: 0,
+        mode: 'minor',
+      });
+
+      expect(edited.project.confirmation.completedAt).not.toBeNull();
+      const byId = new Map(edited.project.annotations.map((a) => [a.id, a]));
+      expect(byId.get('manual-1')).toMatchObject({ origin: 'manual', text: 'ta' });
+      expect(byId.get(imported.project.annotations[0]!.id)?.deleted).toBe(true);
+    });
+
+    it('保存して開き直すと指定が復元され、同じ画面になる', async () => {
+      await session.importPdf(pdfPath, () => {});
+      session.editKeyChange({ kind: 'set', measureIndex: 5, fifths: 0, mode: 'minor' });
+      const edited = session.editKeyChange({ kind: 'remove', measureIndex: 28 });
+      const path = join(directory, 'song.solfaproj');
+      await session.save(path);
+
+      const reopened = await new ProjectSession({ runner: new FakeRunner() }).open(path);
+
+      expect(reopened.project.keyChanges).toEqual(edited.project.keyChanges);
+      expect(regionsOf(reopened)).toEqual(['0:C:major:auto', '5:A:minor:user']);
+      expect(reopened.scorePreview).toEqual(edited.scorePreview);
+      expect(solfaById(reopened)).toEqual(solfaById(edited));
+    });
+
+    it('保存先が決まっていれば自動保存を予約する', async () => {
+      await session.importPdf(pdfPath, () => {});
+      await session.save(join(directory, 'song.solfaproj'));
+
+      session.editKeyChange({ kind: 'remove', measureIndex: 28 });
+      expect(session.hasPendingSave).toBe(true);
+    });
+
+    it('適用できない指定は例外にし、指定を変えない', async () => {
+      await session.importPdf(pdfPath, () => {});
+      const before = session.editKeyChange({
+        kind: 'set',
+        measureIndex: 3,
+        fifths: 1,
+        mode: 'major',
+      });
+
+      expect(() => session.editKeyChange({ kind: 'remove', measureIndex: 0 })).toThrow(
+        KeyChangeEditError,
+      );
+      expect(() =>
+        session.editKeyChange({ kind: 'set', measureIndex: 100_000, fifths: 0, mode: 'major' }),
+      ).toThrow(KeyChangeEditError);
+      expect(session.completeConfirmation().project.keyChanges).toEqual(before.project.keyChanges);
     });
   });
 

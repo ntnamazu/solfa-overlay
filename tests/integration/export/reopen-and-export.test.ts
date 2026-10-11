@@ -160,4 +160,68 @@ describe('取り込みから注釈付きPDF出力まで', () => {
     );
     expect(reopened.project.annotations.find((a) => a.id === rewrittenTarget!.id)?.text).toBe('fi');
   }, 120_000);
+
+  it('転調点の指定（F-6）が範囲内の階名だけを変え、保存・再読み込みを経て出力まで効く', async () => {
+    const first = new ProjectSession({ runner: new CountingRunner() });
+    const imported = await first.importPdf(pdfPath, () => {});
+    first.completeConfirmation();
+    const solfaOf = (snapshot: typeof imported) =>
+      new Map(
+        (snapshot.project.score?.measures ?? []).flatMap((measure) =>
+          measure.notes.map((note) => [note.id, { measure: measure.index, solfa: note.solfa }]),
+        ),
+      );
+
+    // 画面と同じく、楽譜プレビューの小節（通し 10）を選んで、そこからニ短調で読む
+    const measure = imported.scorePreview.pages
+      .flatMap((page) => page.measures)
+      .find((candidate) => candidate.measureIndex === 10);
+    expect(measure).toBeDefined();
+    const edited = first.editKeyChange({
+      kind: 'set',
+      measureIndex: measure!.measureIndex,
+      fifths: -1,
+      mode: 'minor',
+    });
+    // 曲頭ハ長調・28 からト長調（自動）の間に挿入され、次の区切りまでが範囲になる
+    expect(
+      edited.project.keyRegions.map((region) => [
+        region.start.measureIndex,
+        region.tonicStep,
+        region.mode,
+        region.source,
+      ]),
+    ).toEqual([
+      [0, 'C', 'major', 'auto'],
+      [10, 'D', 'minor', 'user'],
+      [28, 'G', 'major', 'auto'],
+    ]);
+    const before = solfaOf(imported);
+    const after = solfaOf(edited);
+    const changed = [...after].filter(
+      ([id, { solfa }]) => JSON.stringify(solfa) !== JSON.stringify(before.get(id)?.solfa),
+    );
+    expect(changed.length).toBeGreaterThan(0);
+    expect(changed.every(([, { measure: index }]) => index >= 10 && index < 28)).toBe(true);
+    await first.save(projectPath);
+
+    const second = new ProjectSession({ runner: new CountingRunner() });
+    const reopened = await second.open(projectPath);
+
+    expect(reopened.project.keyChanges).toEqual([
+      { kind: 'set', measureIndex: 10, fifths: -1, mode: 'minor' },
+    ]);
+    expect(solfaOf(reopened)).toEqual(after);
+    // 楽譜プレビューに指定の印（青）が載る
+    expect(
+      reopened.scorePreview.pages
+        .flatMap((page) => page.keyChanges)
+        .find((marker) => marker.measureIndex === 10)?.source,
+    ).toBe('user');
+    // 承認は転調点の指定で外れない
+    expect(reopened.project.confirmation.completedAt).not.toBeNull();
+
+    const result = await second.exportPdf(exportPath);
+    expect(result.drawnCount).toBe(808);
+  }, 120_000);
 });

@@ -55,7 +55,7 @@ const annotation = (overrides: Partial<Annotation> = {}): Annotation => ({
 
 function makeProject(overrides: Partial<Project> = {}): Project {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: 'p1',
     sourcePdf: 'source.pdf',
     pages: [pageInfo(0, 0)],
@@ -74,6 +74,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     confirmation: { items: [], completedAt: '2026-07-20T00:00:00Z' },
     structureDecisions: [],
     keyRegionDecisions: [],
+    keyChanges: [],
     keyRegions: [],
     annotations: [annotation()],
     settings: { ...DEFAULT_SETTINGS },

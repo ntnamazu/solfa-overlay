@@ -21,6 +21,7 @@ export const IPC_CHANNELS = {
   projectExportPdf: 'project:exportPdf',
   projectGetSourcePdf: 'project:getSourcePdf',
   projectEditAnnotation: 'project:editAnnotation',
+  projectEditKeyChange: 'project:editKeyChange',
 } as const;
 
 /** Main → Renderer の一方向イベント（`webContents.send`） */

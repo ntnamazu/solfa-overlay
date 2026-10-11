@@ -1,11 +1,10 @@
+import { KEY_SIGNATURE_TONICS } from '../../shared/constants/KEY_SIGNATURE_TONICS';
 import type { PitchStep } from '../../shared/types/Pitch';
 
 /**
- * 調号（fifths）→ 主音の対応表
+ * 調号（fifths）→ 主音の対応表を引く関数群
  *
- * MusicXML の `<key><fifths>` は ♯を正・♭を負の数で表す。長調の主音は五度圏そのもので、
- * 短調の主音は同じ調号を持つ平行短調（長調主音の短3度下）になる。
- * 異名同音の書き分けが必要なため（例: fifths=-7 は B♮ ではなく C♭）、導出ではなく表で持つ
+ * 表そのものは `shared/constants/KEY_SIGNATURE_TONICS.ts`（理由はそちらを参照）
  */
 
 /** 調の主音（オクターブに依存しないため step + alter のみ。`DoPitch` と同じ形） */
@@ -18,43 +17,11 @@ export interface KeyTonic {
 export const MIN_FIFTHS = -7;
 export const MAX_FIFTHS = 7;
 
-/** 長調の主音（C♭ … C♯） */
-export const MAJOR_TONICS: Readonly<Record<number, KeyTonic>> = {
-  [-7]: { step: 'C', alter: -1 },
-  [-6]: { step: 'G', alter: -1 },
-  [-5]: { step: 'D', alter: -1 },
-  [-4]: { step: 'A', alter: -1 },
-  [-3]: { step: 'E', alter: -1 },
-  [-2]: { step: 'B', alter: -1 },
-  [-1]: { step: 'F', alter: 0 },
-  0: { step: 'C', alter: 0 },
-  1: { step: 'G', alter: 0 },
-  2: { step: 'D', alter: 0 },
-  3: { step: 'A', alter: 0 },
-  4: { step: 'E', alter: 0 },
-  5: { step: 'B', alter: 0 },
-  6: { step: 'F', alter: 1 },
-  7: { step: 'C', alter: 1 },
-};
+/** 長調の主音（C♭ … C♯）。表の実体は shared（Renderer の調の選択肢と共有する） */
+export const MAJOR_TONICS: Readonly<Record<number, KeyTonic>> = KEY_SIGNATURE_TONICS.major;
 
 /** 短調の主音（平行短調。a♭ … a♯） */
-export const MINOR_TONICS: Readonly<Record<number, KeyTonic>> = {
-  [-7]: { step: 'A', alter: -1 },
-  [-6]: { step: 'E', alter: -1 },
-  [-5]: { step: 'B', alter: -1 },
-  [-4]: { step: 'F', alter: 0 },
-  [-3]: { step: 'C', alter: 0 },
-  [-2]: { step: 'G', alter: 0 },
-  [-1]: { step: 'D', alter: 0 },
-  0: { step: 'A', alter: 0 },
-  1: { step: 'E', alter: 0 },
-  2: { step: 'B', alter: 0 },
-  3: { step: 'F', alter: 1 },
-  4: { step: 'C', alter: 1 },
-  5: { step: 'G', alter: 1 },
-  6: { step: 'D', alter: 1 },
-  7: { step: 'A', alter: 1 },
-};
+export const MINOR_TONICS: Readonly<Record<number, KeyTonic>> = KEY_SIGNATURE_TONICS.minor;
 
 /**
  * 調号と旋法から主音を引く

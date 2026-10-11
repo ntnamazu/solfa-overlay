@@ -9,8 +9,16 @@ import { ProjectFileError } from './errors';
  * 読込時に必ずこのスキーマを通す（開発ガイドライン「外部データは unknown で受けて Zod で絞る」）
  */
 
-/** project.json のスキーマ版数（v1 = 1） */
-export const SCHEMA_VERSION = 1;
+/**
+ * project.json のスキーマ版数
+ *
+ * - v1: 初版
+ * - v2: `keyChanges`（転調点の指定 F-6）を追加。版数を上げたのは、v1 のまま足すと旧アプリが
+ *   未知のフィールドとして黙って捨て（Zod の既定）、旧アプリで開いて保存しただけで
+ *   ユーザーの転調点が消えるため。v2 なら旧アプリは「新しいバージョンのアプリで作成された
+ *   ファイル」として安全に失敗する（アーキテクチャ設計書「前方互換」）
+ */
+export const SCHEMA_VERSION = 2;
 
 /** 最初に存在する版数。これ未満は「アプリが知らない形式」として拒否する */
 const FIRST_SCHEMA_VERSION = 1;
@@ -117,6 +125,16 @@ const keyRegionDecisionSchema = z.object({
   mode: modeSchema.optional(),
 });
 
+const keyChangeSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('set'),
+    measureIndex: z.number().int(),
+    fifths: z.number().int(),
+    mode: modeSchema,
+  }),
+  z.object({ kind: z.literal('remove'), measureIndex: z.number().int() }),
+]);
+
 const structureDecisionSchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('systemMeasureCount'),
@@ -176,6 +194,14 @@ export const projectSchema = z.object({
   confirmation: confirmationStateSchema,
   structureDecisions: z.array(structureDecisionSchema),
   keyRegionDecisions: z.array(keyRegionDecisionSchema),
+  // 1 小節につき指定は 1 件（`applyKeyChangeEdit` の前提）。重複すると set と remove のどちらが
+  // 効くかが配列の順番しだいになるため、手で書き換えた・壊れたファイルは読み込み時に止める
+  keyChanges: z
+    .array(keyChangeSchema)
+    .refine(
+      (changes) => new Set(changes.map((change) => change.measureIndex)).size === changes.length,
+      { message: '同じ小節に転調点の指定が複数あります' },
+    ),
   keyRegions: z.array(keyRegionSchema),
   annotations: z.array(annotationSchema),
   settings: projectSettingsSchema,
@@ -239,14 +265,22 @@ function readSchemaVersion(value: unknown): number {
 /**
  * 旧版のプロジェクトを現行版へ移行する（後方互換）
  *
- * v1 が最初の版のため現状は恒等変換。**分岐と経路を先に用意しておく**ことで、
- * v2 でフォーマットを変えるときに「版数の増分とマイグレーション実装をセットで行う」
- * （アーキテクチャ設計書）という規約を守りやすくする
+ * 版を 1 つずつ進める（v1 → v2 → …）。各段は**その版で足したフィールドの既定値を埋めるだけ**にし、
+ * 構造の検証は移行後の `projectSchema` に任せる（壊れた v1 は移行しても schema エラーになる）
  */
 function migrate(value: unknown, version: number): unknown {
-  if (version >= SCHEMA_VERSION) {
+  // オブジェクトでない入力は版数も読めない（現行版とみなされる）。構造検証に委ねる
+  if (typeof value !== 'object' || value === null) {
     return value;
   }
-  // v1 より古い版は存在しないため、ここに到達する入力は現状ない
-  return value;
+  let migrated: object = value;
+  if (version < 2) {
+    migrated = migrateV1ToV2(migrated);
+  }
+  return migrated;
+}
+
+/** v1 → v2: 転調点の指定（`keyChanges`）は v1 に存在しないため空で始める */
+function migrateV1ToV2(value: object): object {
+  return { ...value, schemaVersion: 2, keyChanges: [] };
 }
