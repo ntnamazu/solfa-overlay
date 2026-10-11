@@ -28,3 +28,23 @@ export interface Annotation {
   /** 自動生成注釈の非表示化（再生成しても復活させない） */
   deleted: boolean;
 }
+
+/**
+ * Editor の楽譜プレビューから送る注釈の編集 1 件（F-5）
+ *
+ * Renderer は `.omr` の座標系も Audiveris のページも知らないため、位置は
+ * **楽譜プレビューの座標（元PDFのページ・pt・左上原点）**で送る。Main が逆変換する
+ */
+export type AnnotationEdit =
+  /** 楽譜上の位置に階名を書き足す。`x` / `y` は書き足す文字の中心 */
+  | { kind: 'add'; sourcePageIndex: number; x: number; y: number; text: string }
+  /** 文字を書き換える。null は自動の階名に戻す（自動注釈のみ） */
+  | { kind: 'setText'; id: string; text: string | null }
+  /** 削除する（自動注釈は非表示の印を付け、手動注釈は取り除く） */
+  | { kind: 'remove'; id: string }
+  /**
+   * 直前の削除を取り消す
+   *
+   * 削除前の注釈を丸ごと渡す。手動注釈は削除で実体が消えるため、id だけでは戻せない
+   */
+  | { kind: 'restore'; annotation: Annotation };

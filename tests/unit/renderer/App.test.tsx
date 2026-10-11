@@ -52,6 +52,7 @@ function stubApi(overrides: Partial<SolfaOverlayApi> = {}) {
     completeConfirmation: vi.fn().mockResolvedValue(ok(snapshot())),
     // 既定は「取得中のまま」。楽譜プレビューを扱わないテストで PDF の読み込みを走らせない
     getSourcePdf: vi.fn(() => new Promise(() => {})),
+    editAnnotation: vi.fn().mockResolvedValue(ok(snapshot())),
     onOmrProgress: vi.fn((listener: ProgressListener) => {
       listeners.push(listener);
       return unsubscribe;
@@ -441,6 +442,111 @@ describe('App', () => {
           expect(screen.getByRole('alert').textContent).toBe('プロジェクトが開かれていません');
         });
         expect(screen.getByRole<HTMLInputElement>('radio', { name: KODALY }).checked).toBe(true);
+      });
+    });
+
+    describe('注釈の編集', () => {
+      const PDF = new Uint8Array([0x25, 0x50, 0x44, 0x46]);
+      const loadPdf = () =>
+        vi.fn<PdfLoader>().mockResolvedValue({
+          pageSizes: [{ widthPt: 595, heightPt: 842 }],
+          renderPage: () => ({ promise: Promise.resolve(), cancel: () => {} }),
+          destroy: () => {},
+        });
+      /** 楽譜に階名が 1 つ載ったスナップショット */
+      const withAnnotation = (text: string) => {
+        const base = approved();
+        return {
+          ...base,
+          scorePreview: {
+            ...base.scorePreview,
+            pages: [
+              {
+                sourcePageIndex: 0,
+                widthPt: 595,
+                heightPt: 842,
+                annotations: [
+                  {
+                    id: 'solfa-n1',
+                    x: 10,
+                    y: 20,
+                    text,
+                    chromatic: false,
+                    origin: 'auto' as const,
+                    textOverridden: text !== 'do',
+                  },
+                ],
+                skippedMeasures: [],
+                placementWarnings: [],
+              },
+            ],
+          },
+        };
+      };
+
+      async function rewriteDoToFi() {
+        await userEvent.click(await screen.findByText('do'));
+        await userEvent.clear(screen.getByRole('textbox', { name: '階名' }));
+        await userEvent.type(screen.getByRole('textbox', { name: '階名' }), 'fi');
+        await userEvent.click(screen.getByRole('button', { name: '書き換える' }));
+      }
+
+      it('編集を Main へ送り、返ってきた結果で楽譜を描き直す', async () => {
+        const { api } = stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(withAnnotation('do'))),
+          getSourcePdf: vi.fn().mockResolvedValue(ok(PDF)),
+          editAnnotation: vi.fn().mockResolvedValue(ok(withAnnotation('fi'))),
+        });
+        render(<App loadPdf={loadPdf()} />);
+
+        await advanceToEditor();
+        await rewriteDoToFi();
+
+        expect(api.editAnnotation).toHaveBeenCalledWith({
+          kind: 'setText',
+          id: 'solfa-n1',
+          text: 'fi',
+        });
+        expect(await screen.findByText('fi')).toBeDefined();
+        expect(screen.queryByText('do')).toBeNull();
+      });
+
+      it('編集すると直前の出力結果の表示を消す（出力済みのPDFに編集が入っていないため）', async () => {
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(withAnnotation('do'))),
+          getSourcePdf: vi.fn().mockResolvedValue(ok(PDF)),
+          editAnnotation: vi.fn().mockResolvedValue(ok(withAnnotation('fi'))),
+        });
+        render(<App loadPdf={loadPdf()} />);
+
+        await advanceToEditor();
+        await userEvent.click(screen.getByRole('button', { name: '注釈付きPDFを出力' }));
+        await screen.findByText(/件の階名を出力しました/);
+        await rewriteDoToFi();
+
+        await screen.findByText('fi');
+        expect(screen.queryByText(/件の階名を出力しました/)).toBeNull();
+      });
+
+      it('失敗したら理由を示し、楽譜は元のまま', async () => {
+        stubApi({
+          completeConfirmation: vi.fn().mockResolvedValue(ok(withAnnotation('do'))),
+          getSourcePdf: vi.fn().mockResolvedValue(ok(PDF)),
+          editAnnotation: vi
+            .fn()
+            .mockResolvedValue(fail('編集しようとした階名が見つかりません', 'unexpected')),
+        });
+        render(<App loadPdf={loadPdf()} />);
+
+        await advanceToEditor();
+        await rewriteDoToFi();
+
+        await waitFor(() => {
+          expect(screen.getByRole('alert').textContent).toBe(
+            '編集しようとした階名が見つかりません',
+          );
+        });
+        expect(screen.getByText('do')).toBeDefined();
       });
     });
 

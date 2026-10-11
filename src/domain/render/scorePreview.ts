@@ -161,6 +161,8 @@ export function buildScorePreview(input: ScorePreviewInput): ScorePreview {
       y: point.y,
       text: metrics.displayText(content.text).text,
       chromatic: content.chromatic,
+      origin: annotation.origin,
+      textOverridden: annotation.origin === 'auto' && annotation.text !== null,
     });
   }
 

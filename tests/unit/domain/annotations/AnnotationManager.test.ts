@@ -2,14 +2,19 @@ import { describe, expect, it } from 'vitest';
 import {
   AnnotationManager,
   addAnnotation,
+  applyAnnotationEdit,
   autoAnnotationId,
   listSkippedMeasures,
+  manualAnchorAt,
   regenerateAnnotations,
   removeAnnotation,
   updateAnnotation,
 } from '../../../../src/domain/annotations/AnnotationManager';
+import { AnnotationEditError } from '../../../../src/domain/annotations/errors';
+import { solfaFonts } from '../../../../src/domain/render/fontMetrics';
 import type { PageGeometry } from '../../../../src/domain/score/OmrSheetParser';
 import { DEFAULT_SETTINGS } from '../../../../src/shared/constants/DEFAULT_SETTINGS';
+import { MANUAL_TEXT_MAX_LENGTH } from '../../../../src/shared/constants/MANUAL_TEXT_MAX_LENGTH';
 import type { Annotation } from '../../../../src/shared/types/Annotation';
 import type { PageInfo } from '../../../../src/shared/types/Project';
 import type { Measure, NoteEvent, ScoreModel } from '../../../../src/shared/types/ScoreModel';
@@ -281,6 +286,182 @@ describe('注釈の編集', () => {
   it('存在しない id の削除は元の配列と同じ内容を返す', () => {
     const manual = addAnnotation({ pageIndex: 0, x: 1, y: 1 }, 'do', 'm1');
     expect(removeAnnotation([manual], 'zzz')).toEqual([manual]);
+  });
+});
+
+describe('manualAnchorAt（押した位置 → 手動注釈の位置）', () => {
+  const scale = PAGE.omrImageWidthPx / PAGE.widthPt;
+  const metrics = solfaFonts(DEFAULT_SETTINGS.fontFamily).regular;
+  const fontPx = DEFAULT_SETTINGS.fontSizePt * scale;
+
+  it('押した点が文字の中心になるよう、左端とベースラインを決める', () => {
+    const anchor = manualAnchorAt(
+      { sourcePageIndex: 0, x: 100, y: 200 },
+      'fi',
+      [PAGE],
+      DEFAULT_SETTINGS,
+    );
+
+    expect(anchor.pageIndex).toBe(0);
+    expect(anchor.x).toBeCloseTo(100 * scale - metrics.widthPt('fi', fontPx) / 2, 6);
+    expect(anchor.y).toBeCloseTo(
+      200 * (PAGE.omrImageHeightPx / PAGE.heightPt) + metrics.ascentPt(fontPx) / 2,
+      6,
+    );
+  });
+
+  it('1 つの元PDFページに複数の Audiveris ページがあれば、最小の pageIndex を選ぶ', () => {
+    // Victoria は sheet#1（元PDF 1 ページ目）が Audiveris の page 0 と page 1 を含む
+    const pages = [
+      { ...PAGE, pageIndex: 2, sourcePageIndex: 1 },
+      { ...PAGE, pageIndex: 1, sourcePageIndex: 0 },
+      { ...PAGE, pageIndex: 0, sourcePageIndex: 0 },
+    ];
+    expect(
+      manualAnchorAt({ sourcePageIndex: 0, x: 1, y: 1 }, 'do', pages, DEFAULT_SETTINGS).pageIndex,
+    ).toBe(0);
+    expect(
+      manualAnchorAt({ sourcePageIndex: 1, x: 1, y: 1 }, 'do', pages, DEFAULT_SETTINGS).pageIndex,
+    ).toBe(2);
+  });
+
+  it('対応する Audiveris ページが無い元PDFページには書き足せない', () => {
+    expect(() =>
+      manualAnchorAt({ sourcePageIndex: 5, x: 1, y: 1 }, 'do', [PAGE], DEFAULT_SETTINGS),
+    ).toThrow(AnnotationEditError);
+  });
+
+  it('座標を変換できないページには書き足せない（NaN の位置を保存しない）', () => {
+    expect(() =>
+      manualAnchorAt(
+        { sourcePageIndex: 0, x: 1, y: 1 },
+        'do',
+        [{ ...PAGE, omrImageWidthPx: 0 }],
+        DEFAULT_SETTINGS,
+      ),
+    ).toThrow(AnnotationEditError);
+  });
+});
+
+describe('applyAnnotationEdit（楽譜プレビューからの編集）', () => {
+  const auto: Annotation = {
+    id: 'solfa-n1',
+    layer: 'solfa',
+    anchor: { pageIndex: 0, x: 10, y: 20 },
+    noteId: 'n1',
+    text: null,
+    origin: 'auto',
+    deleted: false,
+  };
+  const manual = addAnnotation({ pageIndex: 0, x: 30, y: 40 }, 'fi', 'manual-1');
+  const context = { pages: [PAGE], settings: DEFAULT_SETTINGS, newId: () => 'manual-new' };
+  const apply = (annotations: Annotation[], edit: Parameters<typeof applyAnnotationEdit>[1]) =>
+    applyAnnotationEdit(annotations, edit, context);
+
+  describe('add', () => {
+    it('押した位置に手動注釈を足す（id は発行したもの・前後の空白は落とす）', () => {
+      const result = apply([auto], {
+        kind: 'add',
+        sourcePageIndex: 0,
+        x: 100,
+        y: 200,
+        text: ' si ',
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result[1]).toEqual({
+        id: 'manual-new',
+        layer: 'solfa',
+        anchor: manualAnchorAt(
+          { sourcePageIndex: 0, x: 100, y: 200 },
+          'si',
+          [PAGE],
+          DEFAULT_SETTINGS,
+        ),
+        noteId: null,
+        text: 'si',
+        origin: 'manual',
+        deleted: false,
+      });
+    });
+
+    it('空白だけの文字は書き足せない', () => {
+      expect(() => apply([], { kind: 'add', sourcePageIndex: 0, x: 1, y: 1, text: '  ' })).toThrow(
+        AnnotationEditError,
+      );
+    });
+
+    it(`${MANUAL_TEXT_MAX_LENGTH} 文字を超える文字は書き足せない（譜面を横切る長文を防ぐ）`, () => {
+      const text = 'a'.repeat(MANUAL_TEXT_MAX_LENGTH + 1);
+      expect(() => apply([], { kind: 'add', sourcePageIndex: 0, x: 1, y: 1, text })).toThrow(
+        AnnotationEditError,
+      );
+      expect(
+        apply([], { kind: 'add', sourcePageIndex: 0, x: 1, y: 1, text: text.slice(1) }),
+      ).toHaveLength(1);
+    });
+  });
+
+  describe('setText', () => {
+    it('自動注釈の文字を上書きし、位置と音符の参照は変えない', () => {
+      const [edited] = apply([auto], { kind: 'setText', id: auto.id, text: 'fi' });
+      expect(edited).toEqual({ ...auto, text: 'fi' });
+    });
+
+    it('null で自動の階名に戻す', () => {
+      const [edited] = apply([{ ...auto, text: 'fi' }], {
+        kind: 'setText',
+        id: auto.id,
+        text: null,
+      });
+      expect(edited?.text).toBeNull();
+    });
+
+    it('手動注釈は書き換えられるが、自動の階名には戻せない（戻る先が無い）', () => {
+      expect(apply([manual], { kind: 'setText', id: manual.id, text: 'ta' })[0]?.text).toBe('ta');
+      expect(() => apply([manual], { kind: 'setText', id: manual.id, text: null })).toThrow(
+        AnnotationEditError,
+      );
+    });
+
+    it('存在しない・削除済みの注釈は書き換えられない（古い画面からの操作）', () => {
+      expect(() => apply([auto], { kind: 'setText', id: 'nope', text: 'do' })).toThrow(
+        AnnotationEditError,
+      );
+      expect(() =>
+        apply([{ ...auto, deleted: true }], { kind: 'setText', id: auto.id, text: 'do' }),
+      ).toThrow(AnnotationEditError);
+    });
+  });
+
+  describe('remove と restore', () => {
+    it('自動注釈は非表示の印を付け、restore で外す', () => {
+      const removed = apply([auto], { kind: 'remove', id: auto.id });
+      expect(removed).toEqual([{ ...auto, deleted: true }]);
+      expect(apply(removed, { kind: 'restore', annotation: auto })).toEqual([auto]);
+    });
+
+    it('手動注釈は取り除き、restore で削除前の内容をそのまま戻す', () => {
+      const removed = apply([auto, manual], { kind: 'remove', id: manual.id });
+      expect(removed).toEqual([auto]);
+      expect(apply(removed, { kind: 'restore', annotation: manual })).toEqual([auto, manual]);
+    });
+
+    it('存在しない注釈は削除できない', () => {
+      expect(() => apply([auto], { kind: 'remove', id: 'nope' })).toThrow(AnnotationEditError);
+    });
+
+    it('実体の無い自動注釈は restore で持ち込めない（自動注釈は再生成でしか作らない）', () => {
+      expect(() => apply([], { kind: 'restore', annotation: auto })).toThrow(AnnotationEditError);
+    });
+  });
+
+  it('入力の配列を書き換えない', () => {
+    const annotations = [auto, manual];
+    const before = structuredClone(annotations);
+    apply(annotations, { kind: 'remove', id: auto.id });
+    apply(annotations, { kind: 'setText', id: manual.id, text: 'ta' });
+    expect(annotations).toEqual(before);
   });
 });
 

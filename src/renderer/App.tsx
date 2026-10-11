@@ -6,6 +6,7 @@ import type {
   IpcResult,
   ProjectSnapshot,
 } from '../shared/ipc/contract';
+import type { AnnotationEdit } from '../shared/types/Annotation';
 import type { KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress as OmrProgressData } from '../shared/types/OmrProgress';
 import type { ProjectSettings } from '../shared/types/ProjectSettings';
@@ -224,6 +225,23 @@ export function App({ loadPdf }: AppProps = {}) {
     [api, accept],
   );
 
+  const editAnnotation = useCallback(
+    async (edit: AnnotationEdit) => {
+      if (api === null) {
+        return;
+      }
+      setBusy(true);
+      const result = await api.editAnnotation(edit);
+      setBusy(false);
+      if (accept(result)) {
+        // 出力済みのPDFには今の編集が入っていない。「出力しました」を残すと、
+        // そのファイルに編集が反映されていると誤解される
+        setExportSummary(null);
+      }
+    },
+    [api, accept],
+  );
+
   const approve = useCallback(async () => {
     if (api === null) {
       return;
@@ -340,6 +358,7 @@ export function App({ loadPdf }: AppProps = {}) {
         exportSummary={exportSummary}
         onExportPdf={() => void exportPdf()}
         onChangeSettings={(settings) => void changeSettings(settings)}
+        onEditAnnotation={(edit) => void editAnnotation(edit)}
         onBackToConfirm={() => {
           setScreen('clefKey');
         }}

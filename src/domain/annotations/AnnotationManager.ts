@@ -1,13 +1,15 @@
-import type { Annotation } from '../../shared/types/Annotation';
+import { MANUAL_TEXT_MAX_LENGTH } from '../../shared/constants/MANUAL_TEXT_MAX_LENGTH';
+import type { Annotation, AnnotationEdit } from '../../shared/types/Annotation';
 import type { AnnotationIssue } from '../../shared/types/Issues';
 import type { PageInfo } from '../../shared/types/Project';
 import type { ProjectSettings } from '../../shared/types/ProjectSettings';
 import type { Measure, NoteEvent, PageAnchor, ScoreModel } from '../../shared/types/ScoreModel';
 import type { PageGeometry } from '../score/OmrSheetParser';
-import { pxPerPt } from '../render/coordinateTransform';
+import { fromPreviewPoint, pxPerPt } from '../render/coordinateTransform';
 import type { SolfaFonts } from '../render/fontMetrics';
 import { solfaFonts } from '../render/fontMetrics';
 import { syllableFor } from '../solfa/syllableTables';
+import { AnnotationEditError } from './errors';
 import { PlacementSpace } from './placementResolver';
 
 /**
@@ -251,6 +253,119 @@ export function removeAnnotation(annotations: readonly Annotation[], id: string)
   return target.origin === 'manual'
     ? annotations.filter((annotation) => annotation.id !== id)
     : updateAnnotation(annotations, id, { deleted: true });
+}
+
+/** 注釈の編集に要る文脈（位置の逆変換と文字の寸法、新しい id の発行） */
+export interface AnnotationEditContext {
+  pages: readonly PageInfo[];
+  settings: ProjectSettings;
+  /** 手動注釈の id を発行する（重複しないこと） */
+  newId: () => string;
+}
+
+/** 手動の文字を正規化する（前後の空白を落とす）。書けない文字列なら例外 */
+function normalizeManualText(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    throw new AnnotationEditError('階名の文字が空です');
+  }
+  if ([...trimmed].length > MANUAL_TEXT_MAX_LENGTH) {
+    throw new AnnotationEditError(`階名は ${MANUAL_TEXT_MAX_LENGTH} 文字以内で入力してください`);
+  }
+  return trimmed;
+}
+
+/**
+ * 楽譜プレビュー上の位置から、手動注釈の `anchor` を決める
+ *
+ * - 元PDFページ → Audiveris ページは、対応する `PageInfo` のうち最小の `pageIndex` を選ぶ。
+ *   同じ sheet の Audiveris ページは画像座標系を共有する（`PageInfo.omrImageWidthPx`）ため、
+ *   どれを選んでも描かれる位置は変わらない
+ * - 押した点が**文字の中心**になるようにする。`anchor` は左端＋ベースラインなので、
+ *   幅の半分だけ左、アセンダの半分だけ下へずらす（押した点を左端にすると文字が右へずれて見える）
+ *
+ * @param at - 元PDFのページと、プレビュー座標（pt・左上原点）
+ * @throws AnnotationEditError 対応するページが無い・座標を変換できない場合
+ */
+export function manualAnchorAt(
+  at: { sourcePageIndex: number; x: number; y: number },
+  text: string,
+  pages: readonly PageInfo[],
+  settings: ProjectSettings,
+): PageAnchor {
+  const page = pages
+    .filter((candidate) => candidate.sourcePageIndex === at.sourcePageIndex)
+    .sort((a, b) => a.pageIndex - b.pageIndex)[0];
+  const center = page === undefined ? null : fromPreviewPoint(page, at.x, at.y);
+  const scale = page === undefined ? null : pxPerPt(page);
+  if (page === undefined || center === null || scale === null) {
+    throw new AnnotationEditError(
+      `${at.sourcePageIndex + 1} ページは楽譜の読み取り結果と対応が取れないため、階名を書き足せません`,
+    );
+  }
+  // 自動注釈と同じ書体・サイズで測る（描画と配置で同じ寸法を使う）
+  const metrics = solfaFonts(settings.fontFamily).regular;
+  const fontPx = settings.fontSizePt * scale;
+  return {
+    pageIndex: page.pageIndex,
+    x: center.x - metrics.widthPt(text, fontPx) / 2,
+    y: center.y + metrics.ascentPt(fontPx) / 2,
+  };
+}
+
+/** 編集対象の注釈を探す。無ければ例外（古い画面からの操作など） */
+function requireAnnotation(annotations: readonly Annotation[], id: string): Annotation {
+  const target = annotations.find((annotation) => annotation.id === id);
+  if (target === undefined || target.deleted) {
+    throw new AnnotationEditError('編集しようとした階名が見つかりません。画面を開き直してください');
+  }
+  return target;
+}
+
+/**
+ * 注釈の編集を 1 件適用した新しい配列を返す（F-5。Editor の楽譜プレビューからの操作）
+ *
+ * 入力の配列は変更しない。適用できない編集は例外にし、中途半端な状態を作らない
+ *
+ * @throws AnnotationEditError 適用できない編集の場合
+ */
+export function applyAnnotationEdit(
+  annotations: readonly Annotation[],
+  edit: AnnotationEdit,
+  context: AnnotationEditContext,
+): Annotation[] {
+  switch (edit.kind) {
+    case 'add': {
+      const text = normalizeManualText(edit.text);
+      const anchor = manualAnchorAt(edit, text, context.pages, context.settings);
+      return [...annotations, addAnnotation(anchor, text, context.newId())];
+    }
+    case 'setText': {
+      const target = requireAnnotation(annotations, edit.id);
+      if (edit.text === null && target.origin === 'manual') {
+        // 手動注釈には戻る先の自動の階名が無い（消したいなら削除を使う）
+        throw new AnnotationEditError('書き足した階名は自動の階名に戻せません');
+      }
+      return updateAnnotation(annotations, edit.id, {
+        text: edit.text === null ? null : normalizeManualText(edit.text),
+      });
+    }
+    case 'remove':
+      requireAnnotation(annotations, edit.id);
+      return removeAnnotation(annotations, edit.id);
+    case 'restore': {
+      const { annotation } = edit;
+      if (annotations.some((existing) => existing.id === annotation.id)) {
+        // 自動注釈は削除しても実体が残っている（非表示の印を外す）
+        return updateAnnotation(annotations, annotation.id, { deleted: false });
+      }
+      if (annotation.origin !== 'manual') {
+        // 自動注釈は再生成で作られる。実体が無いものを外から持ち込ませない
+        throw new AnnotationEditError('元に戻そうとした階名が見つかりません');
+      }
+      return [...annotations, { ...annotation, deleted: false }];
+    }
+  }
 }
 
 /** 階名が欠落している小節（Editor のジャンプ先一覧） */
