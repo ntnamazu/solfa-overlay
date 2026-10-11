@@ -5,7 +5,7 @@ import type {
   ProjectSnapshot,
 } from '../shared/ipc/contract';
 import type { AnnotationEdit } from '../shared/types/Annotation';
-import type { KeyRegionDecision } from '../shared/types/KeyRegion';
+import type { KeyChangeEdit, KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress } from '../shared/types/OmrProgress';
 import type { Project } from '../shared/types/Project';
 import type { ProjectSettings } from '../shared/types/ProjectSettings';
@@ -44,6 +44,8 @@ export interface SolfaOverlayApi {
   getSourcePdf(): Promise<IpcResult<Uint8Array>>;
   /** 楽譜プレビューからの注釈の編集（追加・書き換え・削除・取り消し） */
   editAnnotation(edit: AnnotationEdit): Promise<IpcResult<ProjectSnapshot>>;
+  /** 楽譜プレビューからの転調点の編集（挿入・上書き・削除・自動判定に戻す） */
+  editKeyChange(edit: KeyChangeEdit): Promise<IpcResult<ProjectSnapshot>>;
 
   /**
    * OMR の進捗を購読する

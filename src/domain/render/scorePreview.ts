@@ -1,16 +1,18 @@
 import { DEFAULT_SETTINGS } from '../../shared/constants/DEFAULT_SETTINGS';
 import type { Annotation } from '../../shared/types/Annotation';
 import type { AnnotationIssue } from '../../shared/types/Issues';
+import type { KeyRegion } from '../../shared/types/KeyRegion';
 import type { PageInfo } from '../../shared/types/Project';
 import type { ProjectSettings } from '../../shared/types/ProjectSettings';
 import type {
   ScorePreview,
+  ScorePreviewMeasure,
   ScorePreviewPage,
   ScorePreviewRegion,
   ScorePreviewStyle,
 } from '../../shared/types/ScorePreview';
 import type { Measure, ScoreModel, SystemInfo } from '../../shared/types/ScoreModel';
-import type { OmrPageContent } from '../score/OmrSheetParser';
+import type { OmrPageContent, OmrStaff } from '../score/OmrSheetParser';
 import {
   annotationContent,
   isDrawnAnnotation,
@@ -43,6 +45,8 @@ export interface ScorePreviewInput {
   pages: readonly PageInfo[];
   annotations: readonly Annotation[];
   annotationIssues: readonly AnnotationIssue[];
+  /** 調文脈（区切りの印を描く） */
+  keyRegions: readonly KeyRegion[];
   settings: ProjectSettings;
 }
 
@@ -77,6 +81,8 @@ class PageCollector {
       annotations: [],
       skippedMeasures: [],
       placementWarnings: [],
+      measures: [],
+      keyChanges: [],
     };
     this.bySource.set(info.sourcePageIndex, page);
     return page;
@@ -96,6 +102,53 @@ function systemOf(systems: readonly SystemInfo[], measureIndex: number): SystemI
   );
 }
 
+/** `.omr` px の矩形（左右・上下の端） */
+interface PxRect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/**
+ * 譜表の譜線範囲を縦にまとめた範囲（`.omr` px）。スキップ小節の枠と小節の範囲が共有する
+ *
+ * 譜線ちょうどで切ると最上線・最下線の上の符頭が枠からはみ出すため、半譜線間隔ぶん広げる。
+ * 譜線範囲が取れた譜表だけで決め、1 つも取れなければ null（推測で範囲を作らない）
+ */
+function stavesVerticalRange(
+  staves: readonly OmrStaff[],
+  interlinePx: number,
+): { top: number; bottom: number } | null {
+  const extents = staves.flatMap((staff) => (staff.extent === undefined ? [] : [staff.extent]));
+  if (extents.length === 0) {
+    return null;
+  }
+  const margin = interlinePx / 2;
+  return {
+    top: Math.min(...extents.map((extent) => extent.top)) - margin,
+    bottom: Math.max(...extents.map((extent) => extent.bottom)) + margin,
+  };
+}
+
+/** `.omr` px の矩形を画面座標（pt・左上原点）の位置と大きさへ変換する。変換できなければ null */
+function toPreviewRect(
+  info: PageInfo,
+  rect: PxRect,
+): { x: number; y: number; width: number; height: number } | null {
+  const topLeft = toPreviewPoint(info, rect.left, rect.top);
+  const bottomRight = toPreviewPoint(info, rect.right, rect.bottom);
+  if (topLeft === null || bottomRight === null) {
+    return null;
+  }
+  return {
+    x: topLeft.x,
+    y: topLeft.y,
+    width: bottomRight.x - topLeft.x,
+    height: bottomRight.y - topLeft.y,
+  };
+}
+
 /**
  * スキップ小節のハイライト範囲（`.omr` px）を求める
  *
@@ -108,29 +161,23 @@ function skippedRegionPx(
   system: SystemInfo,
   omrPages: readonly OmrPageContent[],
   interlinePx: number,
-): { left: number; right: number; top: number; bottom: number } | null {
+): PxRect | null {
   const omrSystem = omrPages[system.pageIndex]?.systems[system.systemIndex];
   if (omrSystem === undefined) {
     return null;
   }
-  const extents = omrSystem.staves
-    .filter((staff) => staff.partId === measure.partId)
-    .flatMap((staff) => (staff.extent === undefined ? [] : [staff.extent]));
+  const vertical = stavesVerticalRange(
+    omrSystem.staves.filter((staff) => staff.partId === measure.partId),
+    interlinePx,
+  );
   const stack = omrSystem.stacks[measure.index - system.firstMeasureIndex];
   const first = omrSystem.stacks[0];
   const last = omrSystem.stacks[omrSystem.stacks.length - 1];
   const horizontal = stack ?? (first && last ? { left: first.left, right: last.right } : null);
-  if (extents.length === 0 || horizontal === null) {
+  if (vertical === null || horizontal === null) {
     return null;
   }
-  // 譜線ちょうどで切ると最上線・最下線の上の符頭が枠からはみ出すため、半譜線間隔ぶん広げる
-  const margin = interlinePx / 2;
-  return {
-    left: horizontal.left,
-    right: horizontal.right,
-    top: Math.min(...extents.map((extent) => extent.top)) - margin,
-    bottom: Math.max(...extents.map((extent) => extent.bottom)) + margin,
-  };
+  return { left: horizontal.left, right: horizontal.right, ...vertical };
 }
 
 /** Editor の楽譜プレビューに重ねる内容を組み立てる */
@@ -193,7 +240,72 @@ export function buildScorePreview(input: ScorePreviewInput): ScorePreview {
     }
   }
 
+  const measures = measureRegions(score.systems, omrPages, pageInfos);
+  for (const { info, region } of measures.values()) {
+    collector.pageFor(info).measures.push(region);
+  }
+  for (const keyRegion of input.keyRegions) {
+    const located = measures.get(keyRegion.start.measureIndex);
+    // 位置が取れない区切りは印を作らない（Editor の「調の区切り」一覧からは開ける）
+    if (located === undefined) {
+      continue;
+    }
+    collector.pageFor(located.info).keyChanges.push({
+      measureIndex: keyRegion.start.measureIndex,
+      x: located.region.x,
+      y: located.region.y,
+      height: located.region.height,
+      tonicStep: keyRegion.tonicStep,
+      tonicAlter: keyRegion.tonicAlter,
+      mode: keyRegion.mode,
+      source: keyRegion.source,
+    });
+  }
+
   return { style: resolveStyle(settings), pages: collector.toPages() };
+}
+
+/**
+ * 小節ごとの範囲（段の全譜表の縦範囲 × stack の横範囲）を画面座標で求める
+ *
+ * 縦はスキップ小節の枠と同じく、譜線ちょうどで切らず半譜線間隔ぶん広げる。
+ * 譜線範囲が取れた譜表だけで縦範囲を決める（一部の譜表だけ欠けた段では範囲が狭くなるが、
+ * 押して小節を決める用途には足りる。実データでは全譜表に譜線範囲が出る）。
+ * stack・譜線範囲・ページ寸法のいずれかが分からない小節は**推測で作らない**
+ * （押しても小節が決まらないだけで、転調点は「調の区切り」一覧や他の小節から指定できる）
+ *
+ * @returns 通し小節番号 → 範囲（段は曲順のため、同じ番号が 2 度現れたら先の段を採る）
+ */
+function measureRegions(
+  systems: readonly SystemInfo[],
+  omrPages: readonly OmrPageContent[],
+  pageInfos: ReadonlyMap<number, PageInfo>,
+): Map<number, { info: PageInfo; region: ScorePreviewMeasure }> {
+  const regions = new Map<number, { info: PageInfo; region: ScorePreviewMeasure }>();
+  for (const system of systems) {
+    const info = pageInfos.get(system.pageIndex);
+    const omrSystem = omrPages[system.pageIndex]?.systems[system.systemIndex];
+    const vertical =
+      info === undefined || omrSystem === undefined
+        ? null
+        : stavesVerticalRange(omrSystem.staves, info.interlinePx);
+    if (info === undefined || omrSystem === undefined || vertical === null) {
+      continue;
+    }
+    for (let offset = 0; offset < system.measureCount; offset += 1) {
+      const measureIndex = system.firstMeasureIndex + offset;
+      const stack = omrSystem.stacks[offset];
+      // 先の段で登録済みの小節は座標を変換するまでもなく捨てる
+      if (stack === undefined || regions.has(measureIndex)) {
+        continue;
+      }
+      const rect = toPreviewRect(info, { left: stack.left, right: stack.right, ...vertical });
+      if (rect !== null) {
+        regions.set(measureIndex, { info, region: { measureIndex, ...rect } });
+      }
+    }
+  }
+  return regions;
 }
 
 /** スキップ小節 1 つのハイライト範囲を画面座標で求める */
@@ -209,20 +321,9 @@ function skippedRegion(
     return null;
   }
   const px = skippedRegionPx(measure, system, omrPages, info.interlinePx);
-  const topLeft = px === null ? null : toPreviewPoint(info, px.left, px.top);
-  const bottomRight = px === null ? null : toPreviewPoint(info, px.right, px.bottom);
-  if (topLeft === null || bottomRight === null) {
+  const rect = px === null ? null : toPreviewRect(info, px);
+  if (rect === null) {
     return null;
   }
-  return {
-    info,
-    region: {
-      partId: measure.partId,
-      measureIndex: measure.index,
-      x: topLeft.x,
-      y: topLeft.y,
-      width: bottomRight.x - topLeft.x,
-      height: bottomRight.y - topLeft.y,
-    },
-  };
+  return { info, region: { partId: measure.partId, measureIndex: measure.index, ...rect } };
 }

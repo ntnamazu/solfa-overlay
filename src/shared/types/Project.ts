@@ -1,6 +1,6 @@
 import type { Annotation } from './Annotation';
 import type { ConfirmationState } from './Confirmation';
-import type { KeyRegion, KeyRegionDecision } from './KeyRegion';
+import type { KeyChange, KeyRegion, KeyRegionDecision } from './KeyRegion';
 import type { ProjectSettings } from './ProjectSettings';
 import type { ScoreModel } from './ScoreModel';
 import type { StructureDecision } from './StructureDecision';
@@ -36,7 +36,7 @@ export interface PageInfo {
  * プロジェクト全体（`.solfaproj` 内 `project.json` のルート）
  *
  * `score` / `keyRegions` は解析結果のキャッシュであり、**正は decisions 側**にある。
- * 確定構造・照合・調文脈は `structureDecisions` / `confirmation` / `keyRegionDecisions` と
+ * 確定構造・照合・調文脈は `structureDecisions` / `confirmation` / `keyRegionDecisions` / `keyChanges` と
  * 同梱した OMR 成果物から再現できるため、認識ロジックを改善しても保存済みプロジェクトの
  * ユーザー判断は生き続ける（信頼性要件「修正作業の永続化」）
  */
@@ -55,6 +55,8 @@ export interface Project {
   structureDecisions: StructureDecision[];
   /** 調文脈に対するユーザー判断（旋法・調号の訂正） */
   keyRegionDecisions: KeyRegionDecision[];
+  /** 転調点の指定（F-6。Editor で挿入・上書き・削除した調の区切り） */
+  keyChanges: KeyChange[];
   /** 調文脈（自動検出＋ユーザー訂正の反映結果） */
   keyRegions: KeyRegion[];
   /** 注釈レイヤー（自動生成＋手動。Phase 5 で使用） */

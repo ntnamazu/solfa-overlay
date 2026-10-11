@@ -7,7 +7,11 @@ import type {
 } from '../../../../src/domain/score/MusicXmlParser';
 import type { OmrArtifacts } from '../../../../src/domain/score/ScoreModelBuilder';
 import { KeyRegionBuilder } from '../../../../src/domain/solfa/KeyRegionBuilder';
-import type { KeyRegion, KeyRegionDecision } from '../../../../src/shared/types/KeyRegion';
+import type {
+  KeyChange,
+  KeyRegion,
+  KeyRegionDecision,
+} from '../../../../src/shared/types/KeyRegion';
 import type { ResolvedStructure } from '../../../../src/shared/types/ResolvedStructure';
 
 /** 小節ごとの調号宣言（null は宣言なし＝前の調号が持続） */
@@ -549,5 +553,118 @@ describe('KeyRegionBuilder: ユーザー訂正（KeyRegionDecision）', () => {
 
       expect(describeRegions(keyRegions)).toEqual(['m0:C:major:auto', 'm1:D:major:user']);
     });
+  });
+});
+
+describe('KeyRegionBuilder: 転調点の指定（F-6）', () => {
+  /** P1 は m0 ハ長調・m4 でト長調（auto の区切りが m0 と m4） */
+  const parts = [part('P1', [null, null, null, null, K(1), null, null, null])];
+  const buildWith = (keyChanges: KeyChange[], decisions: KeyRegionDecision[] = []) =>
+    new KeyRegionBuilder().build(
+      artifactsOf([musicXml(parts)]),
+      structureOf([{ first: 0, count: 8 }]),
+      decisions,
+      keyChanges,
+    );
+
+  it('区切りの無い小節に挿入する（source: user・offset 0）', () => {
+    const { keyRegions, issues } = buildWith([
+      { kind: 'set', measureIndex: 2, fifths: 0, mode: 'minor' },
+    ]);
+    expect(describeRegions(keyRegions)).toEqual([
+      'm0:C:major:auto',
+      'm2:A:minor:user',
+      'm4:G:major:auto',
+    ]);
+    expect(keyRegions[1]).toMatchObject({ id: 'key-2', start: { measureIndex: 2, offset: 0 } });
+    expect(issues).toEqual([]);
+  });
+
+  it('自動検出の区切りを上書きすると user になる', () => {
+    const { keyRegions } = buildWith([{ kind: 'set', measureIndex: 4, fifths: 2, mode: 'major' }]);
+    expect(describeRegions(keyRegions)).toEqual(['m0:C:major:auto', 'm4:D:major:user']);
+    expect(keyRegions[1]?.id).toBe('key-4');
+  });
+
+  it('曲頭の調も選び直せる', () => {
+    const { keyRegions } = buildWith([{ kind: 'set', measureIndex: 0, fifths: -1, mode: 'major' }]);
+    expect(describeRegions(keyRegions)).toEqual(['m0:F:major:user', 'm4:G:major:auto']);
+  });
+
+  it('区切りを取り除くと前の区間の調が続く', () => {
+    const { keyRegions, issues } = buildWith([{ kind: 'remove', measureIndex: 4 }]);
+    expect(describeRegions(keyRegions)).toEqual(['m0:C:major:auto']);
+    expect(issues).toEqual([]);
+  });
+
+  it('前の区間と同じ調を指定した転調点は統合されて消える', () => {
+    const { keyRegions } = buildWith([{ kind: 'set', measureIndex: 2, fifths: 0, mode: 'major' }]);
+    expect(describeRegions(keyRegions)).toEqual(['m0:C:major:auto', 'm4:G:major:auto']);
+  });
+
+  it('取り除いた結果、前後が同じ調になれば統合する', () => {
+    const { keyRegions } = buildWith([
+      { kind: 'set', measureIndex: 2, fifths: 1, mode: 'major' },
+      { kind: 'remove', measureIndex: 4 },
+    ]);
+    expect(describeRegions(keyRegions)).toEqual(['m0:C:major:auto', 'm2:G:major:user']);
+    const merged = buildWith([
+      { kind: 'set', measureIndex: 2, fifths: 1, mode: 'major' },
+    ]).keyRegions;
+    // m2 からト長調にすると m4 の自動の区切り（ト長調）は転調していないため消える
+    expect(describeRegions(merged)).toEqual(['m0:C:major:auto', 'm2:G:major:user']);
+  });
+
+  it.each([
+    { name: '範囲外の小節', change: { kind: 'set', measureIndex: 8, fifths: 1, mode: 'major' } },
+    { name: '範囲外の削除', change: { kind: 'remove', measureIndex: -1 } },
+    { name: '区切りの無い小節の削除', change: { kind: 'remove', measureIndex: 3 } },
+    { name: '曲頭の削除', change: { kind: 'remove', measureIndex: 0 } },
+  ] satisfies { name: string; change: KeyChange }[])(
+    '$name は適用せず unmatchedKeyChange として報告する',
+    ({ change }) => {
+      const { keyRegions, issues } = buildWith([change]);
+      expect(describeRegions(keyRegions)).toEqual(['m0:C:major:auto', 'm4:G:major:auto']);
+      expect(issues).toEqual([{ kind: 'unmatchedKeyChange', measureIndex: change.measureIndex }]);
+    },
+  );
+
+  it('扱えない調号は unsupportedKeySignature として報告する', () => {
+    const { keyRegions, issues } = buildWith([
+      { kind: 'set', measureIndex: 2, fifths: 9, mode: 'major' },
+    ]);
+    expect(describeRegions(keyRegions)).toEqual(['m0:C:major:auto', 'm4:G:major:auto']);
+    expect(issues).toEqual([
+      { kind: 'unsupportedKeySignature', measureIndex: 2, partId: null, fifths: 9 },
+    ]);
+  });
+
+  it('自動判定の区切り（指定・訂正を反映する前）と曲の小節数も返す', () => {
+    const result = buildWith(
+      [
+        { kind: 'set', measureIndex: 2, fifths: 0, mode: 'minor' },
+        { kind: 'remove', measureIndex: 4 },
+      ],
+      [{ measureIndex: 0, mode: 'minor' }],
+    );
+    expect(describeRegions(result.detectedKeyRegions)).toEqual([
+      'm0:C:major:auto',
+      'm4:G:major:auto',
+    ]);
+    expect(result.measureCount).toBe(8);
+  });
+
+  it('確認画面の訂正は、挿入した区間にも適用できる（転調点の指定を先に当てる）', () => {
+    const { keyRegions, issues } = buildWith(
+      [{ kind: 'set', measureIndex: 2, fifths: -1, mode: 'major' }],
+      [{ measureIndex: 2, mode: 'minor' }],
+    );
+    // ヘ長調の区間に短調を指定 → 同じ調号のニ短調
+    expect(describeRegions(keyRegions)).toEqual([
+      'm0:C:major:auto',
+      'm2:D:minor:user',
+      'm4:G:major:auto',
+    ]);
+    expect(issues).toEqual([]);
   });
 });

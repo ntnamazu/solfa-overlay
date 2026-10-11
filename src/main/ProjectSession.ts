@@ -14,13 +14,14 @@ import { ScoreModelBuilder } from '../domain/score/ScoreModelBuilder';
 import type { BuildIssue, OmrArtifacts } from '../domain/score/ScoreModelBuilder';
 import { buildConfirmationItems, mergeCorrections } from '../domain/score/confirmationItems';
 import { KeyRegionBuilder } from '../domain/solfa/KeyRegionBuilder';
+import { applyKeyChangeEdit } from '../domain/solfa/keyChanges';
 import type { KeyRegionIssue } from '../domain/solfa/KeyRegionBuilder';
 import { SolfaEngine, applyDegrees } from '../domain/solfa/SolfaEngine';
 import { DEFAULT_SETTINGS } from '../shared/constants/DEFAULT_SETTINGS';
 import type { SolfaPreviewRow } from '../shared/ipc/contract';
 import type { AnnotationEdit } from '../shared/types/Annotation';
 import type { AnnotationIssue, PageInfoIssue, RenderIssue } from '../shared/types/Issues';
-import type { KeyRegionDecision } from '../shared/types/KeyRegion';
+import type { KeyChangeEdit, KeyRegion, KeyRegionDecision } from '../shared/types/KeyRegion';
 import type { OmrProgress } from '../shared/types/OmrProgress';
 import type { OmrRawArtifacts } from '../shared/types/OmrRawArtifacts';
 import type { Project } from '../shared/types/Project';
@@ -64,6 +65,12 @@ export interface SessionSnapshot {
   preview: SolfaPreviewRow[];
   /** Editor の楽譜プレビューに重ねる内容（注釈・スキップ小節・配置警告） */
   scorePreview: ScorePreview;
+  /**
+   * 自動判定の調の区切り（転調点の指定・確認画面の訂正を反映する前）
+   *
+   * Editor が「自動判定に戻す」を出すか・戻る先の調を示すのに使う
+   */
+  detectedKeyRegions: KeyRegion[];
   /**
    * 対象が見つからず適用されなかった訂正
    *
@@ -151,6 +158,15 @@ export class ProjectSession {
   > = { structureIssues: [], buildIssues: [], keyRegionIssues: [], annotationIssues: [] };
   /** ページ寸法の確定で出た問題（解析のたびには変わらないため別に保持する） */
   private pageIssues: PageInfoIssue[] = [];
+  /**
+   * 直近の解析での自動判定の区切りと曲の小節数（転調点の編集の解釈と、「自動判定に戻す」の表示に使う）
+   *
+   * `lastIssues` と同じく、解析を流し直さない承認でもスナップショットに載せるため保持する
+   */
+  private keyContext: { detectedKeyRegions: KeyRegion[]; measureCount: number } = {
+    detectedKeyRegions: [],
+    measureCount: 0,
+  };
   /** Editor の階名プレビュー（承認時にも同じ内容を返せるよう保持する） */
   private preview: SolfaPreviewRow[] = [];
   /** Editor の楽譜プレビュー（`preview` と同じく承認時にも返せるよう保持する） */
@@ -401,6 +417,36 @@ export class ProjectSession {
   }
 
   /**
+   * 楽譜プレビューからの転調点の指定を適用して解析し直す（F-6）
+   *
+   * 同じ小節の確認画面の訂正（`keyRegionDecisions`）は外す。調文脈は「転調点の指定 → 訂正」の
+   * 順に組み立てるため、残すと**今した指定が古い訂正に上書きされて画面に出ない**（後からの操作を勝たせる）。
+   *
+   * 承認は無効化しない。転調点は歌い手の解釈の指定であり、確認画面が確かめた
+   * 読み取り結果（音部記号・調号）を変えないため（`editAnnotation` / `setSettings` と同じ扱い）
+   *
+   * @throws KeyChangeEditError 適用できない指定の場合（指定は変更しない）
+   */
+  editKeyChange(edit: KeyChangeEdit): SessionSnapshot {
+    const { project } = this.require();
+    // 直近の解析と同じ小節数・自動判定の区切りで解釈する（解析側の範囲判定と食い違わせない）
+    const keyChanges = applyKeyChangeEdit(project.keyChanges, edit, {
+      measureCount: this.keyContext.measureCount,
+      detectedMeasures: new Set(
+        this.keyContext.detectedKeyRegions.map((region) => region.start.measureIndex),
+      ),
+    });
+    this.project = {
+      ...project,
+      keyChanges,
+      keyRegionDecisions: project.keyRegionDecisions.filter(
+        (decision) => decision.measureIndex !== edit.measureIndex,
+      ),
+    };
+    return this.analyzeAndSave();
+  }
+
+  /**
    * 確認を完了としてマークする（F-2 の承認）
    *
    * `completedAt` が入るまで階名の確定・PDF 出力へ進めない。承認は解析結果を変えないため
@@ -512,10 +558,16 @@ export class ProjectSession {
       project.confirmation.items,
     );
 
-    const { keyRegions, issues: keyRegionIssues } = this.keyRegionBuilder.build(
+    const {
+      keyRegions,
+      issues: keyRegionIssues,
+      detectedKeyRegions,
+      measureCount,
+    } = this.keyRegionBuilder.build(
       omr.artifacts,
       structure,
       project.keyRegionDecisions,
+      project.keyChanges,
     );
     const degrees = this.engine.computeDegrees(
       built.score,
@@ -541,6 +593,7 @@ export class ProjectSession {
       keyRegions,
       annotations,
     };
+    this.keyContext = { detectedKeyRegions, measureCount };
     this.lastIssues = {
       structureIssues,
       buildIssues: built.issues,
@@ -554,6 +607,7 @@ export class ProjectSession {
       pages: project.pages,
       annotations,
       annotationIssues,
+      keyRegions,
       settings: project.settings,
     });
     return this.snapshot(this.lastIssues);
@@ -573,6 +627,7 @@ export class ProjectSession {
       pageIssues: this.pageIssues,
       preview: this.preview,
       scorePreview: this.scorePreview,
+      detectedKeyRegions: this.keyContext.detectedKeyRegions,
       unmatchedCorrections: this.unmatched,
     };
   }

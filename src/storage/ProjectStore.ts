@@ -59,6 +59,7 @@ export class ProjectStore {
       confirmation: { items: [], completedAt: null },
       structureDecisions: [],
       keyRegionDecisions: [],
+      keyChanges: [],
       keyRegions: [],
       annotations: [],
       settings: { ...DEFAULT_SETTINGS },

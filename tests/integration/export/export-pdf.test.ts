@@ -39,7 +39,7 @@ let directory: string;
 /** 解析結果から出力用の `Project` を組み立てる（確認は承認済みとする） */
 function toProject(run: AnnotationRun, score: Project['score']): Project {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: 'fixture',
     sourcePdf: 'source.pdf',
     pages: run.pages,
@@ -47,6 +47,7 @@ function toProject(run: AnnotationRun, score: Project['score']): Project {
     confirmation: { items: [], completedAt: '2026-07-20T00:00:00.000Z' },
     structureDecisions: [],
     keyRegionDecisions: [],
+    keyChanges: [],
     keyRegions: [],
     annotations: run.annotations,
     settings: { ...DEFAULT_SETTINGS },

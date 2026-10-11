@@ -157,6 +157,17 @@ export type KeyRegionIssue =
        */
       kind: 'unmatchedKeyDecision';
       measureIndex: number;
+    }
+  | {
+      /**
+       * 転調点の指定（`KeyChange`）を適用できなかった
+       *
+       * 小節が曲の範囲外・取り除く区切りがその小節に無い・曲頭の区切りを取り除こうとした、のいずれか。
+       * Editor は範囲内の小節でしか指定させないため、保存後に再解析で小節数や区切りが
+       * 変わったときに起きる。ユーザー入力由来のため例外にはせず報告に留める
+       */
+      kind: 'unmatchedKeyChange';
+      measureIndex: number;
     };
 
 /**

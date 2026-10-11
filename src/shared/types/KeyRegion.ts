@@ -45,3 +45,36 @@ export interface KeyRegionDecision {
   /** 旋法の上書き。省略時は自動検出値（＝Audiveris 由来では常に 'major'） */
   mode?: 'major' | 'minor';
 }
+
+/**
+ * 転調点の指定（F-6）。Editor の楽譜プレビューで指定し、**小節の頭から**適用する
+ *
+ * 確認画面の訂正（`KeyRegionDecision`）が既存区間の訂正しか行わないのに対し、こちらは
+ * 区間の挿入・上書き・削除を行う。調号が変わらない一時転調や読み替えは歌い手の解釈であり、
+ * 自動検出では拾えないため（用語集「転調 / 転調点」）。
+ *
+ * 調は `KeyRegionDecision` と同じく**調号（fifths）＋旋法**で持つ。主音で持つと
+ * 異名同音（C♭ 長調と B 長調など）の扱いと範囲の検証を別に決める必要があるが、
+ * 調号なら主音表（`tonicForFifths`）で一意に決まる。
+ *
+ * 1 小節につき指定は 1 件（同じ小節への編集は置き換える）。小節の途中（拍位置）からの転調は
+ * 扱わない: `NoteEvent` が小節内オフセットを持たず、パートごとに divisions も異なるため
+ */
+export type KeyChange =
+  /** この小節から指定の調で読む（区切りが無ければ挿入し、あれば上書きする） */
+  | { kind: 'set'; measureIndex: number; fifths: number; mode: 'major' | 'minor' }
+  /** この小節で始まる区切りを取り除く（前の区間の調が続く）。曲頭は取り除けない */
+  | { kind: 'remove'; measureIndex: number };
+
+/**
+ * Editor から送る転調点の編集 1 件（F-6）
+ *
+ * 保存する `KeyChange` と同じ `set` / `remove` に、**指定を取り消して自動判定に戻す** `revert` を足したもの。
+ * 削除（`remove`）と自動判定に戻す（`revert`）は、自動判定の区切りを上書きした小節で結果が違う:
+ * 削除はその区切りごと取り除き（前の区間の調が続く）、戻すは自動判定の調に戻す。
+ *
+ * `remove` の保存のされ方は Main が決める。自動判定の区切りが無い小節（書き足した転調点）の削除は
+ * 指定の記録を消すだけにする。`remove` を残すと、取り除く区切りが無いため毎回
+ * 「適用できなかった指定」として報告されてしまう
+ */
+export type KeyChangeEdit = KeyChange | { kind: 'revert'; measureIndex: number };

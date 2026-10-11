@@ -1,3 +1,5 @@
+import type { PitchStep } from './Pitch';
+
 /**
  * Editor の楽譜プレビューに重ねる内容一式
  *
@@ -39,6 +41,10 @@ export interface ScorePreviewPage {
   annotations: ScorePreviewAnnotation[];
   skippedMeasures: ScorePreviewRegion[];
   placementWarnings: ScorePreviewMarker[];
+  /** 小節の範囲（押した位置からどの小節かを決めるのに使う。転調点の指定 F-6） */
+  measures: ScorePreviewMeasure[];
+  /** 調の区切りの印（KeyRegion 1 件につき 1 つ。曲頭を含む） */
+  keyChanges: ScorePreviewKeyChange[];
 }
 
 /** 画面に重ねる階名 1 つ */
@@ -75,4 +81,37 @@ export interface ScorePreviewMarker {
   annotationId: string;
   x: number;
   y: number;
+}
+
+/**
+ * 小節 1 つの範囲（段の全譜表の縦範囲 × 小節の stack の横範囲）
+ *
+ * パートごとではなく段全体で 1 つにする。転調点は全パートに効く小節の性質のため
+ */
+export interface ScorePreviewMeasure {
+  /** 通し小節番号（0始まり） */
+  measureIndex: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * 調の区切りの印（区切りが始まる小節の左端に縦線と調名を描く）
+ *
+ * 調名の文字列は Renderer が組み立てる（`scoreLabels.keyLabel`。画面の文言の正はそちら）
+ */
+export interface ScorePreviewKeyChange {
+  /** 区切りが始まる通し小節番号（0始まり） */
+  measureIndex: number;
+  /** 小節の範囲の左端・上端と高さ（pt） */
+  x: number;
+  y: number;
+  height: number;
+  tonicStep: PitchStep;
+  tonicAlter: number;
+  mode: 'major' | 'minor';
+  /** 自動検出（グレー）かユーザー指定（青）か */
+  source: 'auto' | 'user';
 }

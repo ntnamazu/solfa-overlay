@@ -2,7 +2,7 @@ import type { MusicXmlPart, ParsedMusicXml } from '../score/MusicXmlParser';
 import type { OmrArtifacts } from '../score/ScoreModelBuilder';
 import { movementEndMeasureIndex, movementFirstMeasureIndex } from '../score/structureAnchors';
 import type { AdoptedKey, KeyRegionIssue } from '../../shared/types/Issues';
-import type { KeyRegion, KeyRegionDecision } from '../../shared/types/KeyRegion';
+import type { KeyChange, KeyRegion, KeyRegionDecision } from '../../shared/types/KeyRegion';
 import type { ResolvedMovement, ResolvedStructure } from '../../shared/types/ResolvedStructure';
 import { fifthsForTonic, tonicForFifths } from './keyTable';
 
@@ -16,6 +16,21 @@ export type { AdoptedKey, KeyRegionIssue };
 export interface KeyRegionBuildResult {
   keyRegions: KeyRegion[];
   issues: KeyRegionIssue[];
+  /**
+   * 自動判定の区切り（調号から生成し曲頭を保証した段階。転調点の指定・確認画面の訂正を反映する前）
+   *
+   * 転調点の編集（F-6）が「その小節に自動判定の区切りがあるか」で振る舞いを変えるために返す。
+   * 書き足した転調点の削除は記録を消すだけで済むが、自動判定の区切りの削除は `remove` を残す必要がある。
+   * 「自動判定に戻す」で戻る先の調を画面に示すのにも使う
+   */
+  detectedKeyRegions: KeyRegion[];
+  /**
+   * 曲の小節数（確定構造の通し小節番号の終端）
+   *
+   * 転調点の指定を受け付ける範囲。`applyKeyChanges` の範囲判定と同じ値を編集の検証にも使い、
+   * 「編集では受け付けたのに解析では範囲外」という食い違いを起こさない
+   */
+  measureCount: number;
 }
 
 /** MusicXML の `<key>` 宣言 1 つ分（範囲外の調号は採用せず報告のみ行う） */
@@ -117,6 +132,72 @@ function applyDecisions(
   }
   return mergeAdjacent(
     keyRegions.map((region) => byMeasure.get(region.start.measureIndex) ?? region),
+  );
+}
+
+/**
+ * 転調点の指定（F-6）を調文脈へ反映する
+ *
+ * `set` は同じ小節で始まる区間を置き換え（自動検出の区切りの上書き）、無ければ挿入する。
+ * `remove` はその小節で始まる区間を取り除き、前の区間の調を続けさせる。
+ * 適用できない指定（曲の範囲外・取り除く区切りが無い・曲頭の削除）は例外にせず
+ * `unmatchedKeyChange` として報告する。Editor は範囲内でしか指定させないため、
+ * 保存後の再解析で小節数や区切りが変わったときに起きるユーザー入力由来の不整合である
+ *
+ * 最後に隣接する同じ調を統合する。前の区間と同じ調を指定した転調点は消える
+ * （転調していないのに区切りを描かない。`mergeAdjacent` の原則）
+ *
+ * @param measureCount - 曲の小節数（通し小節番号の終端）
+ */
+function applyKeyChanges(
+  keyRegions: KeyRegion[],
+  keyChanges: readonly KeyChange[],
+  measureCount: number,
+  issues: KeyRegionIssue[],
+): KeyRegion[] {
+  if (keyChanges.length === 0) {
+    return keyRegions;
+  }
+  const byMeasure = new Map<number, KeyRegion>();
+  for (const region of keyRegions) {
+    byMeasure.set(region.start.measureIndex, region);
+  }
+  for (const change of keyChanges) {
+    const { measureIndex } = change;
+    if (measureIndex < 0 || measureIndex >= measureCount) {
+      issues.push({ kind: 'unmatchedKeyChange', measureIndex });
+      continue;
+    }
+    if (change.kind === 'remove') {
+      // 曲頭の区切りは「先頭要素は曲頭に必ず存在する」制約そのもののため取り除かない
+      if (measureIndex === 0 || !byMeasure.delete(measureIndex)) {
+        issues.push({ kind: 'unmatchedKeyChange', measureIndex });
+      }
+      continue;
+    }
+    const tonic = tonicForFifths(change.fifths, change.mode);
+    if (tonic === null) {
+      issues.push({
+        kind: 'unsupportedKeySignature',
+        measureIndex,
+        partId: null,
+        fifths: change.fifths,
+      });
+      continue;
+    }
+    // id は自動生成と同じ規則（1 小節に区切りは 1 つのため一意）。自動の区切りを上書きしても
+    // id が変わらないため、確認画面の行（`key` に id を使う）が並び替わらない
+    byMeasure.set(measureIndex, {
+      id: `key-${measureIndex}`,
+      start: { measureIndex, offset: 0 },
+      tonicStep: tonic.step,
+      tonicAlter: tonic.alter,
+      mode: change.mode,
+      source: 'user',
+    });
+  }
+  return mergeAdjacent(
+    [...byMeasure.values()].sort((a, b) => a.start.measureIndex - b.start.measureIndex),
   );
 }
 
@@ -227,11 +308,15 @@ export class KeyRegionBuilder {
   /**
    * @param decisions - 確認画面（ClefKeyConfirm）での訂正。自動生成が**終わってから**適用する
    *   （生成中に混ぜると調号の持続計算と多数決の母数が汚れる）
+   * @param keyChanges - Editor での転調点の指定（F-6）。**訂正より先に**適用する。
+   *   確認画面の調の表は挿入された区間も 1 行として出すため、先に挿入しておかないと
+   *   その行への旋法の訂正が `unmatchedKeyDecision` になってしまう
    */
   build(
     artifacts: OmrArtifacts,
     structure: ResolvedStructure,
     decisions: readonly KeyRegionDecision[] = [],
+    keyChanges: readonly KeyChange[] = [],
   ): KeyRegionBuildResult {
     const issues: KeyRegionIssue[] = [];
     const keyRegions: KeyRegion[] = [];
@@ -260,7 +345,13 @@ export class KeyRegionBuilder {
     }
 
     this.ensureHeadRegion(keyRegions);
-    return { keyRegions: applyDecisions(keyRegions, decisions, issues), issues };
+    const changed = applyKeyChanges(keyRegions, keyChanges, previousEnd, issues);
+    return {
+      keyRegions: applyDecisions(changed, decisions, issues),
+      issues,
+      detectedKeyRegions: [...keyRegions],
+      measureCount: previousEnd,
+    };
   }
 
   /**
